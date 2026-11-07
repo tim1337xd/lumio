@@ -1,0 +1,53 @@
+{
+	"required": true,
+	"package": "dev.tim1337.lumio.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"mixins": [],
+	"client": [
+		"accessor.AdvancementToastAccessor",
+		"accessor.GameModeBreakingAccessor",
+		"accessor.RecipeEntryAccessor",
+		"accessor.RecipeToastAccessor",
+		"accessor.SystemToastAccessor",
+		"accessor.TutorialToastAccessor",
+		"gui.ToastInstanceMixin",
+		"gui.ItemTooltipMixin",
+		"gui.ItemTooltipLinesMixin",
+		"client.TooltipWheelMixin",
+		"chat.ChatBackgroundMixin",
+		"chat.SuggestionsListMixin",
+		"gui.AbstractButtonMixin",
+		"accessor.AbstractContainerScreenAccessor",
+		"inventory.AbstractRecipeBookScreenMixin",
+		"inventory.EffectsInInventoryMixin",
+		"inventory.InventoryScreenMixin",
+		"inventory.RecipeBookComponentMixin",
+		"inventory.SlotMixin",
+		"accessor.SlotAccessor", "inventory.ContainerScreenMixin", "inventory.AbstractContainerScreenMixin",
+		"gui.AbstractScrollAreaMixin",
+		"gui.AbstractSelectionListMixin",
+		"gui.AbstractSliderButtonMixin",
+		"gui.AbstractWidgetMixin", "render.AvatarRendererMixin", "render.GuiRendererMixin", "world.CameraMixin", "render.EntityGlowMixin", "render.EntityTeamColorMixin", "accessor.ChatComponentAccessor", "accessor.CommandSuggestionsAccessor", "accessor.SuggestionsListAccessor", "accessor.HudAccessor", "gui.ToastManagerMixin", "chat.ChatComponentMixin", "chat.GuiMessageMixin", "chat.ChatHistoryMixin", "chat.ChatScreenMixin", "chat.CommandSuggestionsMixin", "world.CloudRendererMixin",
+		"client.ClientConfigurationPacketListenerMixin", "accessor.ClientCommonPacketListenerAccessor", "client.DownloadedPackSourceMixin", "accessor.DownloadedPackSourceAccessor", "client.ClientPacketListenerMixin", "gui.ConnectScreenMixin", "render.GameRendererMixin", "render.ShaderManagerMixin", "gui.GenericWaitingScreenMixin", "gui.ProgressScreenMixin", "gui.FileFixerProgressScreenMixin", "render.GuiEntityRendererMixin", "accessor.GuiGraphicsExtractorAccessor", "gui.LevelLoadingScreenMixin",
+		"world.FogRendererMixin", "gui.FramerateLimitTrackerMixin", "client.KeyboardHandlerMixin",
+		"gui.GuiMixin", "render.GuiRenderStateMixin", "hud.HudMixin",
+		"gui.LoadingOverlayMixin", "client.MinecraftMixin", "client.MouseHandlerMixin",  "accessor.BossHealthOverlayAccessor",
+		"render.BlockBreakingMixin",
+		"render.ItemInHandRendererMixin",
+		"render.ItemStackRenderStateMixin",
+		"render.LayerRenderStateMixin",
+		"accessor.LivingEntityAccessor",
+		"render.LivingEntityMixin",
+		"render.PlayerMixin",
+		"accessor.PlayerTabOverlayAccessor",
+		"gui.ScreenMixin",
+		"world.SkyRendererMixin", "world.LevelRendererCloudsMixin", "world.BiomeSkyColorMixin",
+		"client.WindowMixin", "client.KeyMappingMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	},
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}

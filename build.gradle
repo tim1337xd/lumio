@@ -1,0 +1,192 @@
+plugins {
+	id 'net.fabricmc.fabric-loom' version "${loom_version}"
+	id 'maven-publish'
+}
+
+// One codebase, one jar per Minecraft version: ./gradlew build -Pmc=26.3 (see mc.gradle)
+apply from: 'mc.gradle'
+
+// The version, built from its parts in gradle.properties (SemVer): 1.0.0-beta.1, or 1.0.0 for a release; only an alpha build, which stays with the developer, has its build in it: 1.0.1-alpha+build.31.
+// It goes into fabric.mod.json, where the mod reads it to show it. The build number of every jar is kept inside it too, for the log.
+def modStage = project.mod_stage.trim()
+def stageNumber = project.mod_stage_number.trim()
+if (!(modStage in ['alpha', 'beta', 'release'])) {
+	throw new GradleException("mod_stage must be alpha, beta or release, not '${modStage}'")
+}
+if (modStage == 'beta' && !(stageNumber ==~ /\d+/)) {
+	throw new GradleException("A beta needs mod_stage_number (1, 2, ...)")
+}
+def stagePart = modStage == 'alpha' ? '-alpha' : modStage == 'beta' ? "-beta.${stageNumber}" : ''
+def plainVersion = "${project.mod_version.trim()}${stagePart}"
+def buildNumber = project.build_number.trim()
+version = modStage == 'alpha' ? "${plainVersion}+build.${buildNumber}" : plainVersion
+
+repositories {
+	// Add repositories to retrieve artifacts from in here.
+	// You should only use this when depending on other mods because
+	// Loom adds the essential maven repositories to download Minecraft and libraries from automatically.
+	// See https://docs.gradle.org/current/userguide/declaring_repositories.html
+	// for more information about repositories.
+}
+
+dependencies {
+	// To change the versions see the gradle.properties file
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+
+	// Fabric API. This is technically optional, but you probably want it anyway.
+	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+	// the add-on API (the api project): compiled against, and shipped inside the mod jar as a nested jar of its own
+	implementation project(':api')
+	include project(':api')
+
+	// Unit tests of the plain logic (animation timing, progress, seasons, list filtering); test only, never in the mod jar.
+	testImplementation platform("org.junit:junit-bom:5.11.4")
+	testImplementation "org.junit.jupiter:junit-jupiter"
+	testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+}
+
+// Local client game tests (src/gametest, not part of the repository): configured in gametest.gradle when it exists.
+if (file("gametest.gradle").exists()) {
+	apply from: "gametest.gradle"
+}
+
+processResources {
+	def version = project.version
+	// the API version, from the one place it is written (the api project reads it the same way)
+	def apiVersion = (file('api/src/main/java/dev/tim1337/lumio/api/LumioApi.java').getText('UTF-8') =~ /VERSION = "([^"]+)"/)[0][1]
+	inputs.property "version", version
+	inputs.property "buildNumber", buildNumber
+	inputs.property "apiVersion", apiVersion
+
+	filesMatching("fabric.mod.json") {
+		expand "version": version, "apiVersion": apiVersion, "build": buildNumber
+	}
+}
+
+test {
+	useJUnitPlatform()
+	// the API snapshot test checks the add-on API against api/api-snapshot.txt; ./gradlew test -PupdateApiSnapshot writes the file anew (after a
+	// version bump that fits the change, see api/API.md)
+	systemProperty "lumio.updateApiSnapshot", project.hasProperty("updateApiSnapshot")
+	systemProperty "lumio.updateSettingKeys", project.hasProperty("updateSettingKeys")
+	inputs.files("api/api-snapshot.txt")
+}
+
+// Every jar is called lumio-<version>+mc<Minecraft version>.jar: lumio-1.0.0-beta.1+mc26.3.jar; an alpha build lumio-<version>-mc<Minecraft version>.jar.
+base {
+	archivesName = 'lumio'
+}
+tasks.withType(AbstractArchiveTask).configureEach {
+	archiveVersion = modStage == 'alpha' ? "${version}-mc${project.minecraft_version}" : "${version}+mc${project.minecraft_version}"
+}
+
+// ./gradlew deployJar copies the mod jar into the game's mods folder (deploy_dir in the git-ignored local.properties), replacing the older
+// Lumio jar there, and then raises build_number in gradle.properties by 1, so every jar that is run has its own build number.
+// Plain builds, compile checks and tests never change it.
+def localProperties = new Properties()
+def localFile = file('local.properties')
+if (localFile.exists()) {
+	localFile.withReader('UTF-8') { localProperties.load(it) }
+}
+// the base version's folder is deploy_dir, another version's deploy_dir_<version>
+def deployDir = localProperties.getProperty(project.mcOther ? "deploy_dir_${project.mcVersion}" : 'deploy_dir')
+def raisesBuild = !project.mcOther
+def propertiesFile = file('gradle.properties')
+tasks.register('deployJar') {
+	group = 'build'
+	description = 'Copies the mod jar into the game\'s mods folder and raises the build number.'
+	def jarFile = tasks.named('jar').flatMap { it.archiveFile }
+	inputs.file(jarFile)
+	outputs.upToDateWhen { false }
+	doLast {
+		if (deployDir == null || deployDir.isBlank()) {
+			throw new GradleException('Set the folder of the game\'s mods in local.properties (deploy_dir, or deploy_dir_<version> for another Minecraft version)')
+		}
+		def mods = new File(deployDir)
+		if (!mods.isDirectory()) {
+			throw new GradleException("The mods folder ${mods} does not exist")
+		}
+		// a jar replaced under the running game breaks it when it loads a class later
+		def running = ProcessHandle.allProcesses().anyMatch { process ->
+			process.info().command().map { it.toLowerCase(Locale.ROOT).endsWith('javaw.exe') }.orElse(false)
+		}
+		if (running) {
+			throw new GradleException('Minecraft (javaw) is running: close it first, then deploy')
+		}
+		def jar = jarFile.get().asFile
+		// two jars of the same mod do not load: the older Lumio jar goes (lumio-<version>...), never an add-on's
+		// (lumio-skyblock-...)
+		mods.listFiles().findAll { it.name ==~ /lumio-\d.*\.jar/ }.each { it.delete() }
+		java.nio.file.Files.copy(jar.toPath(), new File(mods, jar.name).toPath())
+		// the jars of one build have one number: deploy another version first (-Pmc=...), the base version last, which raises it
+		if (!raisesBuild) {
+			println "Deployed ${jar.name} to ${mods}"
+			return
+		}
+		// the next jar gets the next number; the rest of gradle.properties (comments, layout) stays as it is
+		def text = propertiesFile.getText('ISO-8859-1')
+		def matcher = text =~ /(?m)^build_number=(\d+)/
+		if (!matcher.find()) {
+			throw new GradleException('build_number is missing in gradle.properties')
+		}
+		def next = (matcher.group(1) as int) + 1
+		propertiesFile.write(text.replaceFirst(/(?m)^build_number=\d+/, "build_number=${next}"), 'ISO-8859-1')
+		println "Deployed ${jar.name} to ${mods}; the next build is ${next}"
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = 25
+}
+
+java {
+	// Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
+	// if it is present.
+	// If you remove this line, sources will not be generated.
+	withSourcesJar()
+
+	sourceCompatibility = JavaVersion.VERSION_25
+	targetCompatibility = JavaVersion.VERSION_25
+}
+
+jar {
+	def projectName = project.name
+	inputs.property "projectName", projectName
+
+	from("LICENSE") {
+		rename { "${it}_$projectName"}
+	}
+}
+
+// ./gradlew publishToMavenLocal publishes the mod (dev.tim1337:lumio:<mod_version>-SNAPSHOT) and its API
+// (dev.tim1337:lumio-api:<API version>), with sources, for add-ons to build and run against
+publishing {
+	publications {
+		create("mavenJava", MavenPublication) {
+			artifactId = "lumio${project.mcArtifactSuffix}"
+			// add-ons run against the newest local build of the mod (./gradlew publishToMavenLocal), whatever its build number
+			version = "${project.mod_version.trim()}-SNAPSHOT"
+			from components.java
+			pom {
+				licenses {
+					license {
+						name = 'GPL-3.0-only'
+						url = 'https://www.gnu.org/licenses/gpl-3.0.html'
+					}
+				}
+			}
+		}
+	}
+
+	// See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
+	repositories {
+		// Add repositories to publish to here.
+		// Notice: This block does NOT have the same function as the block in the top level.
+		// The repositories here will be used for publishing your artifact, not for
+		// retrieving dependencies.
+	}
+}
+
+mcPrepareSources()

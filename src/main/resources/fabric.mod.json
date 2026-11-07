@@ -1,0 +1,33 @@
+{
+	"schemaVersion": 1,
+	"id": "lumio",
+	"version": "${version}",
+	"name": "Lumio",
+	"description": "A visual overhaul for Minecraft: custom skies, ambience, item effects, a redesigned HUD and menus, a now-playing display with live lyrics, and an API for add-ons such as Lumio: Hypixel SkyBlock. Configure everything in game with /lumio.",
+	"authors": [
+		"tim1337"
+	],
+	"license": "GPL-3.0-only",
+	"icon": "assets/lumio/icon.png",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"dev.tim1337.lumio.Lumio"
+		]
+	},
+	"mixins": [
+		"lumio.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=0.20.1",
+		"minecraft": "~26.2",
+		"java": ">=25",
+		"fabric-api": "*",
+		"lumio-api": ">=${apiVersion}"
+	},
+	"breaks": {
+	},
+	"custom": {
+		"lumio:build": "${build}"
+	}
+}

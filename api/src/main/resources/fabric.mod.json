@@ -1,0 +1,25 @@
+{
+	"schemaVersion": 1,
+	"id": "lumio-api",
+	"version": "${version}",
+	"name": "Lumio API",
+	"description": "The add-on API of Lumio: what add-ons such as Lumio: Hypixel SkyBlock build on. Comes with Lumio.",
+	"authors": [
+		"tim1337"
+	],
+	"license": "GPL-3.0-only",
+	"icon": "assets/lumio-api/icon.png",
+	"environment": "client",
+	"depends": {
+		"fabricloader": ">=0.20.1",
+		"minecraft": "~26.2",
+		"java": ">=25",
+		"fabric-api": "*"
+	},
+	"custom": {
+		"modmenu": {
+			"badges": ["library"],
+			"parent": "lumio"
+		}
+	}
+}

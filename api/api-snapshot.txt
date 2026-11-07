@@ -1,0 +1,477 @@
+# The public add-on API of Lumio, written by ApiSnapshotTest; see API.md. Update it with ./gradlew test -PupdateApiSnapshot, never by hand.
+version 1.8.0
+ActionBarParts: field static final int DEFENSE = 4
+ActionBarParts: field static final int FUEL = 128
+ActionBarParts: field static final int HEALTH = 1
+ActionBarParts: field static final int LOCATION = 64
+ActionBarParts: field static final int MANA = 2
+ActionBarParts: field static final int OTHER = 16
+ActionBarParts: field static final int OVERFLOW = 8
+ActionBarParts: field static final int USUAL = 15
+ActionBarParts: field static final int VITALITY = 32
+ActionBarParts: final class
+AddonContext: interface
+AddonContext: method abstract <F extends dev.tim1337.lumio.api.feature.AddonFeature> F registerFeature(F)
+AddonContext: method abstract dev.tim1337.lumio.api.AddonInfo addon()
+AddonContext: method abstract dev.tim1337.lumio.api.setting.SettingFactory settings()
+AddonContext: method abstract void registerBlockTint(dev.tim1337.lumio.api.BlockTint)
+AddonContext: method abstract void registerChatListener(dev.tim1337.lumio.api.ChatListener)
+AddonContext: method abstract void registerChatTab(dev.tim1337.lumio.api.ChatTabProvider)
+AddonContext: method abstract void registerDiagnostics(java.lang.String, java.util.function.Supplier<java.util.List<java.lang.String>>)
+AddonContext: method abstract void registerFeatureSets(dev.tim1337.lumio.api.FeatureSetProvider)
+AddonContext: method abstract void registerHighlighter(dev.tim1337.lumio.api.EntityHighlighter)
+AddonContext: method abstract void registerHud(dev.tim1337.lumio.api.feature.AddonPanel, java.lang.String)
+AddonContext: method abstract void registerInfoValues(dev.tim1337.lumio.api.InfoValueProvider)
+AddonContext: method abstract void registerInventoryColumn(dev.tim1337.lumio.api.InventoryColumn)
+AddonContext: method abstract void registerLocation(dev.tim1337.lumio.api.LocationProvider)
+AddonContext: method abstract void registerPage(dev.tim1337.lumio.api.feature.AddonPage)
+AddonContext: method abstract void registerPlaceFeatures(dev.tim1337.lumio.api.PlaceFeatureProvider)
+AddonContext: method abstract void registerScoreboard(dev.tim1337.lumio.api.ScoreboardProvider)
+AddonContext: method abstract void registerScreenHooks(dev.tim1337.lumio.api.ScreenHooks)
+AddonContext: method abstract void registerSetup(dev.tim1337.lumio.api.SetupProvider)
+AddonContext: method abstract void registerSimulator(dev.tim1337.lumio.api.HudSimulator)
+AddonContext: method abstract void registerStatusValues(dev.tim1337.lumio.api.StatusValueProvider)
+AddonContext: method abstract void registerSuggestions(dev.tim1337.lumio.api.SuggestionProvider)
+AddonContext: method abstract void registerTabCards(dev.tim1337.lumio.api.TabCardProvider)
+AddonContext: method abstract void registerTooltipLines(dev.tim1337.lumio.api.TooltipLineProvider)
+AddonInfo: constructor(java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String)
+AddonInfo: method boolean equals(java.lang.Object)
+AddonInfo: method int hashCode()
+AddonInfo: method java.lang.String apiRange()
+AddonInfo: method java.lang.String description()
+AddonInfo: method java.lang.String id()
+AddonInfo: method java.lang.String name()
+AddonInfo: method java.lang.String toString()
+AddonInfo: method java.lang.String version()
+AddonInfo: record
+ApiVersion: constructor(int, int, int)
+ApiVersion: method boolean equals(java.lang.Object)
+ApiVersion: method boolean provides(int, int)
+ApiVersion: method int compareTo(dev.tim1337.lumio.api.ApiVersion)
+ApiVersion: method int hashCode()
+ApiVersion: method int major()
+ApiVersion: method int minor()
+ApiVersion: method int patch()
+ApiVersion: method java.lang.String toString()
+ApiVersion: method static dev.tim1337.lumio.api.ApiVersion parse(java.lang.String)
+ApiVersion: record : java.lang.Comparable<dev.tim1337.lumio.api.ApiVersion>
+BlockTint: interface
+BlockTint: method abstract int color(net.minecraft.core.BlockPos)
+ChatListener: interface
+ChatListener: method default void onActionBar(net.minecraft.network.chat.Component)
+ChatListener: method default void onChatLine(net.minecraft.network.chat.Component)
+ChatListener: method default void onServerMessage(net.minecraft.network.chat.Component)
+ChatTabProvider: interface
+ChatTabProvider: method abstract boolean matches(java.lang.String)
+ChatTabProvider: method abstract java.lang.String tabId()
+ChatTabProvider: method abstract java.lang.String title()
+ChatTabProvider: method default boolean keptOutOfAll()
+ChatTabProvider: method default java.util.List<dev.tim1337.lumio.api.setting.AddonSetting<?>> tabSettings()
+EntityHighlighter: interface
+EntityHighlighter: method abstract boolean glows(net.minecraft.world.entity.Entity)
+EntityHighlighter: method abstract int outlineColor(net.minecraft.world.entity.Entity)
+FeatureSetProvider: interface
+FeatureSetProvider: method abstract java.lang.String basicsName()
+FeatureSetProvider: method abstract java.util.List<dev.tim1337.lumio.api.FeatureSetSpec> sets()
+FeatureSetProvider: method abstract java.util.Set<dev.tim1337.lumio.api.feature.AddonFeature> advanced()
+FeatureSetProvider: method abstract void switchOn()
+FeatureSetSpec: constructor(java.lang.String, java.lang.String, java.lang.String, java.lang.String, int, int, java.util.Set<dev.tim1337.lumio.api.feature.AddonFeature>)
+FeatureSetSpec: method boolean equals(java.lang.Object)
+FeatureSetSpec: method int dark()
+FeatureSetSpec: method int hashCode()
+FeatureSetSpec: method int light()
+FeatureSetSpec: method java.lang.String icon()
+FeatureSetSpec: method java.lang.String id()
+FeatureSetSpec: method java.lang.String name()
+FeatureSetSpec: method java.lang.String note()
+FeatureSetSpec: method java.lang.String toString()
+FeatureSetSpec: method java.util.Set<dev.tim1337.lumio.api.feature.AddonFeature> extra()
+FeatureSetSpec: record
+HudSimulator: interface
+HudSimulator: method abstract boolean shows(dev.tim1337.lumio.api.feature.FeatureView)
+HudSimulator: method abstract boolean simulates(dev.tim1337.lumio.api.feature.FeatureView)
+HudSimulator: method abstract java.util.List<dev.tim1337.lumio.api.Simulation> simulations()
+HudSimulator: method abstract java.util.List<java.lang.String> moments()
+HudSimulator: method abstract void playMoment(int)
+HudSimulator: method abstract void start(java.lang.String, int)
+HudSimulator: method abstract void stop()
+InfoSegment: constructor(java.lang.String, java.lang.String, java.lang.String, java.lang.String, int, boolean, float, java.lang.String, java.util.List<? extends dev.tim1337.lumio.api.setting.AddonSetting<?>>)
+InfoSegment: field static final float TEXT_WIDTH = 110.0
+InfoSegment: method boolean digits()
+InfoSegment: method boolean equals(java.lang.Object)
+InfoSegment: method float widest()
+InfoSegment: method int hashCode()
+InfoSegment: method int iconColor()
+InfoSegment: method java.lang.String after()
+InfoSegment: method java.lang.String icon()
+InfoSegment: method java.lang.String id()
+InfoSegment: method java.lang.String label()
+InfoSegment: method java.lang.String title()
+InfoSegment: method java.lang.String toString()
+InfoSegment: method java.util.List<? extends dev.tim1337.lumio.api.setting.AddonSetting<?>> settings()
+InfoSegment: record
+InfoValueProvider: interface
+InfoValueProvider: method abstract java.lang.String area()
+InfoValueProvider: method abstract java.util.List<dev.tim1337.lumio.api.InfoSegment> segments()
+InfoValueProvider: method abstract void read(dev.tim1337.lumio.api.InfoValues)
+InfoValues: interface
+InfoValues: method abstract void none(java.lang.String)
+InfoValues: method abstract void set(java.lang.String, java.lang.String)
+InventoryColumn: interface
+InventoryColumn: method abstract boolean shown()
+InventoryColumn: method abstract void draw(dev.tim1337.lumio.api.draw.Canvas, int, int)
+LocationProvider: interface
+LocationProvider: method abstract boolean has(java.lang.String)
+LocationProvider: method abstract boolean inWorld()
+LocationProvider: method abstract java.lang.String placeName()
+LocationProvider: method abstract java.lang.String worldName()
+LocationProvider: method abstract java.util.List<dev.tim1337.lumio.api.Place> places()
+LocationProvider: method default boolean knownArea(java.lang.String)
+LocationProvider: method default java.lang.String zoneName()
+LumioAddon: interface
+LumioAddon: method abstract void onInitialize(dev.tim1337.lumio.api.AddonContext)
+LumioAddon: method default dev.tim1337.lumio.api.AddonInfo info()
+LumioApi: field static final java.lang.String ENTRYPOINT = "lumio"
+LumioApi: field static final java.lang.String MOD_ID = "lumio"
+LumioApi: field static final java.lang.String VERSION
+LumioApi: final class
+LumioApi: method static dev.tim1337.lumio.api.ApiVersion version()
+LumioApi: method static dev.tim1337.lumio.api.setting.SettingFactory settings()
+LumioApi: method static void saveSoon()
+MainSettings: final class
+MainSettings: method static boolean animations()
+MainSettings: method static boolean celebrations()
+MainSettings: method static boolean inventoryStyled()
+MainSettings: method static float bounce()
+MainSettings: method static int accentRgb()
+MainSettings: method static int[] infoBarBounds()
+Place: constructor(java.lang.String, java.lang.String, java.util.List<java.lang.String>)
+Place: method boolean equals(java.lang.Object)
+Place: method int hashCode()
+Place: method java.lang.String key()
+Place: method java.lang.String name()
+Place: method java.lang.String toString()
+Place: method java.util.List<java.lang.String> aliases()
+Place: record
+PlaceFeatureProvider: interface
+PlaceFeatureProvider: method abstract boolean active()
+PlaceFeatureProvider: method abstract dev.tim1337.lumio.api.feature.AddonPage page()
+PlaceFeatureProvider: method abstract java.lang.String key()
+PlaceFeatureProvider: method abstract java.lang.String placeName()
+PlaceFeatureProvider: method abstract java.util.List<dev.tim1337.lumio.api.PlaceGroup> groups()
+PlaceGroup: constructor(java.lang.String, dev.tim1337.lumio.api.feature.AddonPage, java.util.List<dev.tim1337.lumio.api.feature.FeatureView>)
+PlaceGroup: method boolean equals(java.lang.Object)
+PlaceGroup: method dev.tim1337.lumio.api.feature.AddonPage page()
+PlaceGroup: method int hashCode()
+PlaceGroup: method java.lang.String name()
+PlaceGroup: method java.lang.String toString()
+PlaceGroup: method java.util.List<dev.tim1337.lumio.api.feature.FeatureView> features()
+PlaceGroup: record
+ScoreboardProvider: interface
+ScoreboardProvider: method abstract boolean active()
+ScoreboardProvider: method abstract java.lang.String settingsHeading()
+ScoreboardProvider: method abstract java.util.List<? extends dev.tim1337.lumio.api.setting.AddonSetting<?>> settings()
+ScoreboardProvider: method abstract java.util.List<net.minecraft.network.chat.Component> lines(java.util.List<net.minecraft.network.chat.Component>)
+ScoreboardProvider: method abstract net.minecraft.network.chat.Component title()
+ScreenHooks: interface
+ScreenHooks: method default boolean charTyped(net.minecraft.client.gui.screens.Screen, int)
+ScreenHooks: method default boolean keyPressed(net.minecraft.client.gui.screens.Screen, net.minecraft.client.input.KeyEvent)
+ScreenHooks: method default boolean mouseClicked(net.minecraft.client.gui.screens.Screen, net.minecraft.world.inventory.Slot, double, double, int)
+ScreenHooks: method default boolean mouseScrolled(net.minecraft.client.gui.screens.Screen, double)
+ScreenHooks: method default boolean takesOver(net.minecraft.client.gui.screens.Screen)
+ScreenHooks: method default boolean typing(net.minecraft.client.gui.screens.Screen)
+ScreenHooks: method default void drawBackground(net.minecraft.client.gui.screens.Screen, net.minecraft.client.gui.GuiGraphicsExtractor, int, int)
+ScreenHooks: method default void init(net.minecraft.client.gui.screens.Screen)
+SetupChoice: constructor(java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, int, int, java.util.function.Supplier<java.util.List<dev.tim1337.lumio.api.feature.FeatureView>>)
+SetupChoice: method boolean equals(java.lang.Object)
+SetupChoice: method int dark()
+SetupChoice: method int hashCode()
+SetupChoice: method int light()
+SetupChoice: method java.lang.String icon()
+SetupChoice: method java.lang.String id()
+SetupChoice: method java.lang.String name()
+SetupChoice: method java.lang.String note()
+SetupChoice: method java.lang.String shortName()
+SetupChoice: method java.lang.String toString()
+SetupChoice: method java.util.function.Supplier<java.util.List<dev.tim1337.lumio.api.feature.FeatureView>> features()
+SetupChoice: record
+SetupProvider: interface
+SetupProvider: method abstract boolean worldOn()
+SetupProvider: method abstract dev.tim1337.lumio.api.SetupChoice world()
+SetupProvider: method abstract java.lang.String welcomeLine()
+SetupProvider: method abstract java.lang.String worldTitle()
+SetupProvider: method abstract java.util.List<dev.tim1337.lumio.api.SetupChoice> activities()
+SetupProvider: method abstract void setWorldOn(boolean)
+Simulation: constructor(java.lang.String, java.lang.String, java.lang.String, java.util.List<java.lang.String>)
+Simulation: method boolean equals(java.lang.Object)
+Simulation: method int hashCode()
+Simulation: method java.lang.String group()
+Simulation: method java.lang.String id()
+Simulation: method java.lang.String name()
+Simulation: method java.lang.String toString()
+Simulation: method java.util.List<java.lang.String> options()
+Simulation: record
+StatusStat: enum
+StatusStat: field static final dev.tim1337.lumio.api.StatusStat DEFENSE
+StatusStat: field static final dev.tim1337.lumio.api.StatusStat FUEL
+StatusStat: field static final dev.tim1337.lumio.api.StatusStat HEALTH
+StatusStat: field static final dev.tim1337.lumio.api.StatusStat MANA
+StatusStat: field static final dev.tim1337.lumio.api.StatusStat OVERFLOW_MANA
+StatusStat: field static final dev.tim1337.lumio.api.StatusStat VITALITY
+StatusStat: method static dev.tim1337.lumio.api.StatusStat valueOf(java.lang.String)
+StatusStat: method static dev.tim1337.lumio.api.StatusStat[] values()
+StatusValueProvider: interface
+StatusValueProvider: method abstract boolean fresh(dev.tim1337.lumio.api.StatusStat)
+StatusValueProvider: method abstract boolean owns(net.minecraft.network.chat.Component)
+StatusValueProvider: method abstract int max(dev.tim1337.lumio.api.StatusStat)
+StatusValueProvider: method abstract int priority()
+StatusValueProvider: method abstract int value(dev.tim1337.lumio.api.StatusStat)
+StatusValueProvider: method abstract net.minecraft.network.chat.Component filter(net.minecraft.network.chat.Component, boolean, boolean, boolean, int)
+StatusValueProvider: method abstract void observe(net.minecraft.network.chat.Component, boolean, boolean)
+SuggestionProvider: interface
+SuggestionProvider: method abstract boolean merged(com.mojang.brigadier.suggestion.Suggestions)
+SuggestionProvider: method abstract java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> add(java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions>, java.lang.String, int)
+TabCard$Row: constructor(net.minecraft.network.chat.Component, net.minecraft.network.chat.Component, float)
+TabCard$Row: constructor(net.minecraft.network.chat.Component, net.minecraft.network.chat.Component, float, int)
+TabCard$Row: method boolean equals(java.lang.Object)
+TabCard$Row: method float progress()
+TabCard$Row: method int barRgb()
+TabCard$Row: method int hashCode()
+TabCard$Row: method java.lang.String toString()
+TabCard$Row: method net.minecraft.network.chat.Component label()
+TabCard$Row: method net.minecraft.network.chat.Component value()
+TabCard$Row: record
+TabCard: constructor(java.lang.String, java.util.List<dev.tim1337.lumio.api.TabCard$Row>)
+TabCard: method boolean equals(java.lang.Object)
+TabCard: method int hashCode()
+TabCard: method java.lang.String title()
+TabCard: method java.lang.String toString()
+TabCard: method java.util.List<dev.tim1337.lumio.api.TabCard$Row> rows()
+TabCard: record
+TabCardProvider: interface
+TabCardProvider: method abstract boolean active()
+TabCardProvider: method abstract java.util.List<dev.tim1337.lumio.api.TabCard> cards(java.util.List<net.minecraft.network.chat.Component>)
+TooltipLine$Kind: enum
+TooltipLine$Kind: field static final dev.tim1337.lumio.api.TooltipLine$Kind FOOTNOTE
+TooltipLine$Kind: field static final dev.tim1337.lumio.api.TooltipLine$Kind HEADING
+TooltipLine$Kind: field static final dev.tim1337.lumio.api.TooltipLine$Kind ROW
+TooltipLine$Kind: method static dev.tim1337.lumio.api.TooltipLine$Kind valueOf(java.lang.String)
+TooltipLine$Kind: method static dev.tim1337.lumio.api.TooltipLine$Kind[] values()
+TooltipLine: constructor(dev.tim1337.lumio.api.TooltipLine$Kind, java.lang.String, java.lang.String, java.lang.String, int)
+TooltipLine: field static final int PLAIN = -1
+TooltipLine: field static final java.lang.String MISSING = "—"
+TooltipLine: method boolean equals(java.lang.Object)
+TooltipLine: method dev.tim1337.lumio.api.TooltipLine$Kind kind()
+TooltipLine: method int hashCode()
+TooltipLine: method int valueRgb()
+TooltipLine: method java.lang.String note()
+TooltipLine: method java.lang.String text()
+TooltipLine: method java.lang.String toString()
+TooltipLine: method java.lang.String value()
+TooltipLine: method static dev.tim1337.lumio.api.TooltipLine footnote(java.lang.String)
+TooltipLine: method static dev.tim1337.lumio.api.TooltipLine heading(java.lang.String, java.lang.String, int)
+TooltipLine: method static dev.tim1337.lumio.api.TooltipLine row(java.lang.String, java.lang.String, java.lang.String)
+TooltipLine: record
+TooltipLineProvider: interface
+TooltipLineProvider: method abstract void addLines(net.minecraft.world.item.ItemStack, java.util.List<dev.tim1337.lumio.api.TooltipLine>)
+TooltipLineProvider: method default java.util.List<dev.tim1337.lumio.api.setting.AddonSetting<?>> lineSettings()
+draw.Canvas: interface
+draw.Canvas: method abstract boolean animated()
+draw.Canvas: method abstract boolean arcsAvailable()
+draw.Canvas: method abstract float boldWidthScaled(java.lang.String, float)
+draw.Canvas: method abstract float deltaSeconds()
+draw.Canvas: method abstract float widthScaled(java.lang.String, float)
+draw.Canvas: method abstract int accent()
+draw.Canvas: method abstract int width(java.lang.String)
+draw.Canvas: method abstract java.lang.String fit(java.lang.String, int)
+draw.Canvas: method abstract java.lang.String fitScaled(java.lang.String, float, float)
+draw.Canvas: method abstract net.minecraft.client.gui.GuiGraphicsExtractor graphics()
+draw.Canvas: method abstract void arc(float, float, float, float, float, float, int)
+draw.Canvas: method abstract void arcSegment(float, float, float, float, float, float, int)
+draw.Canvas: method abstract void discAt(float, float, float, int)
+draw.Canvas: method abstract void fill(int, int, int, int, int)
+draw.Canvas: method abstract void icon(java.lang.String, int, int, int, int)
+draw.Canvas: method abstract void ring(int, int, int, int, float, int, int)
+draw.Canvas: method abstract void ringAt(float, float, float, float, int)
+draw.Canvas: method abstract void rounded(int, int, int, int, float, int)
+draw.Canvas: method abstract void roundedGradient(int, int, int, int, float, int, int)
+draw.Canvas: method abstract void roundedSmooth(float, float, float, float, float, int)
+draw.Canvas: method abstract void sectionLabel(java.lang.String, float, float, int)
+draw.Canvas: method abstract void slotGrid(int, int, int, int, int, int, float, int)
+draw.Canvas: method abstract void softLight(float, float, float, float, int)
+draw.Canvas: method abstract void softLight(float, float, float, int)
+draw.Canvas: method abstract void textAt(java.lang.String, float, float, int)
+draw.Canvas: method abstract void textAtScaled(java.lang.String, float, float, float, int)
+draw.Canvas: method abstract void textAtScaledBold(java.lang.String, float, float, float, int)
+draw.Canvas: method abstract void textCentered(java.lang.String, int, int, int)
+draw.Canvas: method abstract void textMiddle(java.lang.String, int, int, int)
+feature.AddonFeature: abstract class : dev.tim1337.lumio.api.feature.FeatureView
+feature.AddonFeature: constructor(java.lang.String, java.lang.String, java.lang.String, boolean)
+feature.AddonFeature: constructor(java.lang.String, java.lang.String, java.lang.String, boolean, boolean)
+feature.AddonFeature: method boolean alwaysTabbed()
+feature.AddonFeature: method boolean hasPreview()
+feature.AddonFeature: method boolean isEnabled()
+feature.AddonFeature: method boolean ownWindow()
+feature.AddonFeature: method com.google.gson.JsonObject save()
+feature.AddonFeature: method java.lang.String id()
+feature.AddonFeature: method java.lang.String nameText()
+feature.AddonFeature: method java.lang.String previewNote()
+feature.AddonFeature: method protected <S extends dev.tim1337.lumio.api.setting.AddonSetting<?>> S add(S)
+feature.AddonFeature: method protected <S extends dev.tim1337.lumio.api.setting.AddonSetting<?>> S add(S, java.lang.String)
+feature.AddonFeature: method protected <S extends dev.tim1337.lumio.api.setting.AddonSetting<?>> S add(S, java.lang.String, java.lang.String)
+feature.AddonFeature: method protected dev.tim1337.lumio.api.setting.SettingFactory settings()
+feature.AddonFeature: method protected void addChild(dev.tim1337.lumio.api.feature.AddonFeature)
+feature.AddonFeature: method protected void addKey(net.minecraft.client.KeyMapping, dev.tim1337.lumio.api.feature.KeyPlace)
+feature.AddonFeature: method protected void addResetButton()
+feature.AddonFeature: method protected void iconName(java.lang.String)
+feature.AddonFeature: method protected void iconRgb(int)
+feature.AddonFeature: method protected void summary(java.lang.String)
+feature.AddonFeature: method void drawPreview(dev.tim1337.lumio.api.draw.Canvas, int, int, int, int)
+feature.AddonFeature: method void load(com.google.gson.JsonObject)
+feature.AddonFeature: method void setEnabled(boolean)
+feature.AddonPage: interface : dev.tim1337.lumio.api.feature.FeatureView
+feature.AddonPage: method abstract dev.tim1337.lumio.api.feature.AddonPage category(java.lang.String, dev.tim1337.lumio.api.feature.AddonFeature[])
+feature.AddonPage: method abstract dev.tim1337.lumio.api.feature.AddonPage lead(java.lang.String, dev.tim1337.lumio.api.setting.AddonSetting<?>[])
+feature.AddonPage: method abstract dev.tim1337.lumio.api.feature.AddonPage master(dev.tim1337.lumio.api.setting.Toggle)
+feature.AddonPage: method abstract dev.tim1337.lumio.api.feature.AddonPage overview()
+feature.AddonPage: method abstract dev.tim1337.lumio.api.feature.AddonPage page(java.lang.String, java.lang.String, int, java.lang.String, java.util.function.BooleanSupplier)
+feature.AddonPage: method abstract dev.tim1337.lumio.api.feature.AddonPage pageNote(java.lang.String, java.lang.String, java.lang.String)
+feature.AddonPage: method abstract java.util.List<? extends dev.tim1337.lumio.api.feature.AddonPage> subPages()
+feature.AddonPage: method static dev.tim1337.lumio.api.feature.AddonPage create(java.lang.String, java.lang.String, java.lang.String, int, java.lang.String)
+feature.AddonPanel$Anchor: enum
+feature.AddonPanel$Anchor: field static final dev.tim1337.lumio.api.feature.AddonPanel$Anchor CENTER
+feature.AddonPanel$Anchor: field static final dev.tim1337.lumio.api.feature.AddonPanel$Anchor LEFT
+feature.AddonPanel$Anchor: field static final dev.tim1337.lumio.api.feature.AddonPanel$Anchor RIGHT
+feature.AddonPanel$Anchor: method static dev.tim1337.lumio.api.feature.AddonPanel$Anchor valueOf(java.lang.String)
+feature.AddonPanel$Anchor: method static dev.tim1337.lumio.api.feature.AddonPanel$Anchor[] values()
+feature.AddonPanel: abstract class : dev.tim1337.lumio.api.feature.AddonFeature
+feature.AddonPanel: constructor(java.lang.String, java.lang.String, java.lang.String, boolean, dev.tim1337.lumio.api.feature.AddonPanel$Anchor, boolean, float, float)
+feature.AddonPanel: method abstract int panelHeight()
+feature.AddonPanel: method abstract int panelWidth()
+feature.AddonPanel: method abstract void drawPanel(dev.tim1337.lumio.api.draw.Canvas, net.minecraft.client.gui.GuiGraphicsExtractor, net.minecraft.client.Minecraft)
+feature.AddonPanel: method boolean hudShown()
+feature.AddonPanel: method boolean inEditorWhenHidden()
+feature.AddonPanel: method boolean selectedInEditor()
+feature.AddonPanel: method boolean shown(net.minecraft.client.Minecraft)
+feature.AddonPanel: method float hudRadius()
+feature.AddonPanel: method float hudScale()
+feature.AddonPanel: method int[] hudBounds()
+feature.AddonPanel: method protected <E extends java.lang.Enum<E>> void familyCard(java.lang.String, dev.tim1337.lumio.api.setting.Choice<E>, dev.tim1337.lumio.api.feature.PanelPicture<E>, java.util.List<? extends dev.tim1337.lumio.api.setting.Toggle>, java.lang.String, java.util.function.Supplier<java.util.List<dev.tim1337.lumio.api.feature.SettingGroup>>)
+feature.AddonPanel: method protected <E extends java.lang.Enum<E>> void offerModes(dev.tim1337.lumio.api.setting.Choice<E>)
+feature.AddonPanel: method protected boolean hasBackground()
+feature.AddonPanel: method protected boolean simulated()
+feature.AddonPanel: method protected float frameSeconds()
+feature.AddonPanel: method protected int accentArgb()
+feature.AddonPanel: method protected int cardWidth()
+feature.AddonPanel: method protected int contentTop()
+feature.AddonPanel: method protected int line(int)
+feature.AddonPanel: method protected void drawGlass(dev.tim1337.lumio.api.draw.Canvas, int, int, float)
+feature.AddonPanel: method protected void drawStack(net.minecraft.client.gui.GuiGraphicsExtractor, net.minecraft.client.Minecraft, net.minecraft.world.item.ItemStack, int, int, boolean)
+feature.AddonPanel: method protected void drawStack(net.minecraft.client.gui.GuiGraphicsExtractor, net.minecraft.client.Minecraft, net.minecraft.world.item.ItemStack, int, int, boolean, int, int, int, int)
+feature.AddonPanel: method protected void familyHeader(dev.tim1337.lumio.api.draw.Canvas, int, java.lang.String, int[], java.lang.String, java.lang.String, int, boolean)
+feature.AddonPanel: method protected void offerCardSize()
+feature.AddonPanel: method protected void offerHeader()
+feature.AddonPanel: method protected void offerNoBackground()
+feature.AddonPanel: method protected void part(java.lang.String, dev.tim1337.lumio.api.setting.Toggle, float, float, float, float)
+feature.AddonPanel: method protected void withoutHeader()
+feature.AddonPanel: method static protected net.minecraft.world.item.ItemStack itemIcon(net.minecraft.world.item.Item)
+feature.AddonPanel: method void prepare(net.minecraft.client.Minecraft)
+feature.AddonPanel: method void render(net.minecraft.client.gui.GuiGraphicsExtractor, net.minecraft.client.DeltaTracker)
+feature.FeatureView: interface
+feature.FeatureView: method abstract boolean isEnabled()
+feature.FeatureView: method abstract java.lang.String id()
+feature.FeatureView: method abstract java.lang.String nameText()
+feature.KeyPlace: enum
+feature.KeyPlace: field static final dev.tim1337.lumio.api.feature.KeyPlace SCREENS
+feature.KeyPlace: field static final dev.tim1337.lumio.api.feature.KeyPlace WORLD
+feature.KeyPlace: method static dev.tim1337.lumio.api.feature.KeyPlace valueOf(java.lang.String)
+feature.KeyPlace: method static dev.tim1337.lumio.api.feature.KeyPlace[] values()
+feature.PanelPicture: interface<E extends java.lang.Object> 
+feature.PanelPicture: method abstract void draw(dev.tim1337.lumio.api.draw.Canvas, E, int, int, int, int, int)
+feature.SettingGroup: constructor(java.lang.String, java.util.List<? extends dev.tim1337.lumio.api.setting.AddonSetting<?>>)
+feature.SettingGroup: method boolean equals(java.lang.Object)
+feature.SettingGroup: method int hashCode()
+feature.SettingGroup: method java.lang.String title()
+feature.SettingGroup: method java.lang.String toString()
+feature.SettingGroup: method java.util.List<? extends dev.tim1337.lumio.api.setting.AddonSetting<?>> settings()
+feature.SettingGroup: record
+setting.Action: interface : dev.tim1337.lumio.api.setting.AddonSetting<java.lang.Void>
+setting.Action: method abstract dev.tim1337.lumio.api.setting.Action confirm()
+setting.AddonSetting: interface<T extends java.lang.Object> 
+setting.AddonSetting: method abstract T get()
+setting.AddonSetting: method abstract java.lang.String key()
+setting.AddonSetting: method abstract java.lang.String labelText()
+setting.AddonSetting: method abstract net.minecraft.network.chat.Component label()
+setting.AddonSetting: method abstract void hideFromRecent()
+setting.AddonSetting: method abstract void reset()
+setting.AddonSetting: method abstract void set(T)
+setting.AddonSetting: method abstract void setDescription(java.lang.String)
+setting.AddonSetting: method abstract void under(dev.tim1337.lumio.api.setting.AddonSetting<?>, java.util.function.BooleanSupplier)
+setting.AddonSetting: method abstract void under(dev.tim1337.lumio.api.setting.Toggle)
+setting.AddonSetting: method abstract void visibleWhen(java.util.function.BooleanSupplier)
+setting.Choice$Style: enum
+setting.Choice$Style: field static final dev.tim1337.lumio.api.setting.Choice$Style DROPDOWN
+setting.Choice$Style: field static final dev.tim1337.lumio.api.setting.Choice$Style RADIO
+setting.Choice$Style: field static final dev.tim1337.lumio.api.setting.Choice$Style SEGMENTED
+setting.Choice$Style: method static dev.tim1337.lumio.api.setting.Choice$Style valueOf(java.lang.String)
+setting.Choice$Style: method static dev.tim1337.lumio.api.setting.Choice$Style[] values()
+setting.Choice: interface<E extends java.lang.Enum<E>>  : dev.tim1337.lumio.api.setting.AddonSetting<E>
+setting.Choice: method abstract java.util.List<E> choices()
+setting.Choice: method abstract net.minecraft.network.chat.Component nameOf(E)
+setting.ColorChoice: interface : dev.tim1337.lumio.api.setting.AddonSetting<java.lang.Integer>
+setting.ColorChoice: method abstract dev.tim1337.lumio.api.setting.ColorChoice followsMenu()
+setting.ColorChoice: method abstract dev.tim1337.lumio.api.setting.ColorChoice inRow(java.lang.String)
+setting.ColorChoice: method abstract dev.tim1337.lumio.api.setting.ColorChoice withOpacity(float)
+setting.ColorChoice: method abstract float opacity()
+setting.ColorChoice: method abstract int argb()
+setting.InfoLine: interface : dev.tim1337.lumio.api.setting.AddonSetting<java.lang.Void>
+setting.MultiToggle: interface : dev.tim1337.lumio.api.setting.AddonSetting<java.lang.Void>
+setting.MultiToggle: method abstract dev.tim1337.lumio.api.setting.MultiToggle asChips()
+setting.MultiToggle: method abstract java.util.List<? extends dev.tim1337.lumio.api.setting.Toggle> options()
+setting.OrderedChoice$Entry: constructor(java.lang.String, java.lang.String, java.lang.String, boolean)
+setting.OrderedChoice$Entry: constructor(java.lang.String, java.lang.String, java.lang.String, boolean, boolean)
+setting.OrderedChoice$Entry: method boolean equals(java.lang.Object)
+setting.OrderedChoice$Entry: method boolean onByDefault()
+setting.OrderedChoice$Entry: method boolean repeatable()
+setting.OrderedChoice$Entry: method int hashCode()
+setting.OrderedChoice$Entry: method java.lang.String icon()
+setting.OrderedChoice$Entry: method java.lang.String id()
+setting.OrderedChoice$Entry: method java.lang.String title()
+setting.OrderedChoice$Entry: method java.lang.String toString()
+setting.OrderedChoice$Entry: record
+setting.OrderedChoice: interface : dev.tim1337.lumio.api.setting.AddonSetting<java.lang.Void>
+setting.OrderedChoice: method abstract boolean isOn(java.lang.String)
+setting.OrderedChoice: method abstract dev.tim1337.lumio.api.setting.OrderedChoice defaultLayout(java.util.List<java.lang.String>)
+setting.OrderedChoice: method abstract java.util.List<java.lang.String> enabledInOrder()
+setting.OrderedChoice: method abstract java.util.List<java.lang.String> rows()
+setting.OrderedChoice: method abstract void insertBefore(java.lang.String, java.lang.String)
+setting.SettingFactory: interface
+setting.SettingFactory: method abstract <E extends java.lang.Enum<E>> dev.tim1337.lumio.api.setting.Choice<E> choice(java.lang.String, net.minecraft.network.chat.Component, E, java.util.function.Function<E, net.minecraft.network.chat.Component>)
+setting.SettingFactory: method abstract <E extends java.lang.Enum<E>> dev.tim1337.lumio.api.setting.Choice<E> choice(java.lang.String, net.minecraft.network.chat.Component, E, java.util.function.Function<E, net.minecraft.network.chat.Component>, dev.tim1337.lumio.api.setting.Choice$Style)
+setting.SettingFactory: method abstract <E extends java.lang.Enum<E>> dev.tim1337.lumio.api.setting.Choice<E> derivedChoice(java.lang.String, net.minecraft.network.chat.Component, E, java.util.function.Function<E, net.minecraft.network.chat.Component>, dev.tim1337.lumio.api.setting.Choice$Style, java.util.function.Supplier<E>, java.util.function.Consumer<E>)
+setting.SettingFactory: method abstract dev.tim1337.lumio.api.setting.Action action(java.lang.String, net.minecraft.network.chat.Component, net.minecraft.network.chat.Component, boolean, java.lang.Runnable)
+setting.SettingFactory: method abstract dev.tim1337.lumio.api.setting.ColorChoice color(java.lang.String, net.minecraft.network.chat.Component, int)
+setting.SettingFactory: method abstract dev.tim1337.lumio.api.setting.InfoLine info(java.lang.String, net.minecraft.network.chat.Component, java.util.function.Supplier<java.lang.String>)
+setting.SettingFactory: method abstract dev.tim1337.lumio.api.setting.MultiToggle multi(java.lang.String, net.minecraft.network.chat.Component, java.util.List<? extends dev.tim1337.lumio.api.setting.Toggle>)
+setting.SettingFactory: method abstract dev.tim1337.lumio.api.setting.OrderedChoice ordered(java.lang.String, net.minecraft.network.chat.Component, java.util.List<dev.tim1337.lumio.api.setting.OrderedChoice$Entry>)
+setting.SettingFactory: method abstract dev.tim1337.lumio.api.setting.Slider slider(java.lang.String, net.minecraft.network.chat.Component, float, float, float, int)
+setting.SettingFactory: method abstract dev.tim1337.lumio.api.setting.TextInput text(java.lang.String, net.minecraft.network.chat.Component, java.lang.String, boolean)
+setting.SettingFactory: method abstract dev.tim1337.lumio.api.setting.Toggle toggle(java.lang.String, net.minecraft.network.chat.Component, boolean)
+setting.SettingFactory: method abstract dev.tim1337.lumio.api.setting.Toggle toggle(java.lang.String, net.minecraft.network.chat.Component, boolean, dev.tim1337.lumio.api.setting.Toggle$Style)
+setting.Slider: interface : dev.tim1337.lumio.api.setting.AddonSetting<java.lang.Float>
+setting.Slider: method abstract dev.tim1337.lumio.api.setting.Slider coins()
+setting.Slider: method abstract dev.tim1337.lumio.api.setting.Slider logarithmic()
+setting.Slider: method abstract dev.tim1337.lumio.api.setting.Slider percent()
+setting.Slider: method abstract dev.tim1337.lumio.api.setting.Slider snapTo(float[])
+setting.Slider: method abstract dev.tim1337.lumio.api.setting.Slider step(float)
+setting.Slider: method abstract float max()
+setting.Slider: method abstract float min()
+setting.Slider: method abstract java.lang.String format(float)
+setting.TextInput: interface : dev.tim1337.lumio.api.setting.AddonSetting<java.lang.String>
+setting.TextInput: method abstract dev.tim1337.lumio.api.setting.TextInput cleaned(java.util.function.UnaryOperator<java.lang.String>)
+setting.Toggle$Style: enum
+setting.Toggle$Style: field static final dev.tim1337.lumio.api.setting.Toggle$Style CHECKBOX
+setting.Toggle$Style: field static final dev.tim1337.lumio.api.setting.Toggle$Style SWITCH
+setting.Toggle$Style: method static dev.tim1337.lumio.api.setting.Toggle$Style valueOf(java.lang.String)
+setting.Toggle$Style: method static dev.tim1337.lumio.api.setting.Toggle$Style[] values()
+setting.Toggle: interface : dev.tim1337.lumio.api.setting.AddonSetting<java.lang.Boolean>

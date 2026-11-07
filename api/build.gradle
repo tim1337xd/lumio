@@ -1,0 +1,66 @@
+// The add-on API (see API.md) as a small Fabric mod of its own, mod id lumio-api. Lumio ships it as a nested jar; add-ons
+// compile against it (published with ./gradlew publishToMavenLocal). Its version is LumioApi.VERSION, separate from the mod's.
+plugins {
+	id 'net.fabricmc.fabric-loom'
+	id 'maven-publish'
+}
+
+apply from: rootProject.file('mc.gradle')
+
+def apiSource = file('src/main/java/dev/tim1337/lumio/api/LumioApi.java')
+version = (apiSource.getText('UTF-8') =~ /VERSION = "([^"]+)"/)[0][1]
+group = project.group
+
+base {
+	archivesName = 'lumio-api'
+}
+
+dependencies {
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+	// for the HUD and world rendering types in its signatures; Lumio brings Fabric API at runtime
+	compileOnly "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+}
+
+processResources {
+	def version = project.version
+	inputs.property "version", version
+	filesMatching("fabric.mod.json") {
+		expand "version": version
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = 25
+}
+
+java {
+	withSourcesJar()
+	sourceCompatibility = JavaVersion.VERSION_25
+	targetCompatibility = JavaVersion.VERSION_25
+}
+
+jar {
+	from(rootProject.file("LICENSE")) {
+		rename { "${it}_lumio-api" }
+	}
+}
+
+publishing {
+	publications {
+		create("mavenJava", MavenPublication) {
+			artifactId = "lumio-api${project.mcArtifactSuffix}"
+			from components.java
+			pom {
+				licenses {
+					license {
+						name = 'GPL-3.0-only'
+						url = 'https://www.gnu.org/licenses/gpl-3.0.html'
+					}
+				}
+			}
+		}
+	}
+}
+
+mcPrepareSources()

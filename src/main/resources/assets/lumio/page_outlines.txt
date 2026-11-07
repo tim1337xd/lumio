@@ -1,0 +1,353 @@
+# How the pages are laid out: features | Main or Advanced | group | key | name. See PageOutline. The saved keys stay; only rows and names move.
+
+# Chat, its own page in the sidebar
+chat | Main | Look | background
+chat | Main | Look | width_mode | Width
+chat | Main | Look | width | Fixed width
+chat | Main | Look | max_width
+chat | Main | Look | height_lines | Height
+chat | Main | Look | chat_size | Text size
+chat | Main | Added | clock | Time
+chat | Main | Added | heads | Player heads
+chat | Main | Added | stripe
+chat | Main | Added | highlight | Highlight my name
+chat | Main | Added | compact | Collapse repeats (x2)
+chat | Main | Tabs | tabs
+chat | Main | Tabs | tab_order | Tabs
+chat | Advanced | Look | line_spacing
+chat | Advanced | Look | fade_after
+chat | Advanced | Added | seconds
+chat | Advanced | Added | stripe_party
+chat | Advanced | Added | stripe_guild
+chat | Advanced | Added | stripe_private
+chat | Advanced | Added | highlight_words
+chat | Advanced | Added | hover_actions | Copy and Reply
+chat | Advanced | Added | links
+chat | Advanced | Added | copy | Right-click copies
+chat | Advanced | Tabs | accent
+chat | Advanced | Tabs | glow
+chat | Advanced | Tabs | history
+chat | Advanced | Tabs | search | Search
+chat | Advanced | Tabs | own_tabs
+chat | Advanced | Tabs | tabs_size
+
+# Status bars
+status_bars | Main | Bars | bars_row
+status_bars | Main | Numbers | text_size
+status_bars | Main | Numbers | maximum | Show the maximum
+status_bars | Main | General | hide_vanilla | Hide the game's bars
+status_bars | Main | General | low_health_edge | Low health edge
+status_bars | Main | Appearance | look_row
+status_bars | Advanced | Shows | show_defense
+status_bars | Advanced | Shows | show_absorption
+status_bars | Advanced | Shows | show_overflow_mana
+status_bars | Advanced | Numbers | separators
+status_bars | Advanced | Numbers | fuel_percent | Drill fuel in percent
+status_bars | Advanced | Numbers | extra_mode
+status_bars | Advanced | General | skyblock_health
+status_bars | Advanced | Layout | stack_width_mode
+status_bars | Advanced | Layout | stack_width
+status_bars | Advanced | Colors | health_color
+status_bars | Advanced | Colors | mana_color
+status_bars | Advanced | Colors | food_color
+status_bars | Advanced | Colors | air_color
+status_bars | Advanced | Colors | vitality_color
+status_bars | Advanced | Colors | fuel_color
+status_bars | Advanced | Colors | arrows_color
+status_bars | Advanced | Colors | speed_color
+status_bars | Advanced | Colors | xp_color
+status_bars | Advanced | Colors | absorption_color
+status_bars | Advanced | Colors | overflow_color
+
+# Scoreboard
+scoreboard_hud | Main | Look | style | Style
+scoreboard_hud | Main | Shows | show_title
+scoreboard_hud | Main | Shows | show_address
+scoreboard_hud | Main | Shows | show_scores
+scoreboard_hud | Main | Size | max_rows
+scoreboard_hud | Main | Size | max_width
+scoreboard_hud | Main | Lines | lines_row
+scoreboard_hud | Main | Lines | lines_chips
+scoreboard_hud | Main | Appearance | look_row
+
+# Main menu
+menus | Main | Main menu | main_menu | Style
+menus | Main | Main menu | song_card
+menus | Main | Main menu | cards
+menus | Main | Main menu | menu_lyrics
+menus | Main | Main menu | buttons
+menus | Main | Startup | startup_animation
+menus | Main | Startup | loading_style
+menus | Main | Background | shader_background | Animated world
+menus | Main | Background | world_season
+menus | Main | Background | follow_time
+menus | Main | Background | world_quality
+menus | Main | Servers | keep_server_packs_row | Keep server packs
+menus | Advanced | Main menu | list_style
+menus | Advanced | Main menu | song_cover
+menus | Advanced | Background | background_style
+menus | Advanced | Background | stars_color
+menus | Advanced | Background | stars_pulse
+menus | Advanced | Background | stars_size
+menus | Advanced | Background | stars_count
+menus | Advanced | Background | background_speed | Speed
+menus | Advanced | Menu world | world_lights
+menus | Advanced | Menu world | world_stars
+
+# Sky
+sky | Main | Look | style
+sky | Main | Look | cloud_colors
+sky | Main | Look | cloud_color_row
+sky | Main | Look | aurora_colors
+sky | Main | Look | aurora_color_row
+sky | Main | Look | aurora_speed | Speed
+sky | Main | Look | star_colors
+sky | Main | Look | star_color_row
+sky | Main | Look | cloud_cover
+sky | Main | Look | weather_look
+sky | Main | Look | cloud_height
+sky | Main | Look | cloud_light
+sky | Main | Look | weather_follows
+sky | Main | Look | lightning_when
+sky | Main | Look | star_density | Amount
+sky | Main | Look | star_speed | Speed
+sky | Main | Look | star_trail
+sky | Main | Look | fly_bys
+sky | Main | Look | when
+sky | Main | Look | brightness
+sky | Main | Look | quality
+sky | Main | Show | show_sun
+sky | Main | Show | show_moon
+sky | Main | Show | show_stars
+sky | Advanced | Clouds: amount and shape | cover_again
+sky | Advanced | Clouds: amount and shape | height_again
+sky | Advanced | Clouds: amount and shape | gaps
+sky | Advanced | Clouds: amount and shape | gap_size
+sky | Advanced | Clouds: amount and shape | cloud_size
+sky | Advanced | Clouds: amount and shape | puffiness
+sky | Advanced | Clouds: layer and motion | height_offset
+sky | Advanced | Clouds: layer and motion | thickness
+sky | Advanced | Clouds: layer and motion | cloud_speed
+sky | Advanced | Clouds: layer and motion | wind
+sky | Advanced | Clouds: light | light_again
+sky | Advanced | Clouds: light | weather_again
+sky | Advanced | Clouds: light | lightning_again
+sky | Advanced | Clouds: light | lightning_often
+sky | Advanced | Clouds: light | shadow_strength
+sky | Advanced | Clouds: light | sunset_glow
+sky | Advanced | Clouds: light | rain_darkness
+sky | Advanced | Aurora | aurora_brightness_again
+sky | Advanced | Stars | star_amount_again
+sky | Advanced | Stars | star_speed_again
+sky | Advanced | Stars | star_trail_again
+sky | Advanced | Stars | fly_bys_again
+sky | Advanced | Stars | star_brightness_again
+
+# Weather
+ambience | Main | Look | mode
+ambience | Main | Look | intensity
+ambience | Main | Look | particle_size
+ambience | Main | Rain | wet_ground
+ambience | Main | Rain | wet_strength
+ambience | Main | Rain | reflection_distance
+ambience | Advanced | Fireflies | firefly_color
+ambience | Advanced | Fireflies | firefly_blink | Blinking
+ambience | Advanced | Fireflies | firefly_brightness | Brightness
+ambience | Advanced | Fireflies | firefly_amount | Amount
+ambience | Advanced | Fireflies | fireflies_anywhere
+
+# Arrow trails
+arrow_trails | Main | Show on | on_arrows
+arrow_trails | Main | Show on | on_pearls
+arrow_trails | Main | Show on | others
+arrow_trails | Main | Show on | impact_burst
+arrow_trails | Main | Show on | pearl_rift
+arrow_trails | Main | Look | style
+arrow_trails | Main | Look | color_source
+arrow_trails | Main | Look | color
+arrow_trails | Main | Look | length
+arrow_trails | Main | Look | width
+arrow_trails | Advanced | Arrows | arrow_style
+arrow_trails | Advanced | Arrows | arrow_colors
+arrow_trails | Advanced | Arrows | arrow_color
+arrow_trails | Advanced | Ender pearls | pearl_style
+arrow_trails | Advanced | Ender pearls | pearl_colors
+arrow_trails | Advanced | Ender pearls | pearl_color
+arrow_trails | Advanced | All trails | fade_time
+arrow_trails | Advanced | All trails | max_arrows
+arrow_trails | Advanced | All trails | range
+
+# Walk effects
+walk_effects | Main | Effect | style | Style
+walk_effects | Main | Effect | color
+walk_effects | Main | Effect | reach
+walk_effects | Main | Effect | intensity
+walk_effects | Main | When | trigger | Show on
+walk_effects | Main | When | sprint_only
+walk_effects | Advanced | General | glow
+
+# Swing trail
+
+# Held item outline
+held_item_outline | Main | Look | mode
+held_item_outline | Main | Look | echo_length
+held_item_outline | Main | Look | color_source
+held_item_outline | Main | Look | color
+held_item_outline | Main | Look | glow_strength
+held_item_outline | Main | Look | width
+held_item_outline | Main | Where | arm_first_person
+held_item_outline | Main | Where | shows_on
+held_item_outline | Main | Where | affects | Chosen
+held_item_outline | Advanced | Echo | echo_shimmer
+
+# Held item
+held_item_transform | Main | Size | size
+held_item_transform | Main | Size | size_x
+held_item_transform | Main | Size | size_y
+held_item_transform | Main | Size | size_z
+held_item_transform | Main | Size | show_hand
+held_item_transform | Main | Motion | swing_look
+held_item_transform | Main | Motion | swing_rate
+held_item_transform | Main | Motion | equip_animation
+held_item_transform | Advanced | Swing | ignore_haste
+
+# Block overlay
+block_overlay | Main | Look | mode
+block_overlay | Main | Look | color_source
+block_overlay | Main | Look | color
+block_overlay | Main | Look | line_width
+block_overlay | Main | Look | fill_opacity
+block_overlay | Main | Look | shader_speed
+block_overlay | Main | While mining | show_breaking
+block_overlay | Main | While mining | break_pulse
+block_overlay | Main | Shape | full_block
+
+# Cinematic camera
+cinematic_camera | Main | Film | mode
+cinematic_camera | Main | Film | pace
+cinematic_camera | Advanced | Cuts and starting | cut_on_beat
+cinematic_camera | Advanced | Cuts and starting | smooth_instrumental
+cinematic_camera | Main | Start | start_after
+cinematic_camera | Main | Start | stop_on_move | Stop when I move
+cinematic_camera | Main | Look | letterbox
+cinematic_camera | Main | Look | song_info_row
+cinematic_camera | Advanced | Look | vignette
+cinematic_camera | Main | Look | world_lyrics
+cinematic_camera | Main | Look | hide_hud
+cinematic_camera | Main | Look | handheld
+cinematic_camera | Main | Film | shots
+cinematic_camera | Main | Film | server_note
+cinematic_camera | Advanced | Keys | key.lumio.cinematic_toggle
+cinematic_camera | Advanced | Keys | key.lumio.cinematic_leave
+cinematic_camera | Advanced | Keys | key.lumio.cinematic_next
+cinematic_camera | Advanced | Keys | key.lumio.cinematic_hold
+cinematic_camera | Advanced | Keys | key.lumio.cinematic_lyrics
+
+# Hotbar
+hotbar | Main | Look | look | Style
+hotbar | Main | Look | separators
+hotbar | Main | Look | slot_boxes
+hotbar | Main | Look | numbers
+hotbar | Main | Items | item_counts
+hotbar | Main | Items | durability
+hotbar | Main | Items | cooldowns
+hotbar | Main | Items | selected_glow
+hotbar | Main | Moving | offhand_side | Offhand
+hotbar | Main | Moving | scroll_animation
+hotbar | Main | Moving | lift | Raise selected
+hotbar | Main | Item name | item_name
+hotbar | Main | Item name | tidy_name
+hotbar | Main | Item name | name_style
+hotbar | Main | Item name | name_glow
+hotbar | Main | Appearance | look_row
+
+# Text above the hotbar
+action_bar_hud | Main | Text | seconds | Duration
+action_bar_hud | Main | Text | font
+action_bar_hud | Main | Hide | hide_parts | Hide what the bars show
+action_bar_hud | Main | Hide | remove_what
+action_bar_hud | Main | Appearance | look_row
+
+# Info bar
+info_bar | Main | Bar | style
+info_bar | Main | Bar | preview
+info_bar | Main | Segments | segments | Segments
+info_bar | Main | Song | song_size
+info_bar | Main | Appearance | look_row
+info_bar | Advanced | Song | song_width | Exact width
+
+# Boss bars
+boss_bars | Main | Look | look
+boss_bars | Main | Shows | show_name | Name
+boss_bars | Advanced | General | font
+boss_bars | Main | Shows | show_percent | In percent
+boss_bars | Main | Look | boss_color
+boss_bars | Main | Look | bar_width | Width
+boss_bars | Main | Look | bar_height | Height
+boss_bars | Main | Shows | most
+boss_bars | Main | Appearance | look_row
+
+# Armor
+armor_hud | Main | Look | direction
+armor_hud | Main | Durability | wear
+armor_hud | Main | Durability | percent | In percent
+armor_hud | Main | Game | hide_vanilla | Hide the game's bar
+armor_hud | Main | Look | dividers
+armor_hud | Main | Look | empty_slots
+armor_hud | Main | Appearance | look_row
+
+# Inventory panel
+inventory_hud | Main | Items | decorations | Counts and durability
+inventory_hud | Main | Items | empty_slots
+inventory_hud | Main | Items | width
+inventory_hud | Main | Appearance | look_row
+
+# Player list
+tab_list_hud | Main | Shows | show_heads
+tab_list_hud | Main | Shows | show_tags
+tab_list_hud | Main | Shows | show_ping
+tab_list_hud | Main | Shows | header_footer
+tab_list_hud | Main | Shows | info_cards
+tab_list_hud | Main | Shows | show_scores
+tab_list_hud | Main | General | ping_number
+tab_list_hud | Main | General | mark_self | Highlight me
+tab_list_hud | Advanced | General | column_width | Column width
+tab_list_hud | Advanced | Panel | width
+tab_list_hud | Main | Appearance | look_row
+
+# Inventory screen
+inventory_screen | Main | Screen | hide_off_hand
+inventory_screen | Main | Screen | hide_recipe_book
+inventory_screen | Main | Screen | effects
+inventory_screen | Main | Screen | chests | Also on chests
+inventory_screen | Advanced | General | glow
+
+# Item tooltips
+item_tooltips | Main | Look | frame
+item_tooltips | Main | Look | size
+item_tooltips | Main | Look | scroll | Scroll long ones
+item_tooltips | Main | Added info | added_place
+item_tooltips | Main | Added info | added_show | Show
+
+# Notifications
+notifications | Main | Sound | sound
+notifications | Main | Sound | volume
+notifications | Main | Sound | error_sound
+notifications | Main | Time | seconds
+notifications | Advanced | General | scale
+notifications | Advanced | General | glow
+notifications | Main | Place | edit_place | Where they show
+notifications | Main | Place | test | Try it
+notifications | Advanced | Reset | reset_place | Reset place
+
+# Keybinds, its own page in the sidebar
+command_keybinds | Main | Keybinds | binds
+command_keybinds | Main | Keybinds | notice | Show the command
+command_keybinds | Main | Module keys | module_keys
+
+# Developer: shown from About while the debug switch is on
+debug_log | Developer | Developer | record_profile | Record a profile
+debug_log | Developer | Developer | log_colored
+debug_log | Developer | Developer | swing_trace
+
+# Pages that stay as they are, and only take new names

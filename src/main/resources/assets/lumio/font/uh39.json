@@ -1,0 +1,1 @@
+{"providers":[{"type":"ttf","file":"lumio:inter_bold.ttf","size":92.625,"oversample":1.0,"shift":[0.0,61]},{"type":"bitmap","file":"lumio:font/symbols/32.png","ascent":10,"height":75,"chars":["\u23e3\u263d\u2601\u2602\u2744\u2726\u2694\u1805\u2e15\u2748\u2741\u2618\u2727\u269a\u2672\u0d60\u26c3\u2afd\u272f\u23e2\u3020"]},{"type":"reference","id":"minecraft:default"}]}

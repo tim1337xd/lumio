@@ -1,0 +1,44 @@
+# Builds the mod and runs the unit tests for each Minecraft version, on every push and release tag. Game tests are local only.
+name: build
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+# The workflow only reads the repository, whatever the repository's own default is.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - minecraft: "26.2"
+            arguments: ""
+            jars: build/libs/
+          - minecraft: "26.3"
+            arguments: "-Pmc=26.3"
+            jars: build/mc-26.3/libs/
+    name: Minecraft ${{ matrix.minecraft }}
+    steps:
+      - name: checkout repository
+        uses: actions/checkout@v6
+      - name: validate gradle wrapper
+        uses: gradle/actions/wrapper-validation@v6
+      - name: setup jdk
+        uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: 'microsoft'
+      - name: make gradle wrapper executable
+        run: chmod +x ./gradlew
+      - name: build and test
+        run: ./gradlew build ${{ matrix.arguments }}
+      - name: capture build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: lumio-mc${{ matrix.minecraft }}
+          path: ${{ matrix.jars }}

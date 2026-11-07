@@ -1,0 +1,11 @@
+## 1.0.0 Beta
++ 3D clouds, aurora and shooting stars that never jump
++ Fireflies at night, rain with wet ground
++ Trails, a glow on the held item, its size, a block overlay
++ A redesigned HUD you arrange in a visual editor
++ New menus, tidy settings and four themes
++ A calm chat with smooth scrolling; tooltips that only add
++ Now playing with live lyrics in the bar, players and world
++ A cinematic camera: a calm music video of your world
++ Keybinds, shared configs and presets
++ Add-ons such as Hypixel SkyBlock; Minecraft 26.2 and 26.3

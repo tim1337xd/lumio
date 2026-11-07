@@ -1,0 +1,12 @@
+{
+	"key.category.lumio.music": "Lumio: Music",
+	"key.category.lumio.cinematic": "Lumio: Camera",
+	"key.lumio.cinematic_leave": "Leave the cinematic camera",
+	"key.lumio.cinematic_lyrics": "Cinematic camera: lyrics on or off",
+	"key.lumio.cinematic_next": "Cinematic camera: next shot",
+	"key.lumio.cinematic_hold": "Cinematic camera: hold the shot",
+	"key.lumio.cinematic_toggle": "Cinematic camera",
+	"key.lumio.music_play_pause": "Play / pause",
+	"key.lumio.music_next": "Next song",
+	"key.lumio.music_previous": "Previous song"
+}

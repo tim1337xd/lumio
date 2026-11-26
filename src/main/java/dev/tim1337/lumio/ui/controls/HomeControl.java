@@ -6,6 +6,7 @@ import dev.tim1337.lumio.api.experimental.draw.SystemColors;
 import dev.tim1337.lumio.api.experimental.draw.TextScale;
 import dev.tim1337.lumio.config.Feature;
 import dev.tim1337.lumio.config.FeatureManager;
+import dev.tim1337.lumio.features.music.MusicFeature;
 import dev.tim1337.lumio.features.music.MusicService;
 import dev.tim1337.lumio.menu.ConfigsFeature;
 import dev.tim1337.lumio.ui.Control;
@@ -19,7 +20,7 @@ import net.minecraft.client.Minecraft;
  * the world features as quick switches elsewhere), the song that plays, and the settings changed last, which lead to where they are. The
  * texts that change are built once per second, not every frame.
  */
-public class HomeControl extends Control {
+public final class HomeControl extends Control {
 	private static final int TILE_HEIGHT = 40;
 	private static final int TILES = 4;
 	private static final int GAP = 8;
@@ -50,6 +51,9 @@ public class HomeControl extends Control {
 	private final RecentChangesCard changes;
 	// the song
 	private String songSource = "";
+	/** Shorter forms of the source line, tried in turn where the whole line does not fit, so it is shortened, never cut: the source alone, without
+	 * its detail in brackets, and its first word. */
+	private final String[] songSourceShorter = new String[3];
 	/** How the lyrics are synced, with and without where they come from, for the chip on the song card. */
 	private String lyricsChip = "";
 	private String lyricsChipShort = "";
@@ -78,8 +82,17 @@ public class HomeControl extends Control {
 		return true;
 	}
 
+	/** Narrower than this, as with a sheet open beside it, the page is one column: two would leave each too little room for its names. */
+	private static final int ONE_COLUMN_BELOW = 560;
+	/** The height of the left column, from the last measure. */
+	private int leftHeight;
+
+	private boolean oneColumn() {
+		return width < ONE_COLUMN_BELOW;
+	}
+
 	private int columnWidth() {
-		return (width - GAP) / 2;
+		return oneColumn() ? width : (width - GAP) / 2;
 	}
 
 	private int columnsTop() {
@@ -90,9 +103,9 @@ public class HomeControl extends Control {
 	protected int measure(Ui ui, int width) {
 		this.width = width;
 		refresh(false);
-		int left = island.height(ui, columnWidth());
+		leftHeight = island.height(ui, columnWidth());
 		int right = NOW_HEIGHT + GAP + changes.height();
-		return TILE_HEIGHT + 12 + Math.max(left, right);
+		return TILE_HEIGHT + 12 + (oneColumn() ? leftHeight + GAP + right : Math.max(leftHeight, right));
 	}
 
 	/** Reads what the page shows: once per second, or at once when the page opens. */
@@ -128,11 +141,30 @@ public class HomeControl extends Control {
 			fps = nowFps;
 			fpsText = String.valueOf(nowFps);
 		}
-		songSource = "Now playing  ·  " + MusicService.sourceDescription();
+		String source = MusicService.sourceDescription();
+		songSource = "Now playing  ·  " + source;
+		int bracket = source.indexOf(" (");
+		int space = source.indexOf(' ');
+		songSourceShorter[0] = source;
+		songSourceShorter[1] = bracket > 0 ? source.substring(0, bracket) : source;
+		songSourceShorter[2] = space > 0 ? source.substring(0, space) : source;
 		lyricsChip = MusicService.lyricsChip(true);
 		lyricsChipShort = MusicService.lyricsChip(false);
 		changes.refresh(true);
 		pickArea();
+	}
+
+	/** @return the source line in the longest form that fits its room whole; the shortest form at last */
+	private String sourceLine(Ui ui, int room) {
+		if (ui.widthScaled(songSource, TextScale.SMALL) <= room) {
+			return songSource;
+		}
+		for (String shorter : songSourceShorter) {
+			if (shorter != null && ui.widthScaled(shorter, TextScale.SMALL) <= room) {
+				return shorter;
+			}
+		}
+		return songSourceShorter[2] == null ? "" : songSourceShorter[2];
 	}
 
 	/** Chooses the features to show: those of the island the player is on, or the world features as quick switches. */
@@ -147,9 +179,12 @@ public class HomeControl extends Control {
 		drawTiles(ui);
 		int top = columnsTop();
 		drawArea(ui, mouseX, mouseY, x, top, columnWidth());
-		int rightX = x + columnWidth() + GAP;
-		drawSong(ui, rightX, top, width - columnWidth() - GAP);
-		changes.draw(ui, mouseX, mouseY, rightX, top + NOW_HEIGHT + GAP, width - columnWidth() - GAP);
+		// the song and the recent changes: beside the features, or under them in one column
+		int rightX = oneColumn() ? x : x + columnWidth() + GAP;
+		int rightTop = oneColumn() ? top + leftHeight + GAP : top;
+		int rightWidth = oneColumn() ? width : width - columnWidth() - GAP;
+		drawSong(ui, rightX, rightTop, rightWidth);
+		changes.draw(ui, mouseX, mouseY, rightX, rightTop + NOW_HEIGHT + GAP, rightWidth);
 	}
 
 	/** Draws the four status tiles: features on, the config in use, the theme and the frame rate. */
@@ -211,7 +246,7 @@ public class HomeControl extends Control {
 			ui.chip(chip, sx + songWidth - PAD - chipWidth, sy + 13);
 		}
 		int sourceRoom = room - (chipWidth > 0 ? chipWidth + 6 : 0);
-		ui.textAtScaled(ui.fitScaled(songSource, sourceRoom, TextScale.SMALL), textX, sy + 10, TextScale.SMALL, Ui.mix(palette.textSecondary(), accent, 0.4f));
+		ui.textAtScaled(sourceLine(ui, sourceRoom), textX, sy + 10, TextScale.SMALL, Ui.mix(palette.textSecondary(), accent, 0.4f));
 		ui.textAtScaledBold(ui.fit(track.title(), room), textX, sy + 21, 1f, palette.text());
 		ui.text(ui.fit(track.artist(), room), textX, sy + 33, palette.textSecondary());
 		String line = MusicService.lyricAt(MusicService.position());
@@ -223,8 +258,8 @@ public class HomeControl extends Control {
 		long second = position / 1000;
 		if (second != shownSecond) {
 			shownSecond = second;
-			elapsed = time(position);
-			total = time(track.durationMs());
+			elapsed = MusicFeature.clock(position);
+			total = MusicFeature.clock(track.durationMs());
 		}
 		int barY = sy + NOW_HEIGHT - 14;
 		int timeWidth = ui.width(total);
@@ -234,12 +269,6 @@ public class HomeControl extends Control {
 		ui.rounded(barX, barY, barWidth, 3, Radius.pill(3), palette.trackOff());
 		ui.rounded(barX, barY, Math.round(barWidth * Math.min(1f, position / (float) length)), 3, Radius.pill(3), palette.text());
 		ui.textAtScaled(total, barX + barWidth + 6, barY - 3, TextScale.SMALL, palette.textSecondary());
-	}
-
-	private static String time(long millis) {
-		long seconds = Math.max(0, millis / 1000);
-		long rest = seconds % 60;
-		return seconds / 60 + (rest < 10 ? ":0" : ":") + rest;
 	}
 
 	@Override

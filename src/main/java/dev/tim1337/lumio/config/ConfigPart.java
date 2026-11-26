@@ -38,6 +38,9 @@ public enum ConfigPart {
 		this.label = label;
 	}
 
+	/** The HUD positions that have no anchor (the music window's top left): the only ones a config from another screen moves with its size. */
+	public static final Set<String> UNANCHORED_KEYS = Set.of("window_x", "window_y");
+
 	public static Set<ConfigPart> all() {
 		return EnumSet.allOf(ConfigPart.class);
 	}

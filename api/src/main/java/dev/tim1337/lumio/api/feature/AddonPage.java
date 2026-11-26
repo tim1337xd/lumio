@@ -35,6 +35,36 @@ public interface AddonPage extends FeatureView {
 	/** Shows the page as an overview: its lead settings and the category pages as tiles. @return this */
 	AddonPage overview();
 
+	/**
+	 * Flags a category of the page as work in progress: its tab gets a small tag after its name, a note stands at the top of it ("These
+	 * features are still being tested ...", with a button to where problems are reported), and each of its features gets the tag in the lists
+	 * and the search results. Only tags and the note: nothing about the features changes. Take the call out to take them away.
+	 *
+	 * @return this
+	 * @since 1.22.0
+	 */
+	default AddonPage workInProgress(String category) {
+		return this;
+	}
+
+	/** Shows the page's categories as tabs, one at a time, however few settings it has. @return this */
+	default AddonPage tabbed() {
+		return this;
+	}
+
+	/**
+	 * Lists this page under another one in the sidebar, after its category pages, such as a page of its own that belongs to the SkyBlock page.
+	 * Called before the parent's category pages are first asked for. @return this
+	 */
+	default AddonPage under(AddonPage parent) {
+		return this;
+	}
+
+	/** Shows a "You are in ..." chip in the page's header while the player is where its features are used (checked now and then). @return this */
+	default AddonPage here(BooleanSupplier current) {
+		return this;
+	}
+
 	/** @return the category pages made by {@link #page} */
 	List<? extends AddonPage> subPages();
 }

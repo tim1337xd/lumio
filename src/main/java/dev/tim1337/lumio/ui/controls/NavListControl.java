@@ -14,7 +14,7 @@ import java.util.List;
  * The rows of an overview in one card: per row an icon tile, the name, the value in gray with a status dot where it has one, and a chevron; the
  * whole row opens its sub-page. The values are read twice a second, not every frame. A line under the card says what the rows do.
  */
-public class NavListControl extends Control {
+public final class NavListControl extends Control {
 	private static final int ROW = 34;
 	private static final int PAD = 10;
 	private static final int ICON_TILE = 20;
@@ -29,9 +29,9 @@ public class NavListControl extends Control {
 	private static final long VALUE_REFRESH_MILLIS = 500L;
 
 	private final NavListSetting setting;
-	private final List<NavListSetting.Item> items;
-	private final String[] values;
-	private final int[] dots;
+	private List<NavListSetting.Item> items;
+	private String[] values;
+	private int[] dots;
 	private long readAt;
 	/** The note under the card, wrapped when measured for its width. */
 	private List<String> noteLines = List.of();
@@ -39,9 +39,17 @@ public class NavListControl extends Control {
 
 	public NavListControl(NavListSetting setting) {
 		this.setting = setting;
-		this.items = setting.items();
-		this.values = new String[items.size()];
-		this.dots = new int[items.size()];
+		follow();
+	}
+
+	/** Takes the rows that show now: what their sub-pages hold follows what is set. */
+	private void follow() {
+		List<NavListSetting.Item> now = setting.items();
+		if (!now.equals(items)) {
+			items = now;
+			values = new String[now.size()];
+			dots = new int[now.size()];
+		}
 	}
 
 	@Override
@@ -61,6 +69,7 @@ public class NavListControl extends Control {
 
 	@Override
 	protected int measure(Ui ui, int width) {
+		follow();
 		if (setting.note() != null && width != noteWidth) {
 			noteWidth = width;
 			noteLines = ui.wrapScaled(setting.note(), width - 8, TextScale.SMALL, NOTE_LINES);
@@ -70,7 +79,7 @@ public class NavListControl extends Control {
 
 	private void readValues() {
 		long now = System.currentTimeMillis();
-		if (values[0] != null && now - readAt < VALUE_REFRESH_MILLIS) {
+		if (values.length > 0 && values[0] != null && now - readAt < VALUE_REFRESH_MILLIS) {
 			return;
 		}
 		readAt = now;
@@ -83,6 +92,7 @@ public class NavListControl extends Control {
 
 	@Override
 	public void render(Ui ui, int mouseX, int mouseY) {
+		follow();
 		readValues();
 		Palette palette = ui.palette;
 		int cardHeight = items.size() * ROW;

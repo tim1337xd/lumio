@@ -20,6 +20,7 @@ public class SearchHitSetting extends Setting<Void> {
 	private final Runnable flip;
 	private String icon;
 	private int iconRgb;
+	private boolean workInProgress;
 
 	public SearchHitSetting(String key, Component label, String path, Runnable open) {
 		this(key, label, path, open, null, null);
@@ -44,6 +45,12 @@ public class SearchHitSetting extends Setting<Void> {
 		return this;
 	}
 
+	/** Marks the result as a feature still being tested: the "Work in progress" tag stands before its location. */
+	public SearchHitSetting workInProgress(boolean flagged) {
+		workInProgress = flagged;
+		return this;
+	}
+
 	/** @return the icon in front of the result, or null */
 	public String icon() {
 		return icon;
@@ -64,6 +71,6 @@ public class SearchHitSetting extends Setting<Void> {
 
 	@Override
 	public Control createControl(Runnable onChanged) {
-		return new SearchHitControl(path, open, state, flip, onChanged);
+		return new SearchHitControl(path, open, state, flip, onChanged).workInProgress(workInProgress);
 	}
 }

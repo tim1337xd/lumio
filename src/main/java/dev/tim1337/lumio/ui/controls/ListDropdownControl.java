@@ -55,6 +55,17 @@ public abstract class ListDropdownControl extends Control {
 		return widest;
 	}
 
+	/** Its choice is never cut: where it does not fit beside its name, it goes on a line of its own. */
+	@Override
+	public boolean keepsWidth() {
+		return true;
+	}
+
+	@Override
+	public int standardNeed(Ui ui) {
+		return inlineWidth(ui, Integer.MAX_VALUE);
+	}
+
 	@Override
 	public int inlineWidth(Ui ui, int available) {
 		return Math.min(available, widest(ui) + ROOM_BESIDE_TEXT);

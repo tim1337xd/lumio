@@ -14,7 +14,12 @@ import java.util.regex.Pattern;
 public final class ChatRules {
 	/** "[MVP+] Steve123: hi", "Party > [VIP] Bob: hi", "Guild > [MVP] Eve [Officer]: hi", "From [MVP+] Cara: hi". A line of the game has no name and a colon at this place, or none the player list knows. */
 	private static final Pattern SENDER = Pattern.compile("^(?:(?:Party|P|Guild|G|Officer|O)\\s*[>»]\\s*|(?:From|To)\\s+)?(?:\\[[^\\]]{1,16}]\\s*)*([A-Za-z0-9_]{1,16})(?:\\s*\\[[^\\]]{1,16}])*\\s*:\\s");
-	private static final Pattern URL = Pattern.compile("(?:https?://|www\\.)[^\\s]+|\\b[a-z0-9-]+\\.(?:net|com|org|gg|io)/[^\\s]*", Pattern.CASE_INSENSITIVE);
+	/** A player's message, for the coordinates in it: the channel (also co-op), ranks and badges, a real player name, the colon, then the message. */
+	private static final Pattern PLAYER_MESSAGE = Pattern.compile(
+		"^(?:(?:Party|P|Guild|G|Officer|O|Co-op)\\s*[>»]\\s*|(?:From|To)\\s+)?((?:\\[[^\\]]{1,16}]\\s*)*)([A-Za-z0-9_]{3,16})(?:\\s*\\[[^\\]]{1,16}])*\\s*:\\s(.*)$");
+	/** The game's own speakers, whose lines look like a player's: "[BOSS] Maxor: …", "[NPC] Elle: …", "[STATUE] Oruo the Omniscient: …". */
+	private static final Pattern GAME_SPEAKER = Pattern.compile("\\[(?:BOSS|NPC|STATUE|SECRET|CROWD)]");
+	private static final Pattern URL =Pattern.compile("(?:https?://|www\\.)[^\\s]+|\\b[a-z0-9-]+\\.(?:net|com|org|gg|io)/[^\\s]*", Pattern.CASE_INSENSITIVE);
 	private static final int NOON = 12;
 
 	private ChatRules() {
@@ -24,6 +29,18 @@ public final class ChatRules {
 	public static String sender(String plain) {
 		Matcher matcher = SENDER.matcher(plain);
 		return matcher.find() ? matcher.group(1) : null;
+	}
+
+	/**
+	 * @return what a player wrote (the text after their name and colon), or null for a line of the game: no player name, a name that is no player
+	 *         name ("Archer Milestone ❷:"), or one of the game's speakers ("[BOSS] Maxor:")
+	 */
+	public static String playerMessage(String plain) {
+		Matcher matcher = PLAYER_MESSAGE.matcher(plain);
+		if (!matcher.find() || GAME_SPEAKER.matcher(matcher.group(1)).find()) {
+			return null;
+		}
+		return matcher.group(3);
 	}
 
 	/** @return whether a text holds one of the words as a word of its own, in any case: "Bob" is in "bob, hi" and not in "Bobby" */

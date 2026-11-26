@@ -76,6 +76,14 @@ public abstract class Control {
 	}
 
 	/**
+	 * @return the width the control needs to show its texts whole at the page's one control width ({@link ControlWidths}), or -1 for a control that
+	 *         keeps a width of its own (a switch, a button, color dots)
+	 */
+	public int standardNeed(Ui ui) {
+		return -1;
+	}
+
+	/**
 	 * @return whether the control needs its whole width (segments, color dots): where it does not fit beside its name, it goes on a line of its own
 	 *         under the name instead of being squeezed. Others (fields, lists) get narrower.
 	 */
@@ -105,7 +113,7 @@ public abstract class Control {
 	private static String fullText;
 
 	/** Shows a value cut to fit its room in full on hover: called by a control while the mouse is over the cut value. */
-	protected static void showFullText(String text) {
+	public static void showFullText(String text) {
 		fullText = text;
 	}
 
@@ -182,6 +190,14 @@ public abstract class Control {
 	/** @return whether the control wants keyboard input; only the few with text fields do */
 	public boolean wantsKeyboard() {
 		return false;
+	}
+
+	/**
+	 * @return whether the keyboard input it wants is typing, so the menu's own shortcuts (Ctrl+F) wait; a control that only takes a shortcut of its
+	 *         own, such as Ctrl+V, leaves them to the menu
+	 */
+	public boolean takesText() {
+		return true;
 	}
 
 	public void loseFocus() {

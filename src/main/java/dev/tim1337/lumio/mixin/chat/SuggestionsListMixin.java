@@ -25,10 +25,14 @@ import net.minecraft.client.renderer.Rect2i;
  */
 @Mixin(targets = "net.minecraft.client.gui.components.CommandSuggestions$SuggestionsList")
 public abstract class SuggestionsListMixin {
+	@Unique
 	private static final int HINT_COLOR = 0xFF7A7A7A;
 	/** The game's color of the selected entry, and the ones in the chat's style. */
+	@Unique
 	private static final int GAME_SELECTED = 0xFFFFFF00;
+	@Unique
 	private static final int SELECTED_TEXT = 0xFFFFFFFF;
+	@Unique
 	private static final int ENTRY_TEXT = 0xFFC4C4C4;
 
 	@Shadow

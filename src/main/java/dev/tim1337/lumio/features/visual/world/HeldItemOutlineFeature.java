@@ -31,14 +31,14 @@ public class HeldItemOutlineFeature extends Feature {
 	private static final long RARITY_REREAD_NANOS = 500_000_000L;
 
 	private final EnumSetting<RadianceLook.Style> style = add(new EnumSetting<>("mode", Component.literal("Style"), RadianceLook.Style.GLOW, RadianceLook.Style::displayName, EnumSetting.Style.SEGMENTED), LOOK);
-	private final FloatSetting echoLength = add(new FloatSetting("echo_length", Component.literal("Echo length"), 0.5f, 0f, 1f, 2).percent().offAtZero(), LOOK);
+	private final FloatSetting echoLength = add(new FloatSetting("echo_length", Component.literal("Echo length"), 0.5f, 0f, 1f, 2).percent().offAtZero(), LOOK, "How long the after-glow trails");
 	/** A slow flowing shimmer in Echo's light, also while standing still; 0 is none. */
-	private final FloatSetting echoShimmer = add(new FloatSetting("echo_shimmer", Component.literal("Shimmer"), 0.5f, 0f, 1f, 2).percent(), LOOK);
+	private final FloatSetting echoShimmer = add(new FloatSetting("echo_shimmer", Component.literal("Shimmer"), 0.5f, 0f, 1f, 2).percent(), LOOK, "A slow flow in the after-glow");
 	private final EnumSetting<TrailLook.Colors> colors = add(new EnumSetting<>("color_source", Component.literal("Color"), TrailLook.Colors.ACCENT, TrailLook.Colors::displayName, EnumSetting.Style.SEGMENTED), LOOK);
 	private final ColorSetting color = add(new ColorSetting("color", Component.literal("Custom color"), 0x00E5FF), LOOK);
 	private final FloatSetting glowStrength = add(new FloatSetting("glow_strength", Component.literal("Strength"), 0.7f, 0.05f, 1f, 2), LOOK);
 	private final FloatSetting width = add(new FloatSetting("width", Component.literal("Width"), 1f, 0.25f, 2f, 2), LOOK);
-	private final BooleanSetting armFirst = add(new BooleanSetting("arm_first_person", Component.literal("Around the hand too"), false), WHERE);
+	private final BooleanSetting armFirst = add(new BooleanSetting("arm_first_person", Component.literal("Hand too"), false), WHERE);
 	private final EnumSetting<RadianceLook.ShowsOn> showsOn = add(new EnumSetting<>("shows_on", Component.literal("Shows on"), RadianceLook.ShowsOn.ALL, RadianceLook.ShowsOn::displayName, EnumSetting.Style.SEGMENTED), WHERE);
 
 	/** The item kinds that get the light under Chosen. */

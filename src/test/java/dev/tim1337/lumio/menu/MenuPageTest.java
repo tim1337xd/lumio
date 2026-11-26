@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -55,7 +56,7 @@ public class MenuPageTest {
 		MenuFeature fresh = new MenuFeature();
 		assertEquals(MacTheme.DARK, fresh.theme());
 		assertEquals(MenuFeature.Accent.BLUE, fresh.accent());
-		assertTrue(fresh.glowEnabled());
+		assertTrue(fresh.glowOn());
 		fresh.load(new JsonObject());
 		assertEquals(MacTheme.DARK, fresh.theme());
 		JsonObject saved = new JsonObject();
@@ -97,14 +98,14 @@ public class MenuPageTest {
 	void glowStrengthZeroIsOffAndKeepsTheStrength() {
 		Setting<Float> amount = setting("glow_amount");
 		amount.set(0.8f);
-		assertTrue(menu.glowEnabled());
+		assertTrue(menu.glowOn());
 		assertEquals(0.8f, menu.glowStrength(), CLOSE);
 		amount.set(0f);
-		assertFalse(menu.glowEnabled());
+		assertFalse(menu.glowOn());
 		assertEquals(0f, amount.get(), CLOSE);
 		assertEquals(0.8f, menu.glowStrength(), CLOSE);
 		amount.set(0.3f);
-		assertTrue(menu.glowEnabled());
+		assertTrue(menu.glowOn());
 		assertEquals(0.3f, menu.glowStrength(), CLOSE);
 	}
 
@@ -201,13 +202,94 @@ public class MenuPageTest {
 	}
 
 	@Test
-	void theSheetAndTheAboutPageHoldWhatLeftThePage() {
-		assertNotNull(menu.viewOf(setting("glass_blur")));
-		assertTrue(menu.viewOf(setting("glass_blur")).isSheet());
-		assertNotNull(menu.viewOf(setting("colored_background")));
-		assertNotNull(menu.viewOf(setting("ui_sound_volume")));
-		assertFalse(menu.viewOf(setting("reset_all")).isSheet());
-		assertNull(menu.viewOf(setting("ui_font")));
+	void everySettingHasItsPlaceInATabAndNothingIsInASecondWindow() {
+		assertNull(menu.viewOf(setting("glass_blur")));
+		assertNull(menu.viewOf(setting("reset_all")));
+		assertEquals("Look · Theme", menu.sectionOf(setting("theme")));
+		assertEquals("Glass · Glass", menu.sectionOf(setting("transparency")));
+		assertEquals("Glass · Glass", menu.sectionOf(setting("glass_tint")));
+		assertEquals("Glass · Real glass", menu.sectionOf(setting("glass_refraction")));
+		assertEquals("Glass · Edges and color", menu.sectionOf(setting("glass_effect")));
+		assertEquals("Glow · Glow", menu.sectionOf(setting("glow")));
+		assertEquals("Glow · Color", menu.sectionOf(setting("glow_color_from")));
+		assertEquals("Glow · Shape and motion", menu.sectionOf(setting("glow_blend")));
+		assertEquals("Glow · Background", menu.sectionOf(setting("colored_background")));
+		assertEquals("HUD · HUD theme", menu.sectionOf(setting("hud_glow_soft")));
+		assertEquals("HUD · HUD theme", menu.sectionOf(setting("hud_theme")));
+		assertEquals("Window and sound · Sound", menu.sectionOf(setting("ui_sound_volume")));
+		assertEquals("About · Help", menu.sectionOf(setting("disable_all")));
+		assertTrue(menu.alwaysTabbed());
+		// nothing folds on this page any more
+		for (var shown : menu.shownSettings()) {
+			assertFalse(menu.isCollapsible(menu.sectionOf(shown)), shown.key());
+		}
+		assertFalse(menu.shownSettings().contains(setting("glow_row")), "the setup's glow row is not on the page");
+		// the window's rows are the cursor's and borderless features' own settings, shown here
+		assertTrue(menu.shownSettings().contains(dev.tim1337.lumio.ModFeatures.BORDERLESS.settingOf("start_borderless")));
+		java.util.Set<String> tabs = new java.util.LinkedHashSet<>();
+		for (var shown : menu.shownSettings()) {
+			String section = menu.sectionOf(shown);
+			tabs.add(section.substring(0, section.indexOf(" · ")));
+		}
+		assertEquals(java.util.List.of("Look", "Glass", "Glow", "HUD", "Window and sound", "About"), java.util.List.copyOf(tabs));
+	}
+
+	@Test
+	void theGlowTakesItsColorFromTheChosenSource() {
+		var from = setting("glow_color_from");
+		var count = setting("glow_count");
+		menu.setTheme(MacTheme.DARK);
+		count.set(2f);
+		from.set(MenuFeature.GlowSource.OWN);
+		assertEquals(2, menu.glowPalette().length, "own: the glow colors");
+		from.set(MenuFeature.GlowSource.ACCENT);
+		assertArrayEquals(new int[]{MenuFeature.accentRgb() & 0xFFFFFF}, menu.glowPalette(), "accent: the accent alone");
+		from.set(MenuFeature.GlowSource.THEME);
+		assertEquals(MenuFeature.GlowSource.OWN, menu.glowSource(), "theme colors without a Colored theme glow in the own colors");
+		assertFalse(menu.themeGlow());
+		menu.setTheme(MacTheme.COLORED);
+		assertTrue(menu.themeGlow(), "in Colored the panes glow in the theme's colors");
+		assertArrayEquals(menu.coloredColors(), menu.glowPalette());
+		from.set(MenuFeature.GlowSource.OWN);
+		assertFalse(menu.themeGlow(), "own colors also in Colored");
+		menu.setTheme(MacTheme.DARK);
+		from.reset();
+		count.reset();
+	}
+
+	@Test
+	void anOldConfigKeepsItsGlow() {
+		var from = setting("glow_color_from");
+		com.google.gson.JsonObject colored = menu.save();
+		colored.remove("glow_color_from");
+		colored.addProperty("theme", "COLORED");
+		menu.load(colored);
+		assertEquals(MenuFeature.GlowSource.THEME, from.get(), "Colored kept its theme colors");
+		com.google.gson.JsonObject dark = menu.save();
+		dark.remove("glow_color_from");
+		dark.addProperty("theme", "DARK");
+		dark.addProperty("hud_theme", "MENU");
+		menu.load(dark);
+		assertEquals(MenuFeature.GlowSource.OWN, from.get(), "the other themes kept the glow colors");
+		com.google.gson.JsonObject chosen = menu.save();
+		chosen.addProperty("glow_color_from", "ACCENT");
+		menu.load(chosen);
+		assertEquals(MenuFeature.GlowSource.ACCENT, from.get(), "a choice made stays");
+		menu.setTheme(MacTheme.DARK);
+		from.reset();
+	}
+
+	@Test
+	void theTabResetTakesBackOnlyItsTab() {
+		var sounds = setting("ui_sounds");
+		var font = setting("ui_font");
+		sounds.set(false);
+		Object other = ((Enum<?>) font.get()).getDeclaringClass().getEnumConstants()[1];
+		font.set(other);
+		menu.resetSettings(each -> menu.sectionOf(each) != null && menu.sectionOf(each).startsWith("Window and sound"));
+		assertEquals(true, sounds.get(), "the sound is back");
+		assertEquals(other, font.get(), "the Look tab stays");
+		font.reset();
 	}
 
 	@Test
@@ -215,8 +297,6 @@ public class MenuPageTest {
 		for (MacTheme theme : MacTheme.values()) {
 			menu.setTheme(theme);
 			SettingsPagesTest.buildsWithRows(menu);
-			SettingsPagesTest.buildsWithRows(menu.viewOf(setting("glass_blur")));
-			SettingsPagesTest.buildsWithRows(menu.viewOf(setting("reset_all")));
 		}
 	}
 

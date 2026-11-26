@@ -103,9 +103,68 @@ public abstract class AddonFeature implements FeatureView {
 		handle.addKey(mapping, place);
 	}
 
+	/**
+	 * Lists a key that acts only while one menu is open (a key per slot of that menu), with the menu's name as the player knows it
+	 * ("Loadouts"). There it is used instead of any other key on the same key, so the Keybinds page shows no conflict for it, only with another
+	 * key of the same menu.
+	 */
+	protected final void addMenuKey(KeyMapping mapping, String menu) {
+		handle.addMenuKey(mapping, menu);
+	}
+
 	/** Sets the one line about the feature in the feature lists; without it they show its description. */
 	protected final void summary(String text) {
 		handle.summary(text);
+	}
+
+	/**
+	 * Sets a short badge after the feature's name in the feature lists, such as the floor or phase it is for ("F4", "P3", "F7 · M7").
+	 *
+	 * @since 1.17.0
+	 */
+	protected final void badge(String text) {
+		handle.badge(text);
+	}
+
+	/**
+	 * Words the menu's search also finds the feature by, besides its name, separated by spaces: what players call it elsewhere, or what it
+	 * was called before a rename. They are never shown.
+	 *
+	 * @since 1.24.0
+	 */
+	protected final void searchWords(String words) {
+		handle.searchWords(words);
+	}
+
+	/**
+	 * Names the group the feature is listed under on its page ("Items and inventory"). A page with eight or more features that declare groups
+	 * shows them as named groups one under the other, each group where its first feature stands in the page's list, the features in the
+	 * list's order; a feature without a group goes under "Other". A shorter page stays one plain list and ignores the name. Pages shown as
+	 * tabs are not split.
+	 *
+	 * @since 1.23.0
+	 */
+	protected final void pageGroup(String name) {
+		handle.pageGroup(name);
+	}
+
+	/**
+	 * Flags the feature as work in progress: a small "Work in progress" tag after its name in the feature lists and the search results. Only a
+	 * tag: the feature works and is switched as before. Take the call out to take the tag away. A whole category of a page is flagged with
+	 * {@link AddonPage#workInProgress}.
+	 *
+	 * @since 1.22.0
+	 */
+	protected final void workInProgress() {
+		handle.workInProgress();
+	}
+
+	/**
+	 * Sets the settings shown on the feature's card where its page shows features as cards (one or two, such as the main choice); the card's
+	 * other settings open with it. Without them the feature is listed as a row.
+	 */
+	protected final void cardSettings(AddonSetting<?>... settings) {
+		handle.cardSettings(java.util.List.of(settings));
 	}
 
 	/** Adds a button at the end of the page that sets every setting of the feature back to its default. */

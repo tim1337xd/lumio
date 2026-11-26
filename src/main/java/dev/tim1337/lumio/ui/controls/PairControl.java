@@ -4,7 +4,7 @@ import dev.tim1337.lumio.ui.Control;
 import dev.tim1337.lumio.ui.Ui;
 
 /** Two controls side by side in one row: the first as wide as it needs, the second in the rest. */
-public class PairControl extends Control {
+public final class PairControl extends Control {
 	private static final int GAP = 10;
 	/** The least the second control keeps when the row is narrow, or what it wants if that is less. */
 	private static final int MIN_SECOND = 90;

@@ -12,8 +12,4 @@ public interface SlotAccessor {
 	@Mutable
 	@Accessor("y")
 	void lumio$setY(int y);
-
-	@Mutable
-	@Accessor("x")
-	void lumio$setX(int x);
 }

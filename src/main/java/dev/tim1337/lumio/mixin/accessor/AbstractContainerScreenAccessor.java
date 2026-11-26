@@ -31,11 +31,4 @@ public interface AbstractContainerScreenAccessor {
 
 	@Accessor("topPos")
 	void lumio$setTop(int top);
-
-	@Accessor("leftPos")
-	void lumio$setLeft(int left);
-
-	@Mutable
-	@Accessor("imageWidth")
-	void lumio$setWidth(int width);
 }

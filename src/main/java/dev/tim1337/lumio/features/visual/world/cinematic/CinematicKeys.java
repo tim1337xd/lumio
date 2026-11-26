@@ -2,7 +2,7 @@ package dev.tim1337.lumio.features.visual.world.cinematic;
 
 import dev.tim1337.lumio.Lumio;
 import dev.tim1337.lumio.ModFeatures;
-
+import dev.tim1337.lumio.features.misc.keybinds.KeyCombos;
 
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 
@@ -13,17 +13,18 @@ import net.minecraft.client.Minecraft;
 import java.util.List;
 
 /**
- * The cinematic camera's keys: C starts and stops it, Enter leaves it, and while it runs the arrows take the next shot, hold the shot and show or
- * hide the lyrics. The arrows do nothing while it is not running, so they cannot clash with anything; none of these keys counts as the player
- * coming back. All can be rebound.
+ * The cinematic camera's keys, all unbound at first: one starts and stops it, one leaves it, and while it runs others take the next shot, hold the
+ * shot and show or hide the lyrics. Those three do nothing while it is not running; none of these keys counts as the player coming back.
  */
 public final class CinematicKeys {
-	private static final KeyMapping.Category CATEGORY = KeyMapping.Category.register(Lumio.id("cinematic"));
-	static final KeyMapping TOGGLE = key("cinematic_toggle", InputConstants.KEY_C);
-	static final KeyMapping LEAVE = key("cinematic_leave", InputConstants.KEY_RETURN);
-	static final KeyMapping NEXT = key("cinematic_next", InputConstants.KEY_RIGHT);
-	static final KeyMapping HOLD = key("cinematic_hold", InputConstants.KEY_DOWN);
-	static final KeyMapping LYRICS = key("cinematic_lyrics", InputConstants.KEY_UP);
+	/** "Lumio: Camera" in the game's key list, shared with the Camera module's keys. */
+	public static final KeyMapping.Category CATEGORY = KeyMapping.Category.register(Lumio.id("cinematic"));
+	// every key unbound at first: the player sets them under Keybinds or in the game's Controls
+	static final KeyMapping TOGGLE = key("cinematic_toggle", InputConstants.UNKNOWN.getValue());
+	static final KeyMapping LEAVE = key("cinematic_leave", InputConstants.UNKNOWN.getValue());
+	static final KeyMapping NEXT = key("cinematic_next", InputConstants.UNKNOWN.getValue());
+	static final KeyMapping HOLD = key("cinematic_hold", InputConstants.UNKNOWN.getValue());
+	static final KeyMapping LYRICS = key("cinematic_lyrics", InputConstants.UNKNOWN.getValue());
 	private static final List<KeyMapping> ALL = List.of(TOGGLE, LEAVE, NEXT, HOLD, LYRICS);
 
 	private CinematicKeys() {
@@ -77,27 +78,11 @@ public final class CinematicKeys {
 		return pressed;
 	}
 
-	/** Fills in the names of the keys to stop, take the next shot, hold it and show the lyrics, short for the arrows. */
+	/** Fills in the names of the keys to stop, take the next shot, hold it and show the lyrics; empty for an unbound key. */
 	static void names(String[] into) {
 		KeyMapping[] keys = {TOGGLE, NEXT, HOLD, LYRICS};
 		for (int i = 0; i < into.length && i < keys.length; i++) {
-			into[i] = shortName(keys[i]);
+			into[i] = keys[i].isUnbound() ? "" : KeyCombos.shown(keys[i]);
 		}
-	}
-
-	private static String shortName(KeyMapping key) {
-		if (key.isUnbound()) {
-			return "";
-		}
-		if (key.same(NEXT) && NEXT.isDefault()) {
-			return "→";
-		}
-		if (key.same(HOLD) && HOLD.isDefault()) {
-			return "↓";
-		}
-		if (key.same(LYRICS) && LYRICS.isDefault()) {
-			return "↑";
-		}
-		return key.getTranslatedKeyMessage().getString();
 	}
 }

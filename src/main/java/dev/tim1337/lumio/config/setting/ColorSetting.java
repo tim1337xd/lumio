@@ -50,7 +50,8 @@ public class ColorSetting extends Setting<Integer> implements ColorChoice {
 		return (Math.round(opacity * 255f) << 24) | (get() & 0xFFFFFF);
 	}
 
-	private boolean followsMenu;
+	/** Whether the picker offers "Menu theme": every color does, but one that carries a meaning (see {@link #ownColorOnly}). */
+	private boolean followsMenu = true;
 	/** Whether the menu's accent color is used instead of the picked one (a checkbox in the color picker). */
 	private boolean useMenu;
 	/** Whether a fresh config starts with the menu's color: the HUD's elements, so they all follow it. */
@@ -77,6 +78,14 @@ public class ColorSetting extends Setting<Integer> implements ColorChoice {
 	/** @return the picker's own preset colors, or null for the usual ones */
 	public int[] presets() {
 		return presets;
+	}
+
+	/** This color carries a meaning of its own (a rarity, good or bad, a bar like the game's), or the menu's color comes from it: no "Menu theme" here. */
+	@Override
+	public ColorSetting ownColorOnly() {
+		this.followsMenu = false;
+		this.useMenu = false;
+		return this;
 	}
 
 	/** Makes this color follow the menu's accent color while the menu is set to color everything. */

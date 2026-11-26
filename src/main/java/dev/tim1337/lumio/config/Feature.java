@@ -7,8 +7,10 @@ import dev.tim1337.lumio.api.feature.FeatureView;
 import dev.tim1337.lumio.api.setting.AddonSetting;
 import dev.tim1337.lumio.config.setting.BooleanSetting;
 import dev.tim1337.lumio.config.setting.ButtonSetting;
+import dev.tim1337.lumio.config.setting.EnumSetting;
 import dev.tim1337.lumio.config.setting.KeySetting;
 import dev.tim1337.lumio.config.setting.LinksRowSetting;
+import dev.tim1337.lumio.config.setting.NavListSetting;
 import dev.tim1337.lumio.config.setting.Setting;
 import dev.tim1337.lumio.ui.MacScreen;
 import dev.tim1337.lumio.ui.PagePreview;
@@ -27,6 +29,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 
 /**
  * Base class of every feature of the mod. Settings added in the constructor are persisted automatically and shown on the feature's settings
@@ -41,6 +44,7 @@ public abstract class Feature implements FeatureView {
 	private final String descriptionText;
 	/** One line of what the feature does, for the feature lists; null to use the description. */
 	private String summary;
+	private String badge;
 	private final List<Setting<?>> settings = new ArrayList<>();
 	private final BooleanSetting enabled;
 	private final List<Feature> children = new ArrayList<>();
@@ -60,7 +64,6 @@ public abstract class Feature implements FeatureView {
 		this.nameText = name;
 		this.descriptionText = description;
 		this.enabled = new BooleanSetting("enabled", Component.literal("Turned on"), enabledByDefault);
-		this.enabled.setDescription("Off: nothing of this feature is drawn or changed");
 		if (hasSwitch) {
 			settings.add(enabled);
 		}
@@ -109,8 +112,23 @@ public abstract class Feature implements FeatureView {
 		return Set.of();
 	}
 
+	/** @return whether the settings window never uses tabs, however many settings there are: its groups stand one under the other, as sections */
+	public boolean neverTabbed() {
+		return false;
+	}
+
 	/** @return whether the settings window always uses tabs, however few settings there are; used by features that bundle several helpers */
 	public boolean alwaysTabbed() {
+		return false;
+	}
+
+	/** @return whether a tab of the page lays its groups out in two columns where the window is wide enough (else in one) */
+	public boolean twoColumns(String tab) {
+		return false;
+	}
+
+	/** @return whether the footer's reset takes back only the settings of the open tab ("Reset this tab") instead of the whole page */
+	public boolean resetsByTab() {
 		return false;
 	}
 
@@ -131,10 +149,14 @@ public abstract class Feature implements FeatureView {
 		}
 		outlineRows = null;
 		pageAdvanced = null;
+		subPages.clear();
 		for (PageOutline.Row row : outline.rows()) {
 			Setting<?> setting = settingOf(row.key());
 			if (setting != null && row.label() != null) {
 				setting.rename(row.label());
+			}
+			if (setting != null && row.tooltip() != null) {
+				setting.setTooltip(row.tooltip());
 			}
 		}
 	}
@@ -168,12 +190,55 @@ public abstract class Feature implements FeatureView {
 	private List<Setting<?>> outlineRows() {
 		if (outlineRows == null) {
 			List<Setting<?>> rows = new ArrayList<>();
-			for (PageOutline.Row row : outline.main()) {
-				Setting<?> setting = settingOf(row.key());
+			// the feature's keys are fields of its own sheet, never a level deeper: those the outline does not place on the page itself (it
+			// names none of them, or lists them under Advanced) stand in a Keys group at the top
+			for (Setting<?> key : unplacedKeys()) {
+				rows.add(key);
+				outlineGroups.put(key, KEYS_GROUP);
+			}
+			// the page's own rows; the overview of the sub-pages stands where the first sub-page's row is in the outline (after the Sky's preview,
+			// before the item list's keys)
+			int overviewAt = -1;
+			for (PageOutline.Row row : outline.rows()) {
+				if (row.place() == PageOutline.Place.PAGE && overviewAt < 0) {
+					overviewAt = rows.size();
+				}
+				Setting<?> setting = row.place() == PageOutline.Place.MAIN ? settingOf(row.key()) : null;
 				if (setting != null) {
 					rows.add(setting);
 					outlineGroups.put(setting, row.group());
 				}
+			}
+			// the sub-pages: one row each in the page's overview, opening the sub-page; on a page with tabs, one overview per tab, holding the rows
+			// of the sub-pages that name it, after that tab's own rows (an overview in the untitled group would stand under every tab)
+			Map<String, List<NavListSetting.Item>> itemsByTab = new LinkedHashMap<>();
+			for (Map.Entry<PageOutline.SubPage, List<PageOutline.Row>> page : outline.pages().entrySet()) {
+				List<NavListSetting.Item> items = itemsByTab.computeIfAbsent(page.getKey().tab() == null ? "" : page.getKey().tab(), tab -> new ArrayList<>());
+				// in gray beside it, what the sub-page's first row chooses (the style, the clouds' style), as the rows of Music's overview show it
+				Setting<?> first = settingOf(page.getValue().getFirst().key());
+				Supplier<String> value = first instanceof EnumSetting<?> choice ? choice::valueText : () -> "";
+				// a sub-page shows while something on it applies
+				List<Setting<?>> onPage = new ArrayList<>();
+				for (PageOutline.Row row : page.getValue()) {
+					Setting<?> setting = settingOf(row.key());
+					if (setting != null) {
+						onPage.add(setting);
+					}
+				}
+				items.add(new NavListSetting.Item(page.getKey().icon(), iconRgb, page.getKey().title(), value, null, () -> MacScreen.openSubPage(subPage(page.getKey())),
+					() -> onPage.stream().anyMatch(Setting::isVisible)));
+			}
+			List<NavListSetting.Item> untabbed = itemsByTab.remove("");
+			if (untabbed != null) {
+				NavListSetting overview = new NavListSetting("page_overview", name, untabbed, null);
+				outlineGroups.put(overview, "");
+				rows.add(overviewAt < 0 ? rows.size() : overviewAt, overview);
+			}
+			int tabNumber = 0;
+			for (Map.Entry<String, List<NavListSetting.Item>> tab : itemsByTab.entrySet()) {
+				NavListSetting overview = new NavListSetting("page_overview_" + tabNumber++, name, tab.getValue(), null);
+				outlineGroups.put(overview, tab.getKey());
+				rows.add(afterGroup(rows, tab.getKey()), overview);
 			}
 			boolean advanced = !advancedSettings().isEmpty();
 			if (advanced || sidebarPage) {
@@ -184,13 +249,58 @@ public abstract class Feature implements FeatureView {
 				}, sidebarPage ? "Reset page" : "", () -> {
 					resetSettings();
 					FeatureManager.saveSoon();
-				}).confirmRight();
+				}).confirmRight().leftShownWhen(this::advancedApplies);
+				if (!sidebarPage) {
+					pageLinks.visibleWhen(this::advancedApplies);
+				}
 				outlineGroups.put(pageLinks, "");
 				rows.add(pageLinks);
 			}
 			outlineRows = rows;
 		}
 		return outlineRows;
+	}
+
+	/** @return where a row of the group goes in the page's rows: after the group's last row, or at the end when it has none yet */
+	private int afterGroup(List<Setting<?>> rows, String group) {
+		int at = rows.size();
+		for (int i = 0; i < rows.size(); i++) {
+			if (group.equals(outlineGroups.get(rows.get(i)))) {
+				at = i + 1;
+			}
+		}
+		return at;
+	}
+
+	/** The group of a feature's keys. */
+	public static final String KEYS_GROUP = "Keys";
+
+	/** @return the feature's keys that its outline does not place on the page itself, in the order they were added */
+	private List<Setting<?>> unplacedKeys() {
+		List<Setting<?>> keys = new ArrayList<>();
+		for (Setting<?> setting : settings) {
+			if (setting instanceof KeySetting) {
+				boolean placed = false;
+				for (PageOutline.Row row : outline.main()) {
+					placed |= row.key().equals(setting.key());
+				}
+				if (!placed) {
+					keys.add(setting);
+				}
+			}
+		}
+		return keys;
+	}
+
+	/** @return whether something on the Advanced sheet applies now */
+	private boolean advancedApplies() {
+		for (PageOutline.Row row : outline.advanced()) {
+			Setting<?> setting = settingOf(row.key());
+			if (setting != null && !(setting instanceof KeySetting) && setting.isVisible()) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private List<SettingsView.Group> advancedSettings() {
@@ -200,13 +310,34 @@ public abstract class Feature implements FeatureView {
 		Map<String, List<Setting<?>>> groups = new LinkedHashMap<>();
 		for (PageOutline.Row row : outline.advanced()) {
 			Setting<?> setting = settingOf(row.key());
-			if (setting != null) {
+			// a key is a field of the sheet itself (see outlineRows), also where an outline still lists it here
+			if (setting != null && !(setting instanceof KeySetting)) {
 				groups.computeIfAbsent(row.group(), group -> new ArrayList<>()).add(setting);
 			}
 		}
 		List<SettingsView.Group> list = new ArrayList<>();
 		groups.forEach((title, settings) -> list.add(new SettingsView.Group(title, settings)));
 		return list;
+	}
+
+	/** The sub-pages of the outline, made when first opened or searched. */
+	private final Map<PageOutline.SubPage, SettingsView> subPages = new LinkedHashMap<>();
+
+	/** @return a sub-page of the outline: its rows in their groups, as a sheet over the page, as Advanced is */
+	private SettingsView subPage(PageOutline.SubPage page) {
+		return subPages.computeIfAbsent(page, key -> {
+			Map<String, List<Setting<?>>> groups = new LinkedHashMap<>();
+			for (PageOutline.Row row : outline.pages().getOrDefault(key, List.of())) {
+				Setting<?> setting = settingOf(row.key());
+				if (setting != null) {
+					groups.computeIfAbsent(row.group(), group -> new ArrayList<>()).add(setting);
+				}
+			}
+			List<SettingsView.Group> list = new ArrayList<>();
+			groups.forEach((title, settings) -> list.add(new SettingsView.Group(title, settings)));
+			String slug = key.title().toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9]+", "_");
+			return new SettingsView(id + "_" + slug, key.title(), "", key.icon(), iconRgb, list).asSheet();
+		});
 	}
 
 	/** @return the sheet with what is under Advanced */
@@ -227,9 +358,9 @@ public abstract class Feature implements FeatureView {
 		if (outline == null) {
 			return null;
 		}
-		for (PageOutline.Row row : outline.developer()) {
-			if (row.key().equals(setting.key())) {
-				return ModFeatures.MENU.developerView();
+		for (PageOutline.SubPage page : outline.pages().keySet()) {
+			if (subPage(page).settings().contains(setting)) {
+				return subPage(page);
 			}
 		}
 		return pageAdvanced().settings().contains(setting) ? pageAdvanced() : null;
@@ -277,7 +408,18 @@ public abstract class Feature implements FeatureView {
 	 * be after the feature was created.
 	 */
 	protected void addKey(KeyMapping mapping, KeySetting.Where where) {
-		add(new KeySetting(mapping, where).ownedBy(nameText), "Keys");
+		add(new KeySetting(mapping, where).ownedBy(nameText), KEYS_GROUP);
+		outlineRows = null;
+		pageAdvanced = null;
+		subPages.clear();
+	}
+
+	/** Adds a key that acts only while one menu is open, named as the player knows it: there it is used instead of other keys on the same key. */
+	protected void addMenuKey(KeyMapping mapping, String menu) {
+		add(new KeySetting(mapping, KeySetting.Where.SCREENS).inMenu(menu).ownedBy(nameText), KEYS_GROUP);
+		outlineRows = null;
+		pageAdvanced = null;
+		subPages.clear();
 	}
 
 	/** @return the title at the top of the feature's page; the name in the sidebar may be shorter */
@@ -295,8 +437,11 @@ public abstract class Feature implements FeatureView {
 		return null;
 	}
 
-	/** A button in a page's header, right-aligned on the title's line; a primary one is filled with the accent. */
-	public record HeaderButton(String text, boolean primary, Runnable action) {
+	/** A button in a page's header, right-aligned on the title's line; a primary one is filled with the accent, and it may carry a small dot. */
+	public record HeaderButton(String text, boolean primary, Runnable action, java.util.function.BooleanSupplier dot) {
+		public HeaderButton(String text, boolean primary, Runnable action) {
+			this(text, primary, action, () -> false);
+		}
 	}
 
 	/** @return the buttons in the page's header, such as the changelog on the home page; none by default */
@@ -389,9 +534,78 @@ public abstract class Feature implements FeatureView {
 		return descriptionText;
 	}
 
+	/** The settings shown on the feature's card where its page shows cards; empty for a row. */
+	private java.util.List<dev.tim1337.lumio.config.setting.Setting<?>> cardSettings = java.util.List.of();
+
+	public java.util.List<dev.tim1337.lumio.config.setting.Setting<?>> cardSettings() {
+		return cardSettings;
+	}
+
+	public void cardSettings(java.util.List<dev.tim1337.lumio.config.setting.Setting<?>> settings) {
+		cardSettings = java.util.List.copyOf(settings);
+	}
+
 	/** Sets the one-line summary shown in the feature lists: what the feature does, never its settings or state. */
 	protected void summary(String text) {
 		this.summary = text;
+	}
+
+	/** Sets a short badge after the name in the feature lists (the floor or phase a feature is for). */
+	protected void badge(String text) {
+		this.badge = text;
+	}
+
+	/** @return the badge after the name in the feature lists, or null for none */
+	public String badge() {
+		return badge;
+	}
+
+	private String searchWords = "";
+
+	/**
+	 * Words the menu's search also finds the feature by, besides its name: what players call it elsewhere, or called it before a rename
+	 * ("toast" for the pop-ups). Never shown.
+	 */
+	public void searchWords(String words) {
+		searchWords = words == null ? "" : words;
+	}
+
+	/** @return the extra words the search finds the feature by, or an empty text */
+	public String searchWordsText() {
+		return searchWords;
+	}
+
+	private String pageGroup;
+
+	/**
+	 * Names the group the feature is listed under on its page, when that page is long enough to be split into named groups (see
+	 * {@code PageGroups}): "Items and inventory". Declared in the feature's definition; a short page ignores it.
+	 */
+	public void pageGroup(String name) {
+		pageGroup = name;
+	}
+
+	/** @return the group the feature declared for its page's list, or null */
+	public String pageGroupName() {
+		return pageGroup;
+	}
+
+	/** The words of the tag a feature (or a page's tab) that is still being tested carries, and their short form where there is little room. */
+	public static final String WORK_IN_PROGRESS = "Work in progress";
+	public static final String WORK_IN_PROGRESS_SHORT = "WIP";
+	private boolean workInProgress;
+
+	/**
+	 * Flags the feature as work in progress: a small tag after its name in the feature lists and the search results says so. It changes nothing
+	 * about what the feature does or whether it is on. One line in the feature's definition; taking the line out takes the tag away.
+	 */
+	public void workInProgress() {
+		workInProgress = true;
+	}
+
+	/** @return whether the feature is flagged as work in progress, by itself or through the tab of its page */
+	public boolean isWorkInProgress() {
+		return workInProgress;
 	}
 
 	/** @return the one-line summary for the feature lists, or the description if the feature has none */
@@ -442,6 +656,15 @@ public abstract class Feature implements FeatureView {
 		}
 	}
 
+	/** @return this feature's own switch as saved, without the master switch over it; for putting switches back exactly */
+	boolean ownSwitch() {
+		return enabled.get();
+	}
+
+	void setOwnSwitch(boolean on) {
+		enabled.set(on);
+	}
+
 	public boolean isEnabled() {
 		return enabled.get() && (master == null || master.get());
 	}
@@ -482,6 +705,27 @@ public abstract class Feature implements FeatureView {
 	}
 
 	/** @return how many settings of the feature and its parts differ from their defaults, not counting the switches that turn them on */
+	/** Resets this feature's settings that the test picks (keys excepted, as in {@link #resetSettings()}), then what follows a reset. */
+	public void resetSettings(java.util.function.Predicate<Setting<?>> which) {
+		for (Setting<?> setting : settings) {
+			if (setting != enabled && !(setting instanceof KeySetting) && which.test(setting)) {
+				setting.reset();
+			}
+		}
+		afterReset();
+	}
+
+	/** @return how many of this feature's settings that the test picks differ from their defaults (the open tab's, for its reset) */
+	public int changedSettings(java.util.function.Predicate<Setting<?>> which) {
+		int count = 0;
+		for (Setting<?> setting : settings) {
+			if (setting != enabled && which.test(setting) && !setting.isDefault()) {
+				count++;
+			}
+		}
+		return count;
+	}
+
 	public int changedSettings() {
 		int count = changedSettingsOf(this);
 		for (Feature part : children) {

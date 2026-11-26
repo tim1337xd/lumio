@@ -92,7 +92,7 @@ public final class ColoredMood {
 	private static final float CALM_SPEED = 0.5f;
 	private static final float STEADY_SPEED = 0.75f;
 
-	/** @return the short line about a look: its preset (or "Custom"), its movement and its mood, as "Flow · Drift · Calm" */
+	/** @return the short line about a look: its preset (or "Custom"), its movement and its mood, as null */
 	public static String summary(Preset preset, Movement movement, float speed) {
 		String mood = speed <= CALM_SPEED ? "Calm" : speed <= STEADY_SPEED ? "Steady" : "Lively";
 		return (preset == null ? "Custom" : preset.title()) + " · " + movement.displayName().getString() + " · " + mood;

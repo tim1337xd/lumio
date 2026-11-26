@@ -1,5 +1,7 @@
 package dev.tim1337.lumio.render;
 
+import dev.tim1337.lumio.api.experimental.debug.DebugPass;
+import dev.tim1337.lumio.api.experimental.debug.DebugHooks;
 import dev.tim1337.lumio.Lumio;
 import dev.tim1337.lumio.ModFeatures;
 import dev.tim1337.lumio.api.experimental.util.Logs;
@@ -37,7 +39,6 @@ import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.util.Mth;
 
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.function.Supplier;
@@ -56,7 +57,8 @@ import java.util.function.Supplier;
  * The blur is a dual Kawase blur: a few passes down to ever smaller pictures and as many back up, which blurs as wide as a large Gaussian with
  * few samples. Only the regions under glass panes are copied and blurred (their bounds with a margin for the blur, merged into a few
  * rectangles), so a few small HUD panels cost a small part of the screen. How small and how many passes is the glass quality; Auto chooses it
- * from the GPU time of the backdrop, measured with timestamps a few frames late so nothing ever waits for the GPU.
+ * from the GPU time of the backdrop, or of the game's own blur behind the menu, which the levels below High replace with this one; it is
+ * measured with timestamps a few frames late so nothing ever waits for the GPU.
  * <p>
  * The tint adapts to what is behind a pane: a little denser over a bright backdrop, lighter over a dark one, so text keeps its contrast. The
  * brightness under every pane is read back from the smallest picture of the blur every few frames, without ever waiting for the GPU (the copy
@@ -209,6 +211,9 @@ public final class GlassPanes {
 	private static double backdropTotalMillis;
 	private static long backdropSamples;
 	private static Level autoLevel = Level.HIGH;
+	/** Whether the menu has the game's own blur behind it this frame, and the timing slot of that blur while it runs. */
+	private static boolean gameBlurTimed;
+	private static int gameBlurSlot = -1;
 	private static boolean autoSettled;
 	private static double autoSum;
 	private static int autoCount;
@@ -276,6 +281,8 @@ public final class GlassPanes {
 	private static final java.util.List<GlowPassState.Quad> HUD_OUTSIDE = new java.util.ArrayList<>();
 	private static final java.util.List<GlowPassState.Quad> SCREEN_OUTSIDE = new java.util.ArrayList<>();
 	private static final float[] GLOW_RECTS = new float[MAX_PANES * 4];
+	/** Whether each pane is one of the HUD's (true) or a screen's: their glows are drawn in different passes, so they never merge. */
+	private static final boolean[] PANE_IN_HUD = new boolean[MAX_PANES];
 	private static final int[] NEIGHBORS = new int[GlowNeighbors.MOST];
 
 	/** Puts a pane's outside in the frame's pass, which is added before the first one, so that all that follows lies over it. */
@@ -304,6 +311,7 @@ public final class GlassPanes {
 		java.util.Arrays.fill(GLOW_RECTS, 0f);
 		wantsBackdrop = false;
 		stopRequested = false;
+		gameBlurTimed = false;
 		windowField = null;
 		ColoredFlow.newFrame();
 	}
@@ -346,6 +354,21 @@ public final class GlassPanes {
 		}
 		MenuFeature menu = ModFeatures.MENU;
 		return menu == null ? DEFAULT_SATURATION : menu.glassSaturation();
+	}
+
+	/** Set while a backdrop is added: its quad draws the blurred picture as it is. */
+	private static boolean asBackdrop;
+
+	/**
+	 * Adds the blurred picture of what is behind, as it is, over the given size from the top left: what the levels below High show behind the menu
+	 * in place of the game's own blur, which costs many times more.
+	 *
+	 * @param blur how much it is blurred, from 0 to 1
+	 */
+	public static void backdrop(Ui ui, int width, int height, float blur) {
+		asBackdrop = true;
+		pane(ui, 0, 0, width, height, 0f, 1f, new Style(0, 0f, blur, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0xFFFFFF, 10f, 0, 0f, FLAG_FLAT, 0f));
+		asBackdrop = false;
 	}
 
 	/** Adds a pane that shows what is behind it without the look of glass. */
@@ -429,13 +452,13 @@ public final class GlassPanes {
 		set16(p, base + 1, pw, ph);
 		float r = Math.min(radius * pixels, Math.min(pw, ph) / 2f);
 		setPacked(p, base + 2, r * 8f, Mth.clamp(style.blur(), 0f, 1f), fade);
-		p.set(base + 3, style.tint() >> 16 & 0xFF, style.tint() >> 8 & 0xFF, style.tint() & 0xFF, unit(style.tintAlpha()));
-		p.set(base + 4, unit(style.edgeLight()), unit(level.refraction ? style.refraction() : 0f), unit(level.fringes ? style.dispersion() : 0f),
-			unit(style.shadow()));
-		p.set(base + 5, Math.min(255, Math.round(style.shadowSpread() * pixels)), Math.min(255, Math.round(style.glowSpread() * pixels)), unit(style.glow()), style.flags() & 0xFF & 0xFF);
+		p.set(base + 3, style.tint() >> 16 & 0xFF, style.tint() >> 8 & 0xFF, style.tint() & 0xFF, ParameterTexture.unit(style.tintAlpha()));
+		p.set(base + 4, ParameterTexture.unit(style.edgeLight()), ParameterTexture.unit(level.refraction ? style.refraction() : 0f), ParameterTexture.unit(level.fringes ? style.dispersion() : 0f),
+			ParameterTexture.unit(style.shadow()));
+		p.set(base + 5, Math.min(255, Math.round(style.shadowSpread() * pixels)), Math.min(255, Math.round(style.glowSpread() * pixels)), ParameterTexture.unit(style.glow()), style.flags() & 0xFF);
 		p.set(base + 6, style.lineRgb() >> 16 & 0xFF, style.lineRgb() >> 8 & 0xFF, style.lineRgb() & 0xFF, Math.min(255, Math.round(style.thickness() * pixels)));
-		p.set(base + 7, style.accentRgb() >> 16 & 0xFF, style.accentRgb() >> 8 & 0xFF, style.accentRgb() & 0xFF, unit(style.lit()));
-		p.set(base + 8, unit(sees ? brightness(index, pw, ph, px, bottom) : NEUTRAL_BRIGHTNESS), readbackFailed ? 255 : 0, unit(style.flowShare()), (style.flags() & FLAG_COLORED) != 0 ? unit(ColoredFlow.grain()) : unit(paneSaturation()));
+		p.set(base + 7, style.accentRgb() >> 16 & 0xFF, style.accentRgb() >> 8 & 0xFF, style.accentRgb() & 0xFF, ParameterTexture.unit(style.lit()));
+		p.set(base + 8, ParameterTexture.unit(sees ? brightness(index, pw, ph, px, bottom) : NEUTRAL_BRIGHTNESS), readbackFailed ? 255 : 0, ParameterTexture.unit(style.flowShare()), (style.flags() & FLAG_COLORED) != 0 ? ParameterTexture.unit(ColoredFlow.grain()) : ParameterTexture.unit(paneSaturation()));
 		set16(p, base + 9, main.width, main.height);
 		// where the Colored field lies for this pane: a HUD panel's own, or from a menu's window on, in the window, or else on the screen
 		if ((style.flags() & FLAG_COLORED) != 0 && (style.flags() & FLAG_WINDOW) != 0 && !rimOnly && !HudStyle.inHud() && windowField == null) {
@@ -445,6 +468,7 @@ public final class GlassPanes {
 		set16(p, base + 11, (field == null ? 0f : field[0]) + 32768f, (field == null ? 0f : field[1]) + 32768f);
 		set16(p, base + 12, field == null ? main.width : field[2], field == null ? main.height : field[3]);
 		dirty = true;
+		PANE_IN_HUD[index] = HudStyle.inHud();
 		if (behind) {
 			float outside = (outsideReach + 1f) * pixels;
 			GLOW_RECTS[index * 4] = px - outside;
@@ -454,8 +478,6 @@ public final class GlassPanes {
 		}
 		if (sees) {
 			paneBlur = Math.max(paneBlur, style.blur());
-		}
-		if (sees) {
 			// what the blur has to cover: the pane, and as far around it as the blur reaches into it
 			int margin = divisor << (level.passes + 1);
 			addRegion(Mth.floor(px) - margin, Mth.floor(bottom) - margin, Mth.ceil(px + pw) + margin, Mth.ceil(bottom + ph) + margin, main.width,
@@ -474,7 +496,7 @@ public final class GlassPanes {
 		if (behind) {
 			addOutside(graphics, client, x - outsideReach - 1f, y - outsideReach - 1f, x + width + outsideReach + 1f, y + height + outsideReach + 1f, index, fade, pose, linear, nearest);
 		}
-		graphics.guiRenderState.addGuiElement(new GlassPaneState(x0, y0, x1, y1, index, behind ? GlassPaneState.INSIDE : GlassPaneState.WHOLE, fade, pose, scissor, bounds, textures));
+		graphics.guiRenderState.addGuiElement(new GlassPaneState(x0, y0, x1, y1, index, asBackdrop ? GlassPaneState.BACKDROP : behind ? GlassPaneState.INSIDE : GlassPaneState.WHOLE, fade, pose, scissor, bounds, textures));
 	}
 
 	/**
@@ -550,10 +572,6 @@ public final class GlassPanes {
 		return (long) (REGION_X1[i] - REGION_X0[i]) * (REGION_Y1[i] - REGION_Y0[i]);
 	}
 
-	private static int unit(float value) {
-		return Math.round(Mth.clamp(value, 0f, 1f) * 255f);
-	}
-
 	/** Packs two 16-bit values into one texel. */
 	private static void set16(ParameterTexture p, int texel, float a, float b) {
 		int ia = Mth.clamp(Math.round(a), 0, 65535);
@@ -563,7 +581,7 @@ public final class GlassPanes {
 
 	private static void setPacked(ParameterTexture p, int texel, float a, float blue, float alpha) {
 		int ia = Mth.clamp(Math.round(a), 0, 65535);
-		p.set(texel, ia & 0xFF, ia >> 8, unit(blue), unit(alpha));
+		p.set(texel, ia & 0xFF, ia >> 8, ParameterTexture.unit(blue), ParameterTexture.unit(alpha));
 	}
 
 	/** Before rendering the frame: uploads the glow colors and pane parameters to the GPU. */
@@ -575,13 +593,15 @@ public final class GlassPanes {
 		}
 		int[] table = UiGlow.table();
 		int[] brightness = UiGlow.coloredBrightness();
+		// the first brightness texel's red says whether panes of the Colored theme glow in its colors (255) or in the glow colors (0)
+		int themeGlow = UiGlow.themeGlow() ? 255 : 0;
 		for (int i = 0; i < LUT_SIZE; i++) {
 			int color = table == null ? 0 : table[i];
 			parameters.set(i, color >> 16 & 0xFF, color >> 8 & 0xFF, color & 0xFF, color >>> 24);
-			parameters.set(LUT_SIZE + i, 0, 0, 0, brightness == null ? 0 : brightness[i]);
+			parameters.set(LUT_SIZE + i, i == 0 ? themeGlow : 0, 0, 0, brightness == null ? 0 : brightness[i]);
 		}
 		for (int i = 0; i < count; i++) {
-			GlowNeighbors.find(GLOW_RECTS, count, i, NEIGHBORS);
+			GlowNeighbors.find(GLOW_RECTS, PANE_IN_HUD, count, i, NEIGHBORS);
 			parameters.set(FIRST_PANE_TEXEL + i * TEXELS_PER_PANE + 10, NEIGHBORS[0], NEIGHBORS[1], NEIGHBORS[2], NEIGHBORS[3]);
 		}
 		if (dirty) {
@@ -657,6 +677,15 @@ public final class GlassPanes {
 	 * panes sample. Called while no render pass of the game is open.
 	 */
 	public static void capture() {
+		DebugHooks.passBegin(DebugPass.GLASS);
+		try {
+			capturePass();
+		} finally {
+			DebugHooks.passEnd(DebugPass.GLASS);
+		}
+	}
+
+	private static void capturePass() {
 		// a pipeline that did not compile must never be bound: the driver crashes on the empty one the game binds instead
 		if (failed || sharp == null || regions == 0 || !ModPipelines.usable(BLUR_PIPELINE)) {
 			return;
@@ -849,15 +878,7 @@ public final class GlassPanes {
 			return found;
 		}
 		int color = 0xFF000000 | (direction == BLUR_UP ? 0xFF : 0) | (blue << 16);
-		float[][] corners = {{-1f, -1f}, {1f, -1f}, {1f, 1f}, {-1f, 1f}};
-		ByteBuffer data = ByteBuffer.allocateDirect(4 * 24).order(ByteOrder.nativeOrder());
-		for (float[] corner : corners) {
-			data.putFloat(corner[0]).putFloat(corner[1]).putFloat(0f);
-			data.putFloat(corner[0] * 0.5f + 0.5f).putFloat(corner[1] * 0.5f + 0.5f);
-			data.putInt(color);
-		}
-		data.flip();
-		GpuBuffer buffer = RenderSystem.getDevice().createBuffer(() -> "Lumio glass quad", GpuBuffer.USAGE_VERTEX, data);
+		GpuBuffer buffer = FullQuads.create("Lumio glass quad", color);
 		QUADS[key] = buffer;
 		return buffer;
 	}
@@ -882,7 +903,7 @@ public final class GlassPanes {
 				OptionalLong start = timestamps.getValue(2 * slot);
 				OptionalLong end = timestamps.getValue(2 * slot + 1);
 				if (start.isPresent() && end.isPresent() && end.getAsLong() >= start.getAsLong()) {
-					measured((end.getAsLong() - start.getAsLong()) / 1_000_000.0);
+					measured(GpuTimestamps.millis(start.getAsLong(), end.getAsLong()));
 				}
 			}
 			encoder.writeTimestamp(timestamps, 2 * slot);
@@ -899,6 +920,29 @@ public final class GlassPanes {
 		if (slot >= 0 && !timingFailed) {
 			encoder.writeTimestamp(timestamps, 2 * slot + 1);
 			TIMING_WRITTEN[slot] = true;
+		}
+	}
+
+	/** Set while the menu is extracted with the game's own blur behind it, for this frame: that blur is then timed as the glass's backdrop is. */
+	public static void timeGameBlur() {
+		gameBlurTimed = true;
+	}
+
+	/** Before the game's blur: starts timing it, when the menu asked for it with Auto. */
+	public static void gameBlurBegin() {
+		gameBlurSlot = -1;
+		MenuFeature menu = ModFeatures.MENU;
+		if (!gameBlurTimed || failed || menu == null || menu.glassQuality() != MenuFeature.GlassQuality.AUTO) {
+			return;
+		}
+		gameBlurSlot = beginTiming(RenderSystem.getDevice().createCommandEncoder());
+	}
+
+	/** After the game's blur. */
+	public static void gameBlurEnd() {
+		if (gameBlurSlot >= 0) {
+			endTiming(RenderSystem.getDevice().createCommandEncoder(), gameBlurSlot);
+			gameBlurSlot = -1;
 		}
 	}
 

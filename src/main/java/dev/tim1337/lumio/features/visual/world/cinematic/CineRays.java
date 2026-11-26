@@ -21,12 +21,7 @@ final class CineRays {
 	private CineRays() {
 	}
 
-	/** @return whether the block at the point is solid: it has a collision shape */
-	static boolean solid(Level level, double x, double y, double z) {
-		POS.set(Mth.floor(x), Mth.floor(y), Mth.floor(z));
-		return solidAt(level);
-	}
-
+	/** @return whether the block at {@link #POS} is solid: it has a collision shape */
 	private static boolean solidAt(Level level) {
 		var state = level.getBlockState(POS);
 		return !state.isAir() && !state.getCollisionShape(level, POS).isEmpty();

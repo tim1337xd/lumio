@@ -1,5 +1,6 @@
 package dev.tim1337.lumio.ui.controls;
 
+import dev.tim1337.lumio.api.experimental.draw.Radius;
 import dev.tim1337.lumio.config.setting.BooleanSetting;
 import dev.tim1337.lumio.config.setting.MultiSelectSetting;
 import dev.tim1337.lumio.ui.Control;
@@ -9,7 +10,7 @@ import dev.tim1337.lumio.ui.UiSounds;
 import java.util.List;
 
 /** The choices of a {@link MultiSelectSetting} as pills in rows: a chosen one is filled in the accent, a click switches it. */
-public class ChipToggleControl extends Control {
+public final class ChipToggleControl extends Control {
 	private static final int CHIP_HEIGHT = 20;
 	private static final int GAP = 6;
 	private static final int PAD = 10;
@@ -36,7 +37,7 @@ public class ChipToggleControl extends Control {
 		int cx = 0;
 		int cy = 0;
 		for (int i = 0; i < options.size(); i++) {
-			int w = Math.min(width, ui.width(options.get(i).labelText()) + 2 * PAD);
+			int w = Math.min(width, ui.width(options.get(i).labelText()) + 2 * PAD + (setting.colorOf(i) != 0 ? 10 : 0));
 			if (cx > 0 && cx + w > width) {
 				cx = 0;
 				cy += CHIP_HEIGHT + GAP;
@@ -60,10 +61,20 @@ public class ChipToggleControl extends Control {
 			boolean over = mouseX >= cx && mouseX < cx + w && mouseY >= cy && mouseY < cy + CHIP_HEIGHT;
 			float h = hover(ui, i, over);
 			boolean on = option.get();
+			int own = setting.colorOf(i);
+			if (own != 0) {
+				// a chip of its own color: outlined and tinted in it while on, with a small square of it; quiet while off
+				int readable = Ui.mix(ui.palette.coloredText(own), ui.palette.text(), 0.25f);
+				ui.rounded(cx, cy, w, CHIP_HEIGHT, Radius.box(CHIP_HEIGHT), on ? Ui.withOpacity(own, 0.16f + 0.06f * h) : Ui.mix(ui.palette.control(), 0xFFFFFFFF, 0.05f * h));
+				ui.ring(cx, cy, w, CHIP_HEIGHT, Radius.box(CHIP_HEIGHT), 1, on ? own : Ui.withOpacity(ui.palette.textSecondary(), 0.3f));
+				ui.rounded(cx + 7, cy + CHIP_HEIGHT / 2 - 3, 6, 6, Radius.XXS, on ? own : Ui.withOpacity(own, 0.45f));
+				ui.textCentered(option.labelText(), cx + w / 2 + 5, cy + CHIP_HEIGHT / 2, on ? readable : ui.palette.textSecondary());
+				continue;
+			}
 			int fill = on ? Ui.mix(ui.accent, 0xFFFFFFFF, 0.08f * h) : Ui.mix(ui.palette.control(), 0xFFFFFFFF, 0.05f * h);
-			ui.rounded(cx, cy, w, CHIP_HEIGHT, CHIP_HEIGHT / 2f, fill);
+			ui.rounded(cx, cy, w, CHIP_HEIGHT, Radius.box(CHIP_HEIGHT), fill);
 			if (!on) {
-				ui.ring(cx, cy, w, CHIP_HEIGHT, CHIP_HEIGHT / 2f, 1, Ui.withOpacity(ui.palette.textSecondary(), 0.3f));
+				ui.ring(cx, cy, w, CHIP_HEIGHT, Radius.box(CHIP_HEIGHT), 1, Ui.withOpacity(ui.palette.textSecondary(), 0.3f));
 			}
 			ui.textCentered(option.labelText(), cx + w / 2, cy + CHIP_HEIGHT / 2, on ? 0xFFFFFFFF : ui.palette.textSecondary());
 		}

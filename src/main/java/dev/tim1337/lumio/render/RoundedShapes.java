@@ -8,7 +8,6 @@ import org.joml.Matrix3x2fc;
 import org.joml.Vector2f;
 
 import com.mojang.blaze3d.pipeline.RenderPipeline;
-import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -97,10 +96,21 @@ public final class RoundedShapes {
 		if (bounds == null) {
 			return;
 		}
-		Matrix3x2f pose = new Matrix3x2f(graphics.pose());
+		Matrix3x2f pose = poseCopy(graphics.pose());
 		int r = Math.max(0, Math.min(radius, Math.min(width, height) / 2));
 		graphics.guiRenderState.addGuiElement(new Shape(x0, y0, x1, y1, x + width / 2f, y + height / 2f, width, height, r, Math.max(0, thickness), flags, color, rightColor, pose, scissor,
 			bounds));
+	}
+
+	/** The pose of the last shape, as it was copied: never changed after, so the next shapes in the same pose share it. */
+	private static Matrix3x2f lastPose;
+
+	/** @return a copy of the pose for a shape to keep, the one of the shape before when the pose is the same: most shapes of a panel share one */
+	private static Matrix3x2f poseCopy(Matrix3x2fc pose) {
+		if (lastPose == null || !lastPose.equals(pose, 0f)) {
+			lastPose = new Matrix3x2f(pose);
+		}
+		return lastPose;
 	}
 
 	/** A corner of a shape in screen coordinates, reused: shapes are only added on the render thread. */

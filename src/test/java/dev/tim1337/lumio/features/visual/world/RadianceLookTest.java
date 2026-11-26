@@ -80,11 +80,8 @@ class RadianceLookTest {
 	}
 
 	@Test
-	void theFanIsGoneBeforeTheArmIsBack() {
-		long swing = 300 * MILLIS;
-		assertTrue(RadianceLook.fanNanos(0.5f) + RadianceLook.echoSpanNanos(0.5f) < swing);
+	void theEchoIsGoneBeforeTheArmIsBack() {
 		assertTrue(RadianceLook.echoSpanNanos(0.5f) <= 200 * MILLIS);
-		assertTrue(RadianceLook.fanNanos(1f) > RadianceLook.fanNanos(0f));
 	}
 
 	@Test

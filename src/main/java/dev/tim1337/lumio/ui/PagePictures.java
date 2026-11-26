@@ -12,7 +12,7 @@ public final class PagePictures {
 	}
 
 	/** What the main menu's page has on. */
-	public record MenuLook(boolean songCard, boolean lyrics, boolean styledButtons, boolean animated) {
+	public record MenuLook(boolean songCard, boolean styledButtons, boolean animated) {
 	}
 
 	private record Line(String time12, String time24, int stripe, int head, String text, int color) {
@@ -111,8 +111,5 @@ public final class PagePictures {
 		ui.rounded(left + half + 6, buttonTop, half, 20, look.styledButtons() ? Radius.SM : 0f, buttonColor);
 		ui.textCentered("Options", left + half / 2, buttonTop + 10, 0xFFFFFFFF);
 		ui.textCentered("Quit", left + half + 6 + half / 2, buttonTop + 10, 0xFFFFFFFF);
-		if (look.lyrics()) {
-			ui.textCentered("The line that is sung right now", x + width / 2, y + height - PANEL_MARGIN - 18, 0xFFFFFFFF);
-		}
 	}
 }

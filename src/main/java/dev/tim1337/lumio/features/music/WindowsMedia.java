@@ -1,5 +1,7 @@
 package dev.tim1337.lumio.features.music;
 
+import dev.tim1337.lumio.api.experimental.util.Threads;
+
 import com.google.gson.JsonObject;
 import com.sun.jna.Function;
 import com.sun.jna.Memory;
@@ -15,7 +17,6 @@ import com.sun.jna.ptr.PointerByReference;
 
 import java.util.Base64;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
 
@@ -104,11 +105,7 @@ final class WindowsMedia {
 		if (failed) {
 			return false;
 		}
-		worker = Executors.newSingleThreadExecutor(runnable -> {
-			Thread thread = new Thread(runnable, "Lumio Windows media");
-			thread.setDaemon(true);
-			return thread;
-		});
+		worker = Threads.daemonExecutor("Lumio Windows media");
 		try {
 			worker.submit(WindowsMedia::open).get();
 		} catch (Exception e) {

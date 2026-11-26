@@ -28,6 +28,7 @@
 	"breaks": {
 	},
 	"custom": {
-		"lumio:build": "${build}"
+		"lumio:build": "${build}",
+		"lumio:release": ${release}
 	}
 }

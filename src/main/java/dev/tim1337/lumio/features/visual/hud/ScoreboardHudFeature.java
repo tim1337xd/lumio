@@ -68,7 +68,7 @@ public class ScoreboardHudFeature extends HudPanelFeature {
 	}
 
 	/** A line: its text, and the number the server formats for it (shown on the right), or none. */
-	private record Row(Component line, HudText text, TabularText value, TabularText shortValue, String label, ScoreboardLines.Icon icon, HudText score, boolean blank, boolean separator) {
+	private record Row(Component line, HudText text, TabularText value, TabularText shortValue, HudText cutValue, String label, ScoreboardLines.Icon icon, HudText score, boolean blank, boolean separator) {
 	}
 
 	// the custom look in panel pixels: padding, line height, the title's row, the small gap instead of an empty line, the room before a value, corners
@@ -80,6 +80,9 @@ public class ScoreboardHudFeature extends HudPanelFeature {
 	/** A line's icon: one size, as high as the text, in a box of its own, and the gap after it. */
 	private static final int ICON = 9;
 	private static final int ICON_GAP = 4;
+	private static final float PIN_GAP = 3f;
+	/** The least a value keeps of a row whose width the player set, before the label is cut after all. */
+	private static final int LEAST_VALUE_ROOM = 24;
 	/** What a value just gained: its size, its opacity, how far from the value, and how far it slides in. */
 	private static final float GAIN_SIZE = TextScale.SMALL;
 	private static final float GAIN_OPACITY = 0.65f;
@@ -123,6 +126,9 @@ public class ScoreboardHudFeature extends HudPanelFeature {
 	private final FloatSetting maxWidth = add(new FloatSetting("max_width", Component.literal("Max width"), 260f, 100f, 500f, 0), "General",
 		"Longer lines end with …");
 
+	/** The note under what only the Custom look has, while the Game look shows the server's scoreboard as it is. */
+	private static final String CUSTOM_ONLY = "Only with the Custom style";
+
 	private HudText title = new HudText(Component.literal("Scoreboard"));
 	private Component titleSource;
 	private List<Row> rows = List.of();
@@ -143,13 +149,19 @@ public class ScoreboardHudFeature extends HudPanelFeature {
 	private float measuredWidth;
 
 	public ScoreboardHudFeature() {
-		super("scoreboard_hud", "Scoreboard", "The scoreboard of a server, as a panel you can move and size.", false, Anchor.RIGHT, false, 3f, 0f);
+		super("scoreboard_hud", "Scoreboard", "The scoreboard as a panel you can move.", false, Anchor.RIGHT, false, 3f, 0f);
 		iconRgb(SystemColors.GREEN_RGB);
 		iconName("list");
-		summary("The scoreboard, as a panel you can move and size");
+		summary("The scoreboard as a movable panel");
 		offerWidth(MIN_WIDTH + 60);
 		// where the game puts its sidebar: at the right edge, centered top to bottom
 		placeCenteredVertically();
+		// the Game look is the server's scoreboard as it is: what shows or hides lines is the Custom look's (the numbers on the right only hide)
+		showTitle.disabledWhen(() -> !custom(), CUSTOM_ONLY);
+		showAddress.disabledWhen(() -> !custom(), CUSTOM_ONLY);
+		// the Custom look sizes itself up to a fixed limit
+		maxWidth.visibleWhen(() -> !custom());
+		glowAndDepthNeedBackground();
 	}
 
 	// ----------------------------------------------------------------------------------------------------- settings card
@@ -199,6 +211,7 @@ public class ScoreboardHudFeature extends HudPanelFeature {
 					() -> Addons.scoreboard() == null ? "Lines" : Addons.scoreboard().settingsHeading(), () -> "Pick and order lines in a sheet", () -> null, () -> null, () -> "Edit…"),
 					() -> MacScreen.openSubPage(linesView()));
 				linesRow.visibleWhen(() -> Addons.scoreboard() != null);
+				linesRow.disabledWhen(() -> !custom(), CUSTOM_ONLY);
 			}
 			return linesRow;
 		}
@@ -206,6 +219,7 @@ public class ScoreboardHudFeature extends HudPanelFeature {
 			if (linesChips == null) {
 				linesChips = new ChipsInfoSetting("lines_chips", this::linesOn);
 				linesChips.visibleWhen(() -> Addons.scoreboard() != null);
+				linesChips.disabledWhen(() -> !custom(), CUSTOM_ONLY);
 			}
 			return linesChips;
 		}
@@ -268,14 +282,15 @@ public class ScoreboardHudFeature extends HudPanelFeature {
 				.sorted(Comparator.comparingInt(PlayerScoreEntry::value).reversed().thenComparing(PlayerScoreEntry::owner, String.CASE_INSENSITIVE_ORDER))
 				.toList();
 			NumberFormat objectiveFormat = objective.numberFormat();
-			if (custom != null && custom.active()) {
-				// an add-on picks the lines (SkyBlock's custom scoreboard): its lines in its order
+			List<Component> sidebar = new ArrayList<>();
+			for (PlayerScoreEntry entry : entries) {
+				sidebar.add(PlayerTeam.formatNameForTeam(scoreboard.getPlayersTeam(entry.owner()), ScoreboardLines.entryShown(entry.ownerName())));
+			}
+			List<Component> picked = ScoreboardLines.shownLines(custom(), custom, sidebar);
+			if (picked != sidebar) {
+				// an add-on picks the lines (SkyBlock's custom scoreboard): its lines in its order, in the Custom look only
 				name = custom.title() != null ? custom.title() : objective.getDisplayName();
-				List<Component> sidebar = new ArrayList<>();
-				for (PlayerScoreEntry entry : entries) {
-					sidebar.add(PlayerTeam.formatNameForTeam(scoreboard.getPlayersTeam(entry.owner()), entry.ownerName()));
-				}
-				for (Component line : custom.lines(sidebar)) {
+				for (Component line : picked) {
 					lines.add(line);
 					scores.add(null);
 				}
@@ -286,9 +301,10 @@ public class ScoreboardHudFeature extends HudPanelFeature {
 					scores.add(null);
 				}
 			} else {
+				// the Game look (or no add-on's lines): the server's title and lines as they are
 				name = objective.getDisplayName();
 				for (PlayerScoreEntry entry : entries.subList(0, Math.min(entries.size(), Math.round(maxRows.get())))) {
-					lines.add(PlayerTeam.formatNameForTeam(scoreboard.getPlayersTeam(entry.owner()), entry.ownerName()));
+					lines.add(sidebar.get(lines.size()));
 					// the plain red numbers of the default format say nothing and are left out; numbers the server formats itself stay
 					boolean ownFormat = entry.numberFormatOverride() != null || objectiveFormat != null;
 					NumberFormat format = objective.numberFormatOrDefault(StyledFormat.SIDEBAR_DEFAULT);
@@ -346,7 +362,7 @@ public class ScoreboardHudFeature extends HudPanelFeature {
 				built.removeLast();
 			}
 			if (same) {
-				built.add(new Row(line, before.text(), before.value(), before.shortValue(), before.label(), before.icon(), scoreText, blank, separator));
+				built.add(new Row(line, before.text(), before.value(), before.shortValue(), before.cutValue(), before.label(), before.icon(), scoreText, blank, separator));
 				if (address && i == last) {
 					addressRow = built.size() - 1;
 				}
@@ -366,7 +382,9 @@ public class ScoreboardHudFeature extends HudPanelFeature {
 			if (split != null) {
 				gains.see(label, split.gain(), split.value().getString(), System.currentTimeMillis());
 			}
-			built.add(new Row(line, text, value, shortValue, label, icon, scoreText, blank, separator));
+			// the value once more as text that can end with …, for a width the player set that has no room for all of it
+			HudText cutValue = split == null ? null : new HudText(split.value(), 1f, false);
+			built.add(new Row(line, text, value, shortValue, cutValue, label, icon, scoreText, blank, separator));
 			if (isAddress) {
 				addressRow = built.size() - 1;
 			}
@@ -396,9 +414,11 @@ public class ScoreboardHudFeature extends HudPanelFeature {
 	/** Sets the size the panel grows to at once and shrinks to only after a while, so a briefly shorter line does not make it pulse. */
 	private void fitSize() {
 		int wantedHeight = contentHeight(HudEditScreen.isOpen());
-		int wantedWidth = Mth.clamp((int) Math.ceil(measuredWidth) + PAD * 2 + WIDTH_SLACK, MIN_WIDTH, custom() ? MOST_AUTO_WIDTH : Math.max(MIN_WIDTH, Math.round(maxWidth.get())));
+		int most = custom() ? MOST_AUTO_WIDTH : Math.max(MIN_WIDTH, Math.round(maxWidth.get()));
+		int wantedWidth = Mth.clamp((int) Math.ceil(measuredWidth) + PAD * 2 + WIDTH_SLACK, MIN_WIDTH, most);
 		long now = System.currentTimeMillis();
-		if (wantedWidth >= targetWidth) {
+		// a narrower Max width is a setting, not a line that is shorter for a moment: it applies at once
+		if (wantedWidth >= targetWidth || targetWidth > most) {
 			targetWidth = wantedWidth;
 			narrowerSince = 0;
 		} else if (narrowerSince == 0) {
@@ -420,7 +440,7 @@ public class ScoreboardHudFeature extends HudPanelFeature {
 
 	private int contentHeight(boolean editing) {
 		if (!custom()) {
-			return OLD_PAD * 2 + (showTitle.get() || editing ? OLD_TITLE : 0) + rows.size() * OLD_ROW - 2;
+			return OLD_PAD * 2 + OLD_TITLE + rows.size() * OLD_ROW - 2;
 		}
 		int h = PAD * 2;
 		if (showTitle.get() || editing) {
@@ -512,19 +532,39 @@ public class ScoreboardHudFeature extends HudPanelFeature {
 			float textX = PAD;
 			float textRoom = room;
 			if (row.icon() != null) {
-				drawIcon(ui, row.icon(), PAD, Math.round(y + (ROW - ICON) / 2f), Ui.withOpacity(row.icon().rgb() < 0 ? text : HudStyle.readable(0xFF000000 | row.icon().rgb()), alpha));
-				textX += ICON + ICON_GAP;
-				textRoom -= ICON + ICON_GAP;
+				int iconColor = Ui.withOpacity(row.icon().rgb() < 0 ? text : HudStyle.readable(0xFF000000 | row.icon().rgb()), alpha);
+				float iconRoom;
+				if (row.icon().name() != null) {
+					// the icon by its drawing alone, as tall as the letters of its line (0.9 of the font's text height), centered on them
+					float letters = font.lineHeight - 1f;
+					iconRoom = ui.inlineIcon(row.icon().name(), PAD, rowY + letters / 2f, letters, iconColor) + PIN_GAP;
+				} else {
+					drawIcon(ui, row.icon(), PAD, Math.round(y + (ROW - ICON) / 2f), iconColor);
+					iconRoom = ICON + ICON_GAP;
+				}
+				textX += iconRoom;
+				textRoom -= iconRoom;
 			}
 			if (row.value() != null) {
 				float whole = row.value().width(font);
-				float labelWidth = row.text().naturalWidth(font);
+				// the label as it is drawn when it has the row to itself
+				row.text().layout(font, textRoom);
+				float labelWidth = Math.max(row.text().width(), row.text().naturalWidth(font));
 				// the value is never cut: where the width is set and it does not fit, it is written shorter first
 				TabularText written = customWidth() && row.shortValue() != null && ScoreGains.rowWidth(labelWidth, whole, SCORE_GAP) > room ? row.shortValue() : row.value();
 				float shownWidth = written.width(font);
+				// the label is never cut for its value: the panel grows to both (automatic width); with a width set the value gives way, written
+				// shorter first and then ending with …
+				float valueRoom = textRoom - labelWidth - SCORE_GAP - WIDTH_SLACK;
+				if (customWidth() && shownWidth > valueRoom) {
+					row.cutValue().layout(font, Math.max(LEAST_VALUE_ROOM, valueRoom));
+					shownWidth = row.cutValue().width();
+					row.cutValue().draw(graphics, font, width - PAD - shownWidth, rowY, Ui.withOpacity(text, alpha), false);
+				} else {
+					// at the row's right edge, always: what it gained takes no room in the row, and no other line moves for it
+					written.draw(graphics, font, width - PAD, rowY, Ui.withOpacity(text, alpha));
+				}
 				valueWidth = shownWidth + SCORE_GAP;
-				// at the row's right edge, always: what it gained takes no room in the row, and no other line moves for it
-				written.draw(graphics, font, width - PAD, rowY, Ui.withOpacity(text, alpha));
 				widest = Math.max(widest, ScoreGains.rowWidth(labelWidth, whole, SCORE_GAP));
 				drawGain(ui, row.label(), textX + labelWidth, ScoreGains.valueLeft(width - PAD, shownWidth), width - PAD, rowY, alpha);
 			}
@@ -581,15 +621,12 @@ public class ScoreboardHudFeature extends HudPanelFeature {
 		graphics.enableScissor(0, 0, width, height);
 		int text = HudStyle.text();
 		boolean editing = HudEditScreen.isOpen();
-		float titleAlpha = HudParts.alpha(showTitle.get());
-		if (titleAlpha > 0f) {
-			title.layout(font, room);
-			widest = Math.max(widest, title.naturalWidth(font));
-			title.draw(graphics, font, (width - title.width()) / 2f, y + 1, Ui.withOpacity(text, titleAlpha), false);
-			ui.fill(OLD_PAD, y + OLD_TITLE - OLD_TITLE_RULE, width - 2 * OLD_PAD, 1, HudStyle.line(RULE_OPACITY * titleAlpha));
-			part("Title", showTitle, OLD_PAD, y, width - 2 * OLD_PAD, OLD_TITLE - OLD_TITLE_RULE);
-			y += OLD_TITLE;
-		}
+		// the server's title, always: what "Shows" hides belongs to the Custom look
+		title.layout(font, room);
+		widest = Math.max(widest, title.naturalWidth(font));
+		title.draw(graphics, font, (width - title.width()) / 2f, y + 1, text, false);
+		ui.fill(OLD_PAD, y + OLD_TITLE - OLD_TITLE_RULE, width - 2 * OLD_PAD, 1, HudStyle.line(RULE_OPACITY));
+		y += OLD_TITLE;
 		for (int i = 0; i < rows.size(); i++) {
 			Row row = rows.get(i);
 			float shown = Mth.clamp((height - OLD_PAD - y) / (float) OLD_ROW, 0f, 1f);

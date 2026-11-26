@@ -1,5 +1,7 @@
 package dev.tim1337.lumio.config.setting;
 
+import dev.tim1337.lumio.features.misc.keybinds.CommandKeybindsFeature;
+
 import dev.tim1337.lumio.features.misc.keybinds.CommandBind;
 import dev.tim1337.lumio.ui.Control;
 import dev.tim1337.lumio.ui.controls.CommandBindsControl;
@@ -110,5 +112,15 @@ public class CommandBindsSetting extends Setting<Void> {
 	@Override
 	public Control createControl(Runnable onChanged) {
 		return new CommandBindsControl(this, onChanged);
+	}
+
+	/** The search finds the keybinds by their keys and commands: "tab r" finds the one on Tab + R. */
+	@Override
+	public String searchText() {
+		StringBuilder text = new StringBuilder();
+		for (CommandBind bind : binds()) {
+			text.append(String.join(" + ", CommandKeybindsFeature.keyParts(bind))).append(' ').append(bind.command).append(' ');
+		}
+		return text.toString();
 	}
 }

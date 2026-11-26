@@ -33,12 +33,6 @@ public final class SystemColors {
 	public static final int GRAY = 0xFF000000 | GRAY_RGB;
 	public static final int RED_TEXT = 0xFF000000 | RED_TEXT_RGB;
 
-	/** Success or completion. */
-	public static final int SUCCESS = GREEN;
 	/** Errors and irreversible actions, such as a delete button. */
 	public static final int DANGER = RED;
-	/** Same, for text. */
-	public static final int DANGER_TEXT = RED_TEXT;
-	/** Something that needs attention soon. */
-	public static final int WARNING = ORANGE;
 }

@@ -1,7 +1,7 @@
 package dev.tim1337.lumio.render;
 
 import dev.tim1337.lumio.ModFeatures;
-import dev.tim1337.lumio.features.visual.world.HeldItem;
+import dev.tim1337.lumio.api.experimental.draw.Draw;
 import dev.tim1337.lumio.features.visual.world.HeldItemOutlineFeature;
 import dev.tim1337.lumio.features.visual.world.RadianceLook;
 
@@ -11,11 +11,9 @@ import org.joml.Vector3f;
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.model.Model;
 import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.rendertype.RenderType;
-import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.LightCoordsUtil;
@@ -67,10 +65,6 @@ public final class EntityRadiance {
 		void draw(PoseStack pose, int color);
 	}
 
-	private static int argb(int rgb, float alpha) {
-		return (Math.round(Math.clamp(alpha, 0f, 1f) * 255f) << 24) | (rgb & 0xFFFFFF);
-	}
-
 	/**
 	 * Submits the rings of copies: one tight ring for an outline; for a glow several, further out and fainter, together forming a soft light. Every
 	 * copy is offset sideways in the screen plane and pushed away from the camera so the entity itself hides it.
@@ -105,9 +99,11 @@ public final class EntityRadiance {
 		}
 		int directions = style.kind() == OutlineKind.GLOW && smoothness > 0.5f ? 16 : DIRECTIONS;
 		float distance = Math.max(pose.last().pose().getTranslation(POSITION).length(), MIN_DISTANCE);
+		// inverted once: every copy below is pushed and popped again, so the pose it starts from stays the same
+		pose.last().pose().invert(INVERSE);
 		for (int ring = 0; ring < scales.length; ring++) {
 			float radius = base * scales[ring];
-			int color = argb(colors[ring], alphas[ring]);
+			int color = Draw.argb(colors[ring], alphas[ring]);
 			if ((color >>> 24) == 0) {
 				continue;
 			}
@@ -124,7 +120,7 @@ public final class EntityRadiance {
 					// poses are world-oriented with the camera rotation applied separately, so the camera vectors give the screen-sideways directions
 					OFFSET.set(camera.leftVector()).mul(-right).fma(up, camera.upVector());
 				}
-				pose.last().pose().invert(INVERSE).transformDirection(OFFSET);
+				INVERSE.transformDirection(OFFSET);
 				pose.pushPose();
 				pose.translate(OFFSET.x, OFFSET.y, OFFSET.z);
 				// scaling about the camera moves every point along its view ray: further away, at the same screen position

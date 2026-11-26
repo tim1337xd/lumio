@@ -1,0 +1,43 @@
+{
+  "camera" : {
+    "brightness" : 1,
+    "enabled" : true,
+    "full_bright" : true
+  },
+  "menu" : {
+    "glow_color_from" : "THEME"
+  },
+  "music" : {
+    "world_cutout_colors" : "ACCENT",
+    "world_glow" : "WHOLE_TEXT",
+    "world_preset" : "CUTOUT"
+  },
+  "sky" : {
+    "aurora_intensity" : 1,
+    "cloud_shadows" : true,
+    "milky_way" : false,
+    "molten_brightness" : 2,
+    "molten_color" : {
+      "color" : "#FF9A1F",
+      "menu" : true
+    },
+    "molten_glow" : 1.87,
+    "molten_speed" : 0.67,
+    "molten_thickness" : 1.5,
+    "moon_glow" : false
+  },
+  "visual_filter" : {
+    "death_animation" : false,
+    "enabled" : true,
+    "experience_orbs" : false,
+    "falling_blocks" : false,
+    "fire_icon" : false,
+    "lightning" : false,
+    "portal" : "HIDE",
+    "underwater" : "HIDE"
+  },
+  "waypoint_map" : {
+    "enabled" : true,
+    "glow" : false
+  }
+}

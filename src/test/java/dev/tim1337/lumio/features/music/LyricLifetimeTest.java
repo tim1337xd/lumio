@@ -118,7 +118,7 @@ class LyricLifetimeTest {
 	@Test
 	void aHardCutIsGoneAtOnceAndFadesIn() {
 		assertEquals(0f, LyricCutFade.alpha(LyricCutFade.NONE, 0L), "the first frame of the new shot starts from nothing");
-		assertEquals(0.5f, LyricCutFade.alpha(LyricCutFade.NONE, 100L), 0.001f);
+		assertEquals(0.5f, LyricCutFade.alpha(LyricCutFade.NONE, LyricCutFade.IN_MS / 2), 0.001f);
 		assertEquals(1f, LyricCutFade.alpha(LyricCutFade.NONE, LyricCutFade.IN_MS));
 	}
 
@@ -135,6 +135,6 @@ class LyricLifetimeTest {
 	@Test
 	void aSecondCutSoonAfterTheFirstFadesOutFromWhereItIs() {
 		assertEquals(0.5f, LyricCutFade.alpha(75L, 150L), 0.001f, "the fade out wins where it is the lower");
-		assertEquals(0.25f, LyricCutFade.alpha(120L, 50L), 0.001f, "the fade in wins where it is");
+		assertEquals(50f / LyricCutFade.IN_MS, LyricCutFade.alpha(120L, 50L), 0.001f, "the fade in wins where it is");
 	}
 }

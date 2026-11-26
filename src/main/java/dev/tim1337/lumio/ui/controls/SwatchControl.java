@@ -20,7 +20,7 @@ import java.util.List;
  * Choices as a row of colored circles with a ring around the selected one, like the macOS accent colors. A color of the player's own, which
  * opens a color picker, has a rainbow ring around it, so it reads as a picker and not as one more color.
  */
-public class SwatchControl<E extends Enum<E> & Swatch> extends Control {
+public final class SwatchControl<E extends Enum<E> & Swatch> extends Control {
 	private static final int RADIUS = 8;
 	private static final int STEP = 24;
 	private static final int LINE = 24;

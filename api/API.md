@@ -2,7 +2,7 @@
 
 The add-on API lets other mods add features to Lumio: pages in its menu, HUD panels in its look, info bar segments, status bar
 values, tab list cards and more. Package `dev.tim1337.lumio.api`, a small Fabric mod of its own (mod id `lumio-api`,
-the `api` subproject) that Lumio ships inside its jar. Current API version: **1.3.0** (`LumioApi.version()`).
+the `api` subproject) that Lumio ships inside its jar. Current API version: **1.31.0** (`LumioApi.version()`).
 
 The first add-on is *Lumio: Hypixel SkyBlock* (`lumio-skyblock`). It is a mod of its own (project
 `Lumio-SkyBlock`) and uses nothing of Lumio but this API.
@@ -106,6 +106,19 @@ also return them from `info()`.
 | `registerScoreboard`, `registerInventoryColumn`, `registerBlockTint` | Scoreboard lines, a column next to the inventory (drawn on the inventory's canvas), a block overlay tint |
 | `registerDiagnostics` | Lines for the `/lumio` debug output |
 
+### Changelog (`Changelog`, since 1.31.0)
+
+Ship `assets/<add-on id>/changelog.txt` in the format `Changelog` documents (versions with dates, Added, Changed and Fixed entries, an optional
+` @<feature id>` link) and Lumio shows it as the add-on's tab in What is new; no code is needed. `Changelog.parse` reads it the same way, for
+a unit test of the file. A file that cannot be read leaves the tab out.
+
+### Chat lines (`LumioChat`, since 1.10.0)
+
+Every line an add-on adds to the chat goes through `LumioChat`, so it starts with the same "[Lumio] " as the mod's own (grey brackets, the name
+in the menu's accent color): `line(message)` posts it as it is, `info(message)` in grey and `alert(message)` in red where the message has no color of
+its own; `prefixed(message)` returns the prefixed line, for a command's feedback. Only for the add-on's own lines: never for a message of the game
+or of a server. Toasts and notifications take no prefix.
+
 ## Stable and experimental
 
 The API has two parts. **Third-party add-ons should use the stable part**: it follows the version rules below, so an add-on built for 1.x
@@ -129,13 +142,40 @@ The experimental part (`api.experimental`):
 
 - `draw`: `PanelKit` (the panels' sizes, rows, bars, rings, tags, number formats), `HudTheme` (panel text colors and glass), `SystemColors`,
   `Radius`, `TextScale`, `Draw` (window fade, color math, a canvas for drawing outside a panel), `WorldDraw` and `BlockStyle` (block
-  highlights in the block overlay's look), `SlideText`, `TextSelection`.
+  highlights in the block overlay's look), `SlideText`, `TextSelection`, `WorldLabel` (labels at a place in the world, drawn with the HUD).
 - `motion`: `Spring` (with `follow(target, seconds)` for a panel's `frameSeconds()`), `Easing`, `AnimClock`.
-- `ui`: `Toasts`, `UiSounds`; `hud`: `HudEditor`.
-- `util`: `Logs` (the home folder hidden in messages), `Debug`, `ModFiles` (the mod's config folder, atomic writes), `HttpLimits`, `Guard`,
+- `ui`: `Toasts`, `UiSounds`; `hud`: `HudEditor`, `HudAnchors` (the HUD's anchor math).
+- `util`: `KeyNames` (a key mapping's keys as shown, also a combination such as "Tab + R"), `Logs` (the home folder hidden in messages), `ModFiles` (the mod's config folder, atomic writes), `HttpLimits`, `Guard`,
   `Sight` (in view and in line of sight), `CommandText`, `TextColors`, `ServerText`, `BreakingProgress` (how far the mined block is along, from an add-on
   that knows the server's timing: the block overlay's breaking fill asks it first and falls back to the game's progress; 1 means the next
   block can be started, then the fill holds full).
+- `waypoint`: what every waypoint looks like, for an add-on's own (such as room waypoints in dungeons): `WaypointColors`, `WaypointLook` (beam,
+  glow, dotted line, label), `WaypointCards` (the place card, giving the result back).
+- `debug`: the debug hooks (see below).
+
+### Debug hooks (`api.experimental.debug`)
+
+Probes that tell what Lumio and its add-ons do, for the Debug log switch (its file `logs/lumio-debug.log`) and a debug tool. While nothing listens,
+`DebugHooks.ACTIVE` is false and every probe is free, so **always guard a probe that builds text**:
+
+    if (DebugHooks.ACTIVE) {
+        DebugHooks.log(DebugCategory.CHAT, "Read {} from {}", value, line); // {} places as in the game's log; a last exception is passed on
+    }
+
+- `DebugHooks.log(category, text)`, `log(category, format, arguments...)`, `log(category, level, format, arguments...)` (`DebugLevel`
+  TRACE, DEBUG, INFO, WARN), `emit(category, level, text, error)`; `event(category, what, detail)` for moments (a screen opened).
+- Categories: Lumio's in `DebugCategory` (general, render, input, chat, hud, music, update, window, packs, camera, menu, swing, colored); an add-on
+  uses its own names for its own things (the SkyBlock add-on: `SkyBlockDebug`).
+- Costly probes (made every frame, such as the swing's values or the Colored theme's colors) are only made while a sink asks for them:
+  guard them with `DebugHooks.wants(category)` instead.
+- Render passes: `passBegin(DebugPass.SKY)` / `passEnd(...)` and `frameBegin()`, free while nothing listens (no guard needed); a tool times them.
+  Animations: `frameMark(name, FrameMark.FRAME/NOTE/ZERO/FINISH, text)` for their frame times.
+- Read-only state: `DebugHooks.view(name, linesSupplier)` once at start; a debug tool lists `views()`.
+- For tools: `addSink(DebugSink)` / `removeSink`, `wantLogFile(owner, on)` (keep the log file written), `setUpdateTestServer(address)` (Lumio's
+  updater asks a local test server instead of GitHub, never in a public release).
+
+Lumio's unit test `ProbeGuardTest` (and the SkyBlock add-on's copy) fails on an unguarded probe. The private debug add-on (Lumio: Debug) is the
+tool that listens; it is never published.
 
 `api.spi` is the internal bridge to the running Lumio: not part of the API promise, and never used by add-ons. Nothing of the
 stable part uses the experimental part or the bridge in its signatures (`ApiSnapshotTest` checks it).
@@ -147,6 +187,11 @@ Rules every add-on follows:
 - Providers and panels are called from render and tick code: return quickly, allocate nothing per frame, keep texts until their source changes.
 - An add-on's settings are saved in `config/lumio/addons/<addon id>.json` and travel with shared configs; private values and
   keybinds follow the main mod's import rules.
+- An add-on may ship `assets/<addon id>/defaults.json` (its features' ids, each with setting keys and values, as in its settings file): Lumio takes those
+  values as the settings' defaults before any saved file is read, so a fresh install and Reset start with them. Private values, HUD positions
+  and key binds in it are ignored. Beside it, `assets/<addon id>/defaults-fresh.json` (same form) is read only on a true fresh install (no
+  settings file of Lumio and none of the add-on yet), as values, not defaults: for settings that players of an earlier version keep at their old
+  default, so nothing changes by itself for them.
 - Lumio's server rules apply: visual and informational only, no packets or automation, nothing the vanilla client hides.
 
 ## Versions

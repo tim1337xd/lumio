@@ -19,6 +19,11 @@ public interface PagePreview {
 		return "Updates live while you change the settings.";
 	}
 
+	/** @return whether the panel is shown beside a tab of the page, by its title; a tab without anything to preview gets the whole width */
+	default boolean shownOn(String tab) {
+		return true;
+	}
+
 	/** @return the line under the panel while a tab of the page is shown, by its title */
 	default String note(String tab) {
 		return note();

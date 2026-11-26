@@ -1,7 +1,10 @@
 package dev.tim1337.lumio.mixin.gui;
 
+import dev.tim1337.lumio.api.experimental.debug.DebugCategory;
+import dev.tim1337.lumio.api.experimental.debug.DebugHooks;
 import dev.tim1337.lumio.ui.loading.LoadingScreens;
 import dev.tim1337.lumio.ui.loading.LoadingSession;
+import dev.tim1337.lumio.ui.title.RejoinGate;
 
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -29,6 +32,9 @@ public abstract class ConnectScreenMixin {
 	private static void lumio$joining(Screen parent, Minecraft client, ServerAddress address, ServerData data, boolean quickPlay,
 												TransferState transfer, CallbackInfo ci) {
 		LoadingSession.joining(data == null ? null : data.name, address.toString());
+		if (DebugHooks.ACTIVE) {
+			DebugHooks.log(DebugCategory.GENERAL, "Joining: connect screen {} since the last Rejoin click", RejoinGate.SHARED.countConnectScreen());
+		}
 	}
 
 	@Inject(method = "extractRenderState", at = @At("HEAD"), cancellable = true)

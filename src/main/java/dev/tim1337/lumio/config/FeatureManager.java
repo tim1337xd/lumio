@@ -2,13 +2,14 @@ package dev.tim1337.lumio.config;
 
 import dev.tim1337.lumio.hud.PanelLook;
 import dev.tim1337.lumio.addon.AddonConfigs;
+import dev.tim1337.lumio.api.LumioApi;
 import dev.tim1337.lumio.api.experimental.util.Logs;
 import dev.tim1337.lumio.api.experimental.util.ModFiles;
+import dev.tim1337.lumio.api.experimental.util.Threads;
 import dev.tim1337.lumio.config.setting.FloatSetting;
 import dev.tim1337.lumio.features.visual.world.HeldItemTransformFeature;
 
 import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
@@ -29,7 +30,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Predicate;
 import java.util.zip.GZIPInputStream;
@@ -37,7 +37,9 @@ import java.util.zip.GZIPOutputStream;
 
 /** Holds every registered feature and persists their settings to {@code config/lumio/config.json}. */
 public final class FeatureManager {
-	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+	private static final Gson GSON = ConfigFiles.GSON;
+	/** Writes JSON on one line, for text that is shared or compared and not read in a file. */
+	private static final Gson COMPACT = new Gson();
 	private static final List<Feature> FEATURES = new ArrayList<>();
 
 	private FeatureManager() {
@@ -63,6 +65,59 @@ public final class FeatureManager {
 		return ADDON_OF.get(feature);
 	}
 
+	/** @return the features with a switch of their own that are on now: what "turn everything off" switches off */
+	public static List<Feature> switchedOn() {
+		List<Feature> on = new java.util.ArrayList<>();
+		for (Feature feature : features()) {
+			if (feature.isSwitchable() && !feature.isChild() && feature.isAnyOn()) {
+				on.add(feature);
+			}
+		}
+		return on;
+	}
+
+	/**
+	 * Switches off every feature that is on; their settings, the HUD layout and the keys stay as they are.
+	 *
+	 * @return what was switched off, to put back exactly (a feature made of parts gets back the parts that were on, not all of them)
+	 */
+	public static SwitchedOff switchAllOff() {
+		List<Feature> on = switchedOn();
+		Map<Feature, Boolean> before = new java.util.LinkedHashMap<>();
+		for (Feature feature : on) {
+			if (feature.children().isEmpty()) {
+				before.put(feature, feature.ownSwitch());
+			} else {
+				for (Feature part : feature.children()) {
+					before.put(part, part.ownSwitch());
+				}
+			}
+			feature.setEnabled(false);
+		}
+		return new SwitchedOff(before, on.size());
+	}
+
+	/** What "turn everything off" switched off: each switch as it was, and how many features were on. */
+	public static final class SwitchedOff {
+		private final Map<Feature, Boolean> before;
+		private final int features;
+
+		private SwitchedOff(Map<Feature, Boolean> before, int features) {
+			this.before = before;
+			this.features = features;
+		}
+
+		/** @return how many features were on and are off now */
+		public int features() {
+			return features;
+		}
+
+		/** Puts every switch back as it was before; features that were off stay off. */
+		public void restore() {
+			before.forEach(Feature::setOwnSwitch);
+		}
+	}
+
 	public static List<Feature> features() {
 		return FEATURES;
 	}
@@ -82,11 +137,105 @@ public final class FeatureManager {
 	 * Features whose settings could not be loaded: what the file had for them, and what they saved right after (their defaults). Their saved values
 	 * are written back, with only what the player changed since put over them, so a feature that fails to load never wipes its settings.
 	 */
-	private static final Map<Feature, JsonObject[]> UNLOADED = new HashMap<>();
+	private static final Map<Feature, Unloaded> UNLOADED = new HashMap<>();
+
+	/** What the file had for a feature that could not load, and what the feature saved right after: its defaults. */
+	private record Unloaded(JsonObject fromFile, JsonObject defaults) {
+	}
+
+	/** The shipped default settings, in the main mod's assets and in each add-on's: {@code /assets/<mod or add-on id>/defaults.json}. */
+	private static final String SHIPPED_DEFAULTS = "defaults.json";
+	/** The shipped settings a fresh install starts with besides the defaults, beside them: {@code /assets/<mod or add-on id>/defaults-fresh.json}. */
+	private static final String FRESH_INSTALL_SETTINGS = "defaults-fresh.json";
+
+	/** @return whether the game tests run, which keep the defaults of the code their scenes count on */
+	private static boolean codeDefaultsOnly() {
+		return Boolean.getBoolean("lumio.test.codeDefaults");
+	}
+
+	/**
+	 * Takes the shipped default settings as the features' defaults, before any saved file is read: so they are what a fresh install starts with and
+	 * what "reset to default" goes back to. A player's saved values are read over them as before, and every value is saved, so nobody who has
+	 * played before sees a setting change by itself. Private values, debugging tools and HUD positions are never taken from it.
+	 */
+	static void applyShippedDefaults() {
+		if (!codeDefaultsOnly()) {
+			takeShipped(SHIPPED_DEFAULTS, addon -> true, true);
+		}
+	}
+
+	/**
+	 * On a true fresh install only (no settings file of that part yet), sets the shipped fresh-install settings as values, not as defaults: settings
+	 * a player of an earlier version keeps at their old default (they are new since, and nothing may change by itself for that player) start set
+	 * as shipped here. The same values are left out as of the defaults.
+	 *
+	 * @param fresh whether a part has no settings file yet, by its add-on id (null for the main mod)
+	 */
+	static void applyFreshInstallSettings(Predicate<String> fresh) {
+		if (!codeDefaultsOnly()) {
+			takeShipped(FRESH_INSTALL_SETTINGS, fresh, false);
+		}
+	}
+
+	/**
+	 * @param mainFileExists whether the main settings file exists
+	 * @param addonFileExists whether an add-on's own settings file exists, by its id
+	 * @return whether a part (by add-on id, null for the main mod) is freshly installed: no settings file of the main mod, and none of its own
+	 */
+	static Predicate<String> freshParts(boolean mainFileExists, Predicate<String> addonFileExists) {
+		return addon -> !mainFileExists && (addon == null || !addonFileExists.test(addon));
+	}
+
+	/** Reads a shipped settings file of each part named by {@code parts} into its features' settings, as values and with {@code asDefault} also as defaults. */
+	private static void takeShipped(String name, Predicate<String> parts, boolean asDefault) {
+		Map<String, JsonObject> files = new HashMap<>();
+		for (Feature feature : FEATURES) {
+			String addon = ADDON_OF.get(feature);
+			if (!parts.test(addon)) {
+				continue;
+			}
+			String resource = "/assets/" + (addon == null ? LumioApi.MOD_ID : addon) + "/" + name;
+			JsonObject file = files.computeIfAbsent(resource, FeatureManager::shippedDefaults);
+			JsonElement own = file.get(feature.id());
+			if (own == null || !own.isJsonObject()) {
+				continue;
+			}
+			for (dev.tim1337.lumio.config.setting.Setting<?> setting : feature.settings()) {
+				JsonElement value = own.getAsJsonObject().get(setting.key());
+				if (value == null || isPrivate(feature.id(), setting.key()) || ConfigPart.of(feature, setting.key(), setting) == ConfigPart.LAYOUT) {
+					continue;
+				}
+				try {
+					setting.load(value);
+					if (asDefault) {
+						setting.adoptAsDefault();
+					}
+				} catch (RuntimeException e) {
+					Logs.warn("Could not take the shipped setting {} of {}.{}", name, feature.id(), setting.key(), e);
+				}
+			}
+		}
+	}
+
+	/** @return a shipped defaults file, or an empty one when there is none or it cannot be read */
+	private static JsonObject shippedDefaults(String resource) {
+		try (var in = FeatureManager.class.getResourceAsStream(resource)) {
+			if (in == null) {
+				return new JsonObject();
+			}
+			JsonObject json = GSON.fromJson(new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8), JsonObject.class);
+			return json == null ? new JsonObject() : json;
+		} catch (IOException | RuntimeException e) {
+			Logs.warn("Could not read the shipped defaults {}", resource, e);
+			return new JsonObject();
+		}
+	}
 
 	public static void load() {
+		applyShippedDefaults();
 		Path path = configPath();
 		freshInstall = !Files.exists(path);
+		applyFreshInstallSettings(freshParts(!freshInstall, addon -> Files.exists(AddonConfigs.fileOf(addon))));
 		JsonObject main = read(path);
 		// every add-on reads its own file
 		Map<String, JsonObject> addons = new LinkedHashMap<>();
@@ -114,7 +263,7 @@ public final class FeatureManager {
 						feature.load(json.getAsJsonObject());
 					} catch (RuntimeException e) {
 						Logs.warn("Could not load the settings of {}, it keeps its defaults", feature.id(), e);
-						UNLOADED.put(feature, new JsonObject[]{json.getAsJsonObject().deepCopy(), feature.save()});
+						UNLOADED.put(feature, new Unloaded(json.getAsJsonObject().deepCopy(), feature.save()));
 					}
 				}
 			}
@@ -136,16 +285,27 @@ public final class FeatureManager {
 		}
 	}
 
-	/** Keys that are never shared: private data (tokens, account ids) and state the game fills in by itself (pets seen, ...). */
-	private static final Set<String> NOT_SHARED = Set.of("cider_token", "spotify_client_id", "pets", "last_pet", "pets_of_profiles", "config_name", "profit", "load_parts",
-		// the player carried in carry mode is another player's name
-		"carry_name",
+	/**
+	 * Settings that are never shared, as {@code feature.key}: private data (tokens, account ids, other players' names) and state the game fills in
+	 * by itself (pets seen, ...). Each with its feature, so a new setting of the same name elsewhere is shared as usual.
+	 */
+	private static final Set<String> NOT_SHARED = Set.of("music.cider_token", "music.spotify_client_id", "pet_hud.pets", "pet_hud.last_pet", "pet_hud.pets_of_profiles",
+		"pet_hud.pet_icons", "configs.load_parts", "configs.active_config", "configs.config_colors", "configs.loaded_print",
+		// other players' names: the player carried in carry mode, and the party commands' whitelist and blocked players
+		"slayer_phase.carry_name", "party_commands.whitelist", "party_commands.blocked",
 		// the last server is private, and a foreign config must not be able to point the Rejoin button at another server
-		"last_server_name", "last_server_ip", "saved_packs", "learned_cooldown_ms", "hidden_presets", "active_config", "config_colors", "hotm_tree", "loaded_print", "chosen_vinyl",
-		// state observed in game (worn equipment, mineshaft pity) belongs to the player and changes while playing; it is not a setting
-		"items", "last_mineshaft", "total", "widget_seen", "favorites", "pet_icons", "slayers", "borderless_active",
+		"menus.last_server_name", "menus.last_server_ip", "keep_server_packs.saved_packs", "mining_ability.learned_cooldown_ms", "hotm_tree_hud.hotm_tree",
+		"farming_hud.chosen_vinyl",
+		// what the sky quality Auto measured belongs to this computer
+		"sky.auto_quality",
+		// state observed in game (profits, worn equipment, mineshaft pity, sea creatures) belongs to the player and changes while playing; it is not a setting
+		"mining_profit.profit", "farming_profit.profit", "slayer_profit.profit", "slayer_profit.slayers", "fishing_profit.profit", "experiment_profit.profit",
+		"dragon_profit.profit", "corpse_profit.profit", "equipment_hud.items", "mineshaft_pity.last_mineshaft", "mineshaft_pity.total", "mineshaft_pity.widget_seen",
+		"sea_creatures.total", "item_list.favorites", "borderless.borderless_active",
 		// where the menu window is belongs to this screen
-		"menu_window_x", "menu_window_y", "menu_window_size", "menu_pane_floating", "menu_pane_x", "menu_pane_y");
+		"menu.menu_window_x", "menu.menu_window_y", "menu.menu_window_size", "menu.menu_pane_floating", "menu.menu_pane_x", "menu.menu_pane_y", "menu.whats_new_seen");
+	/** A feature whose id starts so is a debugging tool (the Debug log, a debug add-on's): none of it is shared, so a config never turns one on. */
+	private static final String DEBUG_PREFIX = "debug_";
 
 	/** Upper limit for decoded settings; real settings are a few tens of kilobytes. */
 	private static final int MAX_SETTINGS_BYTES = 2 * 1024 * 1024;
@@ -153,9 +313,17 @@ public final class FeatureManager {
 	/** Prefix of encoded settings text: the format version. */
 	private static final String PREFIX = "LUMIO1:";
 
-	/** @return whether a key is private to the player (a token, observed game state), so configs neither export nor overwrite it */
-	public static boolean isPrivate(String key) {
-		return NOT_SHARED.contains(key);
+	/**
+	 * @param feature the feature's id, or null for a value that belongs to none
+	 * @return whether a setting is private to the player (a token, observed game state) or a debugging tool's, so configs neither export nor overwrite it
+	 */
+	public static boolean isPrivate(String feature, String key) {
+		return feature != null && (feature.startsWith(DEBUG_PREFIX) || NOT_SHARED.contains(feature + "." + key));
+	}
+
+	/** Takes the private settings of a feature out of its saved values. */
+	private static void removePrivate(String feature, JsonObject json) {
+		json.keySet().removeIf(key -> isPrivate(feature, key));
 	}
 
 	/** @return all shareable settings as one line of text: compressed and Base64-encoded, so it is short and not plain JSON */
@@ -169,7 +337,7 @@ public final class FeatureManager {
 		root.addProperty(ConfigUpgrade.VERSION_KEY, ConfigUpgrade.VERSION);
 		for (Feature feature : FEATURES) {
 			JsonObject json = feature.save();
-			NOT_SHARED.forEach(json::remove);
+			removePrivate(feature.id(), json);
 			if (parts.size() < ConfigPart.values().length) {
 				for (var setting : feature.settings()) {
 					if (!parts.contains(ConfigPart.of(feature, setting.key(), setting))) {
@@ -189,7 +357,7 @@ public final class FeatureManager {
 			size.addProperty("h", screen[1]);
 			root.add(SCREEN_KEY, size);
 		}
-		return encode(new Gson().toJson(root));
+		return encode(COMPACT.toJson(root));
 	}
 
 	/** Key under which a config stores the GUI size it was made on. */
@@ -197,8 +365,14 @@ public final class FeatureManager {
 	/** Key under which a saved config keeps where it came from and when, see {@link ConfigStore}; it is not a setting. */
 	public static final String META_KEY = "_meta";
 
+	/** The screen size in GUI units unit tests apply configs on, which have no game window; null in the game. */
+	static int[] screenForTests;
+
 	/** @return the current screen size in GUI units (which depend on resolution and GUI scale), or null */
 	private static int[] guiScreen() {
+		if (screenForTests != null) {
+			return screenForTests;
+		}
 		try {
 			var window = Minecraft.getInstance().getWindow();
 			int w = window.getGuiScaledWidth();
@@ -210,8 +384,10 @@ public final class FeatureManager {
 	}
 
 	/**
-	 * Fits the HUD layout of a config made on another screen to this one: horizontal and vertical distances are stretched with the screen's width
-	 * and height, and sizes with the smaller of the two factors, so the layout looks the same.
+	 * Fits the HUD layout of a config made on another screen to this one. Elements are placed from an anchor (an edge, a corner or the center) at
+	 * a distance in GUI units, and sized in GUI units, which follow the GUI scale like the game's own HUD: so they stay as they are, and the
+	 * auto-fit ({@link dev.tim1337.lumio.hud.HudAutoFit}) keeps them on this screen and off each other. Sizes are never stretched: that made a
+	 * layout from a small screen huge on a large one. Only what has no anchor, the music window's top left, moves with the screen's size.
 	 */
 	private static void fitLayout(JsonObject root, Feature feature, JsonObject wanted) {
 		if (!root.has(SCREEN_KEY) || !root.get(SCREEN_KEY).isJsonObject() || feature instanceof HeldItemTransformFeature) {
@@ -229,17 +405,18 @@ public final class FeatureManager {
 		}
 		double rx = now[0] / oldW;
 		double ry = now[1] / oldH;
-		double rs = Math.min(rx, ry);
 		for (var setting : feature.settings()) {
 			JsonElement value = wanted.get(setting.key());
 			if (value == null || !value.isJsonPrimitive() || !value.getAsJsonPrimitive().isNumber()
 				|| ConfigPart.of(feature, setting.key(), setting) != ConfigPart.LAYOUT) {
 				continue;
 			}
+			if (!ConfigPart.UNANCHORED_KEYS.contains(setting.key())) {
+				continue;
+			}
 			double ratio = switch (ConfigPart.axisOf(setting.key())) {
 				case 'x' -> rx;
 				case 'y' -> ry;
-				case 's' -> rs;
 				default -> 1.0;
 			};
 			if (ratio != 1.0) {
@@ -300,10 +477,10 @@ public final class FeatureManager {
 			root.remove(ConfigUpgrade.VERSION_KEY);
 			for (var entry : root.entrySet()) {
 				if (entry.getValue().isJsonObject()) {
-					NOT_SHARED.forEach(entry.getValue().getAsJsonObject()::remove);
+					removePrivate(entry.getKey(), entry.getValue().getAsJsonObject());
 				}
 			}
-			return new Gson().toJson(root);
+			return COMPACT.toJson(root);
 		} catch (RuntimeException e) {
 			return "";
 		}
@@ -329,7 +506,7 @@ public final class FeatureManager {
 					continue;
 				}
 				for (var setting : feature.settings()) {
-					if (json.getAsJsonObject().has(setting.key()) && !NOT_SHARED.contains(setting.key())) {
+					if (json.getAsJsonObject().has(setting.key()) && !isPrivate(feature.id(), setting.key())) {
 						found.add(ConfigPart.of(feature, setting.key(), setting));
 					}
 				}
@@ -394,7 +571,7 @@ public final class FeatureManager {
 							continue;
 						}
 						// never-shared keys are never imported either: a hand-made config cannot set a token or the rejoin server
-						if (value != null && !NOT_SHARED.contains(setting.key()) && parts.contains(ConfigPart.of(feature, setting.key(), setting))) {
+						if (value != null && !isPrivate(feature.id(), setting.key()) && parts.contains(ConfigPart.of(feature, setting.key(), setting))) {
 							wanted.add(setting.key(), value);
 						}
 					}
@@ -435,11 +612,7 @@ public final class FeatureManager {
 	}
 
 	/** Writes the settings file off the game's thread, one write at a time. */
-	private static final ExecutorService WRITER = Executors.newSingleThreadExecutor(runnable -> {
-		Thread thread = new Thread(runnable, "Lumio settings");
-		thread.setDaemon(true);
-		return thread;
-	});
+	private static final ExecutorService WRITER = Threads.daemonExecutor("Lumio settings");
 	/** Numbers the saves, so an older state never overwrites a newer one (the save at quitting can overtake a queued one). */
 	private static final AtomicLong SAVES = new AtomicLong();
 	private static final Object WRITE_LOCK = new Object();
@@ -496,13 +669,13 @@ public final class FeatureManager {
 	/** @return a feature's settings to write: its own, or for one that could not load what the file had, with what changed since put over it */
 	private static JsonObject saved(Feature feature) {
 		JsonObject now = feature.save();
-		JsonObject[] kept = UNLOADED.get(feature);
+		Unloaded kept = UNLOADED.get(feature);
 		if (kept == null) {
 			return now;
 		}
-		JsonObject result = kept[0].deepCopy();
+		JsonObject result = kept.fromFile().deepCopy();
 		for (var setting : now.entrySet()) {
-			if (!setting.getValue().equals(kept[1].get(setting.getKey()))) {
+			if (!setting.getValue().equals(kept.defaults().get(setting.getKey()))) {
 				result.add(setting.getKey(), setting.getValue());
 			}
 		}

@@ -48,13 +48,11 @@ public class MenusFeature extends Feature {
 	}
 
 	private static final String MAIN_MENU_KEY = "main_menu";
-	/** The key of the main menu lyrics. */
-	public static final String MENU_LYRICS_KEY = "menu_lyrics";
 
 	/** The animated menu background. */
 	public enum BackgroundStyle {
-		STARS("Falling stars: trails that follow the mouse"),
-		MINECRAFT("Minecraft: a blocky world, made by shaders of the mod");
+		STARS("Falling stars"),
+		MINECRAFT("Minecraft world");
 
 		private final Component displayName;
 
@@ -139,9 +137,9 @@ public class MenusFeature extends Feature {
 
 	/** Block world rendering cost: the shader's render resolution, ray distance, and whether there are shadows. */
 	public enum WorldQuality {
-		LOW("Low: a third of the size, no shadows", 3, 150, false),
-		BALANCED("Balanced: half the size", 2, 190, true),
-		HIGH("High: the full size", 1, 240, true);
+		LOW("Low", 3, 150, false),
+		BALANCED("Balanced", 2, 190, true),
+		HIGH("High", 1, 240, true);
 
 		private final Component displayName;
 		private final int divisor;
@@ -201,9 +199,6 @@ public class MenusFeature extends Feature {
 
 	private final BooleanSetting songCard = add(new BooleanSetting("song_card", Component.literal("Song card"), true), "Main menu");
 	private final BooleanSetting songCover = add(new BooleanSetting("song_cover", Component.literal("Song cover"), true), "Main menu");
-	/** The song's lyrics in the main menu's song card. */
-	private final BooleanSetting menuLyrics = add(new BooleanSetting(MENU_LYRICS_KEY, Component.literal("Lyrics in the main menu"), false),
-		"Main menu");
 	private final EnumSetting<SongPlace> songPlace = add(new EnumSetting<>("song_place", Component.literal("Song card position"), SongPlace.BOTTOM_RIGHT, SongPlace::displayName, EnumSetting.Style.DROPDOWN), "Main menu");
 	private final FloatSetting songWidth = add(new FloatSetting("song_width", Component.literal("Song card width"), 260f, 180f, 420f, 0), "Main menu");
 
@@ -212,7 +207,7 @@ public class MenusFeature extends Feature {
 
 	/** The last joined server, kept so the main menu can rejoin it. Not shown in the settings. */
 	private final StringSetting lastServerName = add(new StringSetting("last_server_name", Component.literal("Last server"), "", false), "Main menu");
-	private final StringSetting lastServerIp = add(new StringSetting("last_server_ip", Component.literal("Last server address"), "", false), "Main menu");
+	private final StringSetting lastServerIp = add(new StringSetting("last_server_ip", Component.literal("Last server"), "", false), "Main menu");
 
 	/** Remembers a joined server. */
 	public void rememberServer(String name, String ip) {
@@ -246,7 +241,7 @@ public class MenusFeature extends Feature {
 	private final PagePreview menuPreview = new PagePreview() {
 		@Override
 		public void draw(Ui ui, int x, int y, int width, int height) {
-			PagePictures.mainMenu(ui, new PagePictures.MenuLook(songCard.get(), menuLyrics.get(), buttons.get(), shaderBackground.get()), x, y, width, height);
+			PagePictures.mainMenu(ui, new PagePictures.MenuLook(songCard.get(), buttons.get(), shaderBackground.get()), x, y, width, height);
 		}
 
 		@Override
@@ -261,11 +256,11 @@ public class MenusFeature extends Feature {
 	};
 
 	public MenusFeature() {
-		super("menus", "Main menu", "The title screen, loading screens and your server packs.", false);
+		super("menus", "Main menu", "Title screen, loading screens, server packs.", false);
 		add(new FeatureSwitchSetting("keep_server_packs_row", Component.literal("Keep server packs"), () -> ModFeatures.KEEP_SERVER_PACKS), "Servers", "Loads them again on the next start");
 		iconRgb(SystemColors.PINK_RGB);
 		iconName("window");
-		summary("The main menu, server and world lists in the mod's style");
+		summary("Main menu and lists in Lumio's style");
 		starsColor.under(backgroundStyle, () -> backgroundStyle.get() == BackgroundStyle.STARS);
 		for (var starSetting : new Setting<?>[]{starsPulse, starsSize, starsCount}) {
 			starSetting.visibleWhen(() -> backgroundStyle.get() == BackgroundStyle.STARS);
@@ -282,6 +277,9 @@ public class MenusFeature extends Feature {
 		songWidth.visibleWhen(() -> false);
 		lastServerName.visibleWhen(() -> false);
 		lastServerIp.visibleWhen(() -> false);
+		// the startup transition and the own lists belong to the Living world menu
+		startup.visibleWhen(() -> title.get() == MainMenu.LIVING_WORLD);
+		listStyle.visibleWhen(() -> title.get() == MainMenu.LIVING_WORLD);
 		addResetButton();
 	}
 
@@ -320,9 +318,6 @@ public class MenusFeature extends Feature {
 	}
 
 	/** @return whether the main menu shows the song's lyrics */
-	public boolean menuLyrics() {
-		return menuLyrics.get();
-	}
 
 	public SongPlace songPlace() {
 		return songPlace.get();

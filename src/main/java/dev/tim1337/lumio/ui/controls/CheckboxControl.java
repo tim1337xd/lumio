@@ -8,7 +8,7 @@ import dev.tim1337.lumio.ui.Ui;
 import dev.tim1337.lumio.ui.UiSounds;
 
 /** A checkbox with the setting's name next to it, taking the whole row. */
-public class CheckboxControl extends Control {
+public final class CheckboxControl extends Control {
 	private static final int BOX = 14;
 
 	private final BooleanSetting setting;

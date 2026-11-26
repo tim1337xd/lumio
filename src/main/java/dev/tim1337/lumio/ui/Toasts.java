@@ -267,7 +267,7 @@ public final class Toasts {
 		if (toast.action != null) {
 			int actionWidth = ui.width(toast.action) + 2 * ACTION_PAD;
 			int actionX = x + WIDTH - PAD - actionWidth;
-			ui.rounded(actionX, y + PAD, actionWidth, ACTION_HEIGHT, ACTION_HEIGHT / 2f, Ui.withOpacity(ui.accent, slide));
+			ui.rounded(actionX, y + PAD, actionWidth, ACTION_HEIGHT, Radius.SM, Ui.withOpacity(ui.accent, slide));
 			ui.textCentered(toast.action, actionX + actionWidth / 2, y + PAD + ACTION_HEIGHT / 2, Ui.withOpacity(0xFFFFFFFF, slide));
 			titleWidth = actionX - 6 - left;
 		}

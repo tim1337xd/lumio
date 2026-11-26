@@ -5,12 +5,13 @@ import dev.tim1337.lumio.api.experimental.draw.Radius;
 import dev.tim1337.lumio.features.music.MusicService;
 import dev.tim1337.lumio.render.MenuWorld;
 import dev.tim1337.lumio.render.RoundedImage;
+import dev.tim1337.lumio.ui.Glyphs;
 import dev.tim1337.lumio.ui.Palette;
 import dev.tim1337.lumio.ui.Ui;
 
 /**
  * The previews on the right of the steps Look and Music (the main menu step has its own, see {@link MenuPictures}): the main menu's world as a picture, and over it a small settings window and a hotbar
- * in the chosen look, or the music island with the song that plays.
+ * in the chosen look, or the main menu's column with its music card and the song that plays.
  */
 final class SetupPreview {
 	/** The picture of the world is 320 by 200. */
@@ -18,20 +19,19 @@ final class SetupPreview {
 	private static final float RADIUS = Radius.XL;
 	private static final int SLOT = 14;
 	private static final int SLOTS = 7;
-	private static final int BARS = 4;
-	/** The island: its room from the picture's edges, the width of all but the title and the artist, and the artist's share of a tight room. */
-	private static final int ISLAND_MARGIN = 10;
-	private static final int TITLE_GAP = 10;
-	/** The cover in the pictured pill: the same room on its top, bottom and left, as in the main menu's. */
-	private static final int ISLAND_HEIGHT = 24;
-	private static final int ISLAND_COVER_GAP = 6;
-	private static final int ISLAND_COVER = ISLAND_HEIGHT - 2 * ISLAND_COVER_GAP;
-	private static final float ISLAND_FIXED = ISLAND_COVER_GAP + ISLAND_COVER + 7 + TITLE_GAP + 8 + BARS * 3.5f + 9;
-	private static final float ARTIST_SHARE = 0.35f;
-	/** A title too long for the island scrolls at this speed, in menu pixels a second, with a gap between its ends and a rest at its start. */
-	private static final float MARQUEE_SPEED = 18f;
-	private static final float MARQUEE_GAP = 32f;
-	private static final double MARQUEE_PAUSE = 2.0;
+	/** The pictured column of the main menu: its room from the picture's edges, its width, and the heights of its parts. */
+	private static final int CARD_MARGIN = 10;
+	private static final float CARD_SHARE = 0.48f;
+	private static final int CARD_MOST_WIDTH = 150;
+	private static final int CARD_GAP = 4;
+	private static final int PLAY_CARD = 30;
+	private static final int BUTTON_ROW = 12;
+	/** The pictured music card: its height, the cover and the room around it, and its three buttons. */
+	private static final int CARD_HEIGHT = 26;
+	private static final int CARD_PAD = 5;
+	private static final int CARD_COVER = 16;
+	private static final float CARD_GLYPH = 6f;
+	private static final float CARD_GLYPH_GAP = 5f;
 	/** The sidebar of the pictured settings: with the add-on's world after Interface when there is one. */
 	private static String[] pages() {
 		SetupGroup world = SetupGroup.world();
@@ -69,7 +69,7 @@ final class SetupPreview {
 		int windowY = y + 26;
 		int windowWidth = width - 28;
 		int windowHeight = Math.min(112, height - 70);
-		if (ModFeatures.MENU.glowEnabled()) {
+		if (ModFeatures.MENU.glowOn()) {
 			ui.shadow(windowX, windowY, windowWidth, windowHeight, Radius.LG, 10, 0f);
 			ui.halo(windowX, windowY, windowWidth, windowHeight, Radius.LG, 10, place -> Ui.withOpacity(ui.accent, 0.35f));
 		}
@@ -128,7 +128,7 @@ final class SetupPreview {
 		}
 	}
 
-	/** The music's preview: the island with the song at the top, with the song that plays or placeholders. */
+	/** The music's preview: the card in the main menu's left column, under its buttons, with the song that plays or placeholders. */
 	static void music(SetupKit kit, int x, int y, int width, int height, boolean on) {
 		world(kit, x, y, width, height);
 		Ui ui = kit.ui;
@@ -138,50 +138,40 @@ final class SetupPreview {
 		float placeholder = track == null ? 0.55f : 1f;
 		int accent = 0xFF000000 | ModFeatures.MUSIC.accentColor();
 
-		// the island: the cover, the title, the artist and moving bars; as wide as the song needs, at most the picture's width, and a title
-		// that does not fit then scrolls
-		float titleFull = ui.boldWidthScaled(title, SetupKit.SMALL);
-		float artistFull = ui.widthScaled(artist, SetupKit.SMALL);
-		float room = width - 2 * ISLAND_MARGIN - ISLAND_FIXED;
-		float artistWidth = titleFull + artistFull <= room ? artistFull : Math.min(artistFull, room * ARTIST_SHARE);
-		float titleWidth = Math.min(titleFull, room - artistWidth);
-		int islandWidth = Math.round(ISLAND_FIXED + titleWidth + artistWidth);
-		int islandX = x + (width - islandWidth) / 2;
-		int islandY = y + 17;
-		ui.rounded(islandX, islandY, islandWidth, 24, Radius.pill(24), Ui.withOpacity(0xFF0E0A1E, 0.75f));
-		ui.ring(islandX, islandY, islandWidth, 24, Radius.pill(24), 1, Ui.withOpacity(0xFFFFFFFF, 0.14f));
+		// the column as the main menu has it, small: the play card, Options and Quit as plain boxes, and the music card under them
+		int column = Math.min(CARD_MOST_WIDTH, Math.round(width * CARD_SHARE));
+		int left = x + CARD_MARGIN;
+		int cardY = y + height - CARD_MARGIN - CARD_HEIGHT;
+		int buttonsY = cardY - CARD_GAP - BUTTON_ROW;
+		int playY = buttonsY - CARD_GAP - PLAY_CARD;
+		int box = Ui.withOpacity(0xFF0E0A1E, 0.75f);
+		int edge = Ui.withOpacity(0xFFFFFFFF, 0.14f);
+		ui.rounded(left, playY, column, PLAY_CARD, Radius.SM, Ui.withOpacity(0xFF0E0A1E, 0.5f));
+		int half = (column - CARD_GAP) / 2;
+		ui.rounded(left, buttonsY, half, BUTTON_ROW, Radius.SM, Ui.withOpacity(0xFF0E0A1E, 0.5f));
+		ui.rounded(left + half + CARD_GAP, buttonsY, column - half - CARD_GAP, BUTTON_ROW, Radius.SM, Ui.withOpacity(0xFF0E0A1E, 0.5f));
+		ui.rounded(left, cardY, column, CARD_HEIGHT, Radius.SM, box);
+		ui.ring(left, cardY, column, CARD_HEIGHT, Radius.SM, 1, edge);
+		int coverY = cardY + (CARD_HEIGHT - CARD_COVER) / 2;
 		if (track != null) {
-			ModFeatures.MUSIC.drawArtwork(ui, islandX + ISLAND_COVER_GAP, islandY + ISLAND_COVER_GAP, ISLAND_COVER, 1f);
+			ModFeatures.MUSIC.drawArtwork(ui, left + CARD_PAD, coverY, CARD_COVER, 1f);
 		} else {
-			ui.roundedGradient(islandX + ISLAND_COVER_GAP, islandY + ISLAND_COVER_GAP, ISLAND_COVER, ISLAND_COVER, ISLAND_COVER / 2f, 0xFFFF375F, 0xFF5E5CE6);
+			ui.roundedGradient(left + CARD_PAD, coverY, CARD_COVER, CARD_COVER, Radius.XS, 0xFFFF375F, 0xFF5E5CE6);
 		}
-		float textX = islandX + ISLAND_COVER_GAP + ISLAND_COVER + 7;
-		marquee(ui, title, textX, islandY + 8.5f, titleWidth, titleFull, Ui.withOpacity(0xFFFFFFFF, placeholder));
-		textX += titleWidth + TITLE_GAP;
-		ui.textAtScaled(kit.fit(artist, artistWidth, SetupKit.SMALL), textX, islandY + 8.5f, SetupKit.SMALL, Ui.withOpacity(0xFFFFFFFF, 0.6f * placeholder));
-		float barX = textX + artistWidth + 8;
-		double time = System.nanoTime() / 1_000_000_000.0;
-		for (int i = 0; i < BARS; i++) {
-			float level = track != null && MusicService.isPlaying() ? 0.35f + 0.65f * (float) Math.abs(Math.sin(time * (2.1 + i * 0.7) + i)) : 0.5f;
-			int barHeight = Math.max(2, Math.round(8 * level));
-			ui.rounded(Math.round(barX + i * 3.5f), islandY + 16 - barHeight, 2, barHeight, Radius.XXS, accent);
+		// previous, pause or play, next at the right, always there
+		boolean playing = track != null && MusicService.isPlaying();
+		float middle = cardY + CARD_HEIGHT / 2f;
+		float buttonX = left + column - CARD_PAD - CARD_GLYPH / 2f;
+		for (int i = 2; i >= 0; i--) {
+			Glyphs.draw(ui, i == 0 ? 0 : i == 2 ? 3 : playing ? 2 : 1, buttonX, middle, CARD_GLYPH, Ui.withOpacity(0xFFFFFFFF, placeholder));
+			buttonX -= CARD_GLYPH + CARD_GLYPH_GAP;
 		}
+		float textX = left + CARD_PAD + CARD_COVER + 5;
+		float room = buttonX + CARD_GLYPH / 2f - textX;
+		ui.textAtScaledBold(kit.fit(title, room, SetupKit.SMALL), textX, middle - 8f, SetupKit.SMALL, Ui.withOpacity(0xFFFFFFFF, placeholder));
+		ui.textAtScaled(kit.fit(artist, room, SetupKit.SMALL), textX, middle + 1f, SetupKit.SMALL, Ui.withOpacity(0xFFFFFFFF, 0.6f * placeholder));
+		// the thin line of the song's progress along the card's bottom edge
+		float progress = track == null ? 0.3f : Math.clamp(ModFeatures.MUSIC.cardProgress(), 0f, 1f);
+		ui.rounded(left + 3, cardY + CARD_HEIGHT - 2, Math.max(2, Math.round((column - 6) * progress)), 2, Radius.XXS, accent);
 	}
-
-	/** Draws the title in its room, scrolling it slowly round when it is longer: it rests at its start a moment, then moves on. */
-	private static void marquee(Ui ui, String text, float x, float y, float room, float full, int color) {
-		if (full <= room) {
-			ui.textAtScaledBold(text, x, y, SetupKit.SMALL, color);
-			return;
-		}
-		float loop = full + MARQUEE_GAP;
-		double cycle = loop / MARQUEE_SPEED + MARQUEE_PAUSE;
-		double time = (System.nanoTime() / 1_000_000_000.0) % cycle;
-		float offset = (float) Math.max(0.0, (time - MARQUEE_PAUSE) * MARQUEE_SPEED);
-		ui.graphics.enableScissor(Math.round(x), Math.round(y) - 3, Math.round(x + room), Math.round(y) + 12);
-		ui.textAtScaledBold(text, x - offset, y, SetupKit.SMALL, color);
-		ui.textAtScaledBold(text, x - offset + loop, y, SetupKit.SMALL, color);
-		ui.graphics.disableScissor();
-	}
-
 }

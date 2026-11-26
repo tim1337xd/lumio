@@ -34,6 +34,23 @@ public final class SegmentFit {
 	}
 
 	/** @return whether all the text fits a control of this width with at least the given padding; if not, the control must not show its parts side by side */
+	/** @return the width a control of even cells needs: each cell as wide as the widest text with its least padding */
+	public static int evenWidth(int[] texts, int inset, int leastPadding) {
+		int widest = 0;
+		for (int text : texts) {
+			widest = Math.max(widest, text);
+		}
+		return texts.length * (widest + 2 * leastPadding) + 2 * inset;
+	}
+
+	/** Even cells across a width, the texts centered in them: the edges of each cell, rounding adding up to exactly the width. */
+	public static void evenEdges(int left, int width, int count, int inset, int[] edges) {
+		int inner = Math.max(0, width - 2 * inset);
+		for (int i = 0; i <= count; i++) {
+			edges[i] = left + inset + inner * i / Math.max(1, count);
+		}
+	}
+
 	public static boolean fits(int width, int[] texts, int inset, int leastPadding) {
 		return width(texts, inset, leastPadding) <= width;
 	}

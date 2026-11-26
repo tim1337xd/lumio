@@ -25,7 +25,30 @@ public interface FeatureHandle {
 
 	void addKey(KeyMapping mapping, KeyPlace place);
 
+	/** A key that acts only while one menu is open, with the menu's name as the player knows it ("Loadouts"). */
+	void addMenuKey(KeyMapping mapping, String menu);
+
 	void summary(String text);
+
+	/** A short badge after the feature's name in the feature lists; none by default. */
+	default void badge(String text) {
+	}
+
+	/** Words the menu's search also finds the feature by. */
+	default void searchWords(String words) {
+	}
+
+	/** Names the group the feature is listed under on a long page. */
+	default void pageGroup(String name) {
+	}
+
+	/** Flags the feature as work in progress, for the tag in the feature lists. */
+	default void workInProgress() {
+	}
+
+	/** The settings shown on the feature's card on a page of cards; none by default. */
+	default void cardSettings(java.util.List<? extends dev.tim1337.lumio.api.setting.AddonSetting<?>> settings) {
+	}
 
 	void addResetButton();
 

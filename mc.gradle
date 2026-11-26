@@ -195,6 +195,10 @@ ext.mcPrepareSources = {
 				def vertex = details.name.endsWith('.vsh')
 				def attributes = 0
 				details.filter { String line ->
+					// "//26.3 " starts a line only this version has (such as its order-independent transparency): a comment for the base version
+					if (line.startsWith('//26.3 ')) {
+						line = line.substring(7)
+					}
 					if (line.startsWith('#version')) {
 						return line + '\n#extension GL_ARB_separate_shader_objects : require'
 					}

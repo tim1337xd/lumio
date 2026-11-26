@@ -15,7 +15,7 @@ import com.mojang.blaze3d.platform.InputConstants;
  * One to three colors as round swatches in a row, with a dashed "+" to add one, for the Colored theme's colors and the glow colors. A click on a swatch opens the color picker, a right click removes the color at once and
  * the others slide left; the last color stays. Delete removes the color whose picker is open.
  */
-public class ColorSlotsControl extends Control {
+public final class ColorSlotsControl extends Control {
 	private static final int SWATCH = 18;
 	private static final int MOST_SHOWN = 8;
 	private static final int GAP = 6;

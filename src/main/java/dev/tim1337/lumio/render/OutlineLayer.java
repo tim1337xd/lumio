@@ -31,4 +31,10 @@ public interface OutlineLayer {
 	 * Passes every corner of the layer's quads, transformed by the pose, to the sink, in pose space. The vector is reused for each point.
 	 */
 	void lumio$points(PoseStack pose, Consumer<Vector3f> sink);
+
+	/** @return the pose the layer's model has for where the item is drawn (in a hand, on the ground, in a menu) */
+	net.minecraft.client.resources.model.cuboid.ItemTransform lumio$itemTransform();
+
+	/** Gives the layer another pose for where the item is drawn. */
+	void lumio$itemTransform(net.minecraft.client.resources.model.cuboid.ItemTransform transform);
 }

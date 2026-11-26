@@ -52,19 +52,22 @@ public class HeldItemTransformFeature extends Feature implements EditableHud {
 		}
 	}
 
-	private final FloatSetting size = add(new FloatSetting("size", Component.literal("Item size"), 1f, 0.1f, 3f, 2).percent(), "Size", "Scales the item at your grip");
-	private final FloatSetting sizeX = add(new FloatSetting("size_x", Component.literal("Width (X)"), 1f, 0.25f, 2f, 2).percent(), "Size");
-	private final FloatSetting sizeY = add(new FloatSetting("size_y", Component.literal("Height (Y)"), 1f, 0.25f, 2f, 2).percent(), "Size");
-	private final FloatSetting sizeZ = add(new FloatSetting("size_z", Component.literal("Depth (Z)"), 1f, 0.25f, 2f, 2).percent(), "Size");
+	/** Its own range, wider than the panels' ({@link dev.tim1337.lumio.hud.PanelSizes}): an item in the hand reads well from a tenth of its size to three times it. */
+	private final FloatSetting size = add(new FloatSetting("size", Component.literal("Item size"), 1f, 0.1f, 3f, 2).percent(), "Size", null);
+	private final FloatSetting sizeX = add(new FloatSetting("size_x", Component.literal("Width"), 1f, 0.25f, 2f, 2).percent(), "Size");
+	private final FloatSetting sizeY = add(new FloatSetting("size_y", Component.literal("Height"), 1f, 0.25f, 2f, 2).percent(), "Size");
+	private final FloatSetting sizeZ = add(new FloatSetting("size_z", Component.literal("Depth"), 1f, 0.25f, 2f, 2).percent(), "Size");
 	private final EnumSetting<SwingLook> swingLook = add(new EnumSetting<>("swing_look", Component.literal("Swing"), SwingLook.GAME, SwingLook::label, EnumSetting.Style.SEGMENTED), "Swing");
 	private final BooleanSetting equipAnimation = add(new BooleanSetting("equip_animation", Component.literal("Equip animation"), true), "Swing");
 	private final FloatSetting x = add(new FloatSetting("x", Component.literal("Horizontal"), 0f, -1f, 1f, 2), "Position");
 	private final FloatSetting y = add(new FloatSetting("y", Component.literal("Vertical"), 0f, -1f, 1f, 2), "Position");
 	/** The swing's speed, as an exponent: see {@link SwingSpeed}. A new key, since the old "swing_speed" was a plain factor: see ConfigUpgrade. */
 	private final FloatSetting swingRate = add(new FloatSetting("swing_rate", Component.literal("Swing speed"), SwingSpeed.GAME, SwingSpeed.SLOWEST, SwingSpeed.FASTEST, 2), "Swing", "0 is the game's speed");
-	private final BooleanSetting ignoreHaste = add(new BooleanSetting("ignore_haste", Component.literal("Ignore Haste"), false), "Swing", "Haste and Mining Fatigue don't change the speed");
+	private final BooleanSetting ignoreHaste = add(new BooleanSetting("ignore_haste", Component.literal("Ignore Haste"), false), "Swing", "Haste and Fatigue keep the speed");
 
-	private final BooleanSetting showHand = add(new BooleanSetting("show_hand", Component.literal("Show hand"), false), "Hand");
+	private final BooleanSetting showHand = add(new BooleanSetting("show_hand", Component.literal("Hand"), false), "Hand");
+	private final BooleanSetting bowPose = add(new BooleanSetting("bow_pose", Component.literal("Fix flat bows"), true), "Hand",
+		null);
 
 	private final Vector3f offset = new Vector3f();
 	/** How far the game lowers the hand for the whole equip movement, as its arm transform does: the drop is this times the movement. */
@@ -103,7 +106,7 @@ public class HeldItemTransformFeature extends Feature implements EditableHud {
 	private final Matrix4f inverse = new Matrix4f();
 
 	public HeldItemTransformFeature() {
-		super("held_item_transform", "Held item", "How the item in your hand looks and moves. Move it in Edit HUD layout.", true);
+		super("held_item_transform", "Held item", "How the item in your hand looks and moves.", true);
 		iconRgb(SystemColors.ORANGE_RGB);
 		iconName("hand");
 		summary("How the item in your hand looks and moves");
@@ -422,6 +425,11 @@ public class HeldItemTransformFeature extends Feature implements EditableHud {
 	 * @return whether every setting is the game's: the item's size and place, the swing's look and speed, the equip movement and no hand; nothing
 	 * of the hand's look is changed then
 	 */
+	/** @return whether a bow whose own model has only a flat item's pose in the hand gets the pose of the game's bow (see {@link HeldPose}) */
+	public boolean holdsBowsAsBows() {
+		return isEnabled() && bowPose.get();
+	}
+
 	private boolean neutral() {
 		return x.get() == 0f && y.get() == 0f && size.get() == 1f && sizeX.get() == 1f && sizeY.get() == 1f && sizeZ.get() == 1f
 			&& swingLook.get() == SwingLook.GAME && SwingSpeed.isGame(swingRate.get()) && !ignoreHaste.get() && equipAnimation.get() && !showHand.get();

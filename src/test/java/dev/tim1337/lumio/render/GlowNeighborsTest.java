@@ -9,8 +9,12 @@ class GlowNeighborsTest {
 	private static final int NONE = GlowNeighbors.NONE;
 
 	private static int[] of(float[] rects, int pane) {
+		return of(rects, new boolean[rects.length / 4], pane);
+	}
+
+	private static int[] of(float[] rects, boolean[] inHud, int pane) {
 		int[] found = new int[GlowNeighbors.MOST];
-		GlowNeighbors.find(rects, rects.length / 4, pane, found);
+		GlowNeighbors.find(rects, inHud, rects.length / 4, pane, found);
 		return found;
 	}
 
@@ -48,5 +52,22 @@ class GlowNeighborsTest {
 	void panesThatOnlyTouchAreNotNeighbors() {
 		float[] rects = {0, 0, 10, 10, 10, 0, 20, 10};
 		assertArrayEquals(new int[]{NONE, NONE, NONE, NONE}, of(rects, 0));
+	}
+
+	@Test
+	void aMenuWindowAndAHudPanelBehindItAreNoNeighbors() {
+		// the info bar (a HUD pane) and the menu window over it: their glows overlap, but the panel's glow lies under the menu's blur, so the
+		// window must keep its own glow there
+		float[] rects = {0, 0, 100, 20, 10, 10, 200, 200};
+		boolean[] inHud = {true, false};
+		assertArrayEquals(new int[]{NONE, NONE, NONE, NONE}, of(rects, inHud, 0));
+		assertArrayEquals(new int[]{NONE, NONE, NONE, NONE}, of(rects, inHud, 1));
+	}
+
+	@Test
+	void twoHudPanelsStillMeet() {
+		float[] rects = {0, 0, 10, 10, 8, 0, 20, 10, 5, 5, 50, 50};
+		boolean[] inHud = {true, true, false};
+		assertArrayEquals(new int[]{1, NONE, NONE, NONE}, of(rects, inHud, 0));
 	}
 }

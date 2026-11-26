@@ -25,7 +25,10 @@ public final class TabLayout {
 	public record Plan(int columns, int rows, int visibleRows, int cardColumns, boolean cardsBelow, int cardsHeight, int contentWidth, int bodyHeight) {
 	}
 
-	/** Where the cards go, each to the column that is shortest so far: the column and the top of each, and the height of the tallest column. */
+	/**
+	 * Where the cards go: the column and the top of each, and the height of the tallest column. A card's column comes from its slot alone (its
+	 * fixed place by kind), never from its height or from which other cards there are, so a card does not jump between columns.
+	 */
 	public record Masonry(int[] column, int[] top, int height) {
 	}
 
@@ -40,21 +43,43 @@ public final class TabLayout {
 	private TabLayout() {
 	}
 
-	/** @return where cards of these heights go in a number of columns */
+	/** @return where cards of these heights go in a number of columns, in their order: the first in the first column, the next in the next */
 	public static Masonry masonry(int[] heights, int columns, int gap) {
+		return slotted(heights, inOrder(heights.length), columns, gap);
+	}
+
+	/** @return the slots of cards that have none of their own: their order */
+	public static int[] inOrder(int count) {
+		int[] slots = new int[count];
+		for (int i = 0; i < count; i++) {
+			slots[i] = i;
+		}
+		return slots;
+	}
+
+	/**
+	 * Places the cards by their slots: a card's column is its slot modulo the columns, and the cards of a column stand under each other in the
+	 * order of their slots. So a card that grows pushes only the cards below it in its column, one that is gone lets those move up, a new one
+	 * takes its own place, and none ever changes its column while the number of columns stays.
+	 *
+	 * @param heights the cards' heights
+	 * @param slots   each card's slot: its fixed place by kind, the same whichever other cards there are
+	 */
+	public static Masonry slotted(int[] heights, int[] slots, int columns, int gap) {
 		int[] bottoms = new int[columns];
 		int[] column = new int[heights.length];
 		int[] top = new int[heights.length];
-		for (int i = 0; i < heights.length; i++) {
-			int shortest = 0;
-			for (int c = 1; c < columns; c++) {
-				if (bottoms[c] < bottoms[shortest]) {
-					shortest = c;
-				}
-			}
-			column[i] = shortest;
-			top[i] = bottoms[shortest];
-			bottoms[shortest] += heights[i] + gap;
+		Integer[] order = new Integer[heights.length];
+		for (int i = 0; i < order.length; i++) {
+			order[i] = i;
+		}
+		// by slot; cards that share one keep their order
+		Arrays.sort(order, (a, b) -> Integer.compare(slots[a], slots[b]));
+		for (int i : order) {
+			int at = Math.floorMod(slots[i], columns);
+			column[i] = at;
+			top[i] = bottoms[at];
+			bottoms[at] += heights[i] + gap;
 		}
 		int tallest = Arrays.stream(bottoms).max().orElse(0);
 		return new Masonry(column, top, Math.max(0, tallest - gap));
@@ -69,6 +94,14 @@ public final class TabLayout {
 	 * @param keepRows    while the list is open: the rows it has
 	 */
 	public static Plan plan(int players, int[] cards, Sizes sizes, int roomWidth, int roomHeight, int keepColumns, int keepRows) {
+		return plan(players, cards, inOrder(cards.length), sizes, roomWidth, roomHeight, keepColumns, keepRows, 0);
+	}
+
+	/**
+	 * @param slots           each card's slot (see {@link #slotted})
+	 * @param keepCardColumns the card columns the list has, so no card changes its column while the screen stays as it is; 0 to choose
+	 */
+	public static Plan plan(int players, int[] cards, int[] slots, Sizes sizes, int roomWidth, int roomHeight, int keepColumns, int keepRows, int keepCardColumns) {
 		int count = Math.max(1, players);
 		int inner = roomWidth - 2 * sizes.pad();
 		int fit = Math.max(1, (inner + sizes.cellGap()) / (sizes.cellWidth() + sizes.cellGap()));
@@ -79,7 +112,7 @@ public final class TabLayout {
 		long bestCost = Long.MAX_VALUE;
 		for (int columns = from; columns <= to; columns++) {
 			int rows = Math.max(keepRows, (count + columns - 1) / columns);
-			for (Plan plan : placements(columns, rows, cards, sizes, inner, roomHeight)) {
+			for (Plan plan : placements(columns, rows, cards, slots, sizes, inner, roomHeight, keepCardColumns)) {
 				long cost = cost(plan, sizes, roomHeight);
 				if (cost < bestCost) {
 					bestCost = cost;
@@ -94,9 +127,14 @@ public final class TabLayout {
 	 * @return the layout at the largest size that needs no scrolling: on a small screen, such as a large GUI scale, the list is laid out for more room and drawn smaller; only if it does not fit even at the smallest size do its rows scroll
 	 */
 	public static Plan planSmallest(int players, int[] cards, Sizes sizes, int roomWidth, int roomHeight) {
+		return planSmallest(players, cards, inOrder(cards.length), sizes, roomWidth, roomHeight, 0);
+	}
+
+	/** The same with the cards' slots, and the card columns to keep (0 to choose). */
+	public static Plan planSmallest(int players, int[] cards, int[] slots, Sizes sizes, int roomWidth, int roomHeight, int keepCardColumns) {
 		Plan plan = null;
 		for (float size : SIZES) {
-			plan = plan(players, cards, sizes, Math.round(roomWidth / size), Math.round(roomHeight / size), 0, 0);
+			plan = plan(players, cards, slots, sizes, Math.round(roomWidth / size), Math.round(roomHeight / size), 0, 0, keepCardColumns);
 			if (plan.visibleRows() == plan.rows() && plan.bodyHeight() + sizes.headerAndFooter() + 2 * sizes.pad() <= roomHeight / size) {
 				return plan;
 			}
@@ -112,7 +150,7 @@ public final class TabLayout {
 		return tooTall * 1_000_000_000L + scrolled * 10_000_000L + longer * 100_000L + (plan.cardsBelow() ? 50_000L : 0L) + plan.bodyHeight() * 10L + plan.contentWidth() / 10;
 	}
 
-	private static Plan[] placements(int columns, int rows, int[] cards, Sizes s, int inner, int roomHeight) {
+	private static Plan[] placements(int columns, int rows, int[] cards, int[] slots, Sizes s, int inner, int roomHeight, int keepCardColumns) {
 		int playersWidth = columns * s.cellWidth() + (columns - 1) * s.cellGap();
 		if (cards.length == 0) {
 			return new Plan[]{plan(columns, rows, 0, false, 0, playersWidth, s, roomHeight)};
@@ -121,11 +159,13 @@ public final class TabLayout {
 		// beside: the fewest columns that are about as long as the players; if none, the lowest
 		int beside = 0;
 		int lowest = Integer.MAX_VALUE;
-		for (int k = 1; k <= Math.min(MOST_CARD_COLUMNS, cards.length); k++) {
+		int firstBeside = keepCardColumns > 0 ? keepCardColumns : 1;
+		int lastBeside = keepCardColumns > 0 ? keepCardColumns : Math.min(MOST_CARD_COLUMNS, cards.length);
+		for (int k = firstBeside; k <= lastBeside; k++) {
 			if (playersWidth + s.areaGap() + cardsWidth(k, s) > inner) {
 				break;
 			}
-			int height = s.section() + masonry(cards, k, s.cardGap()).height();
+			int height = s.section() + slotted(cards, slots, k, s.cardGap()).height();
 			if (height < lowest) {
 				lowest = height;
 				beside = k;
@@ -137,12 +177,12 @@ public final class TabLayout {
 		}
 		// below: as many as fit, at least as wide as the players where they can be
 		int below = Math.max(1, Math.min(Math.min(MOST_CARD_COLUMNS, cards.length), (inner + s.cardGap()) / (s.cardWidth() + s.cardGap())));
-		int belowHeight = s.section() + masonry(cards, below, s.cardGap()).height();
+		int belowHeight = s.section() + slotted(cards, slots, below, s.cardGap()).height();
 		Plan under = plan(columns, rows, below, true, belowHeight, Math.max(playersWidth, cardsWidth(below, s)), s, roomHeight);
 		if (beside == 0) {
 			return new Plan[]{under};
 		}
-		int besideHeight = s.section() + masonry(cards, beside, s.cardGap()).height();
+		int besideHeight = s.section() + slotted(cards, slots, beside, s.cardGap()).height();
 		return new Plan[]{plan(columns, rows, beside, false, besideHeight, playersWidth + s.areaGap() + cardsWidth(beside, s), s, roomHeight), under};
 	}
 

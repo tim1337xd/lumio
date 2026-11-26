@@ -1,6 +1,7 @@
 package dev.tim1337.lumio.render;
 
 import dev.tim1337.lumio.api.experimental.draw.BlockStyle;
+import dev.tim1337.lumio.api.experimental.draw.Draw;
 import dev.tim1337.lumio.ui.Ui;
 import dev.tim1337.lumio.ui.UiGlow;
 
@@ -12,7 +13,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.core.BlockPos;
-import net.minecraft.util.Mth;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
@@ -58,15 +58,15 @@ public final class BlockHighlight {
 		pose.translate(pos.getX() - cam.x, pos.getY() - cam.y, pos.getZ() - cam.z);
 		try {
 			switch (mode) {
-				case OUTLINE -> outline(context, pose, shape, argb(rgb, 0.95f), lineWidth);
-				case FILL -> fill(context, pose, shape, 0.002, argb(rgb, fillOpacity), null);
+				case OUTLINE -> outline(context, pose, shape, Draw.argb(rgb, 0.95f), lineWidth);
+				case FILL -> fill(context, pose, shape, 0.002, Draw.argb(rgb, fillOpacity), null);
 				case GLOW -> {
 					// a soft light around the block in growing, fading layers, plus a bright edge
-					fill(context, pose, shape, 0.002, argb(rgb, fillOpacity * 0.7f), null);
-					fill(context, pose, shape, 0.02, argb(rgb, fillOpacity * 0.32f), null);
-					fill(context, pose, shape, 0.045, argb(rgb, fillOpacity * 0.16f), null);
-					fill(context, pose, shape, 0.075, argb(rgb, fillOpacity * 0.07f), null);
-					outline(context, pose, shape, Ui.mix(argb(rgb, 1f), 0xFFFFFFFF, 0.35f), lineWidth);
+					fill(context, pose, shape, 0.002, Draw.argb(rgb, fillOpacity * 0.7f), null);
+					fill(context, pose, shape, 0.02, Draw.argb(rgb, fillOpacity * 0.32f), null);
+					fill(context, pose, shape, 0.045, Draw.argb(rgb, fillOpacity * 0.16f), null);
+					fill(context, pose, shape, 0.075, Draw.argb(rgb, fillOpacity * 0.07f), null);
+					outline(context, pose, shape, Ui.mix(Draw.argb(rgb, 1f), 0xFFFFFFFF, 0.35f), lineWidth);
 				}
 				case SHADER -> {
 					// colors flow over the block, with a slight pulse
@@ -95,16 +95,12 @@ public final class BlockHighlight {
 			float wave = 0.5f + 0.5f * (float) Math.sin(at * Math.PI * 2.0);
 			shown = Ui.mix(0xFF000000 | rgb, 0xFFFFFFFF, 0.45f * wave) & 0xFFFFFF;
 		}
-		return argb(shown, alpha);
+		return Draw.argb(shown, alpha);
 	}
 
 	/** @return the animated gradient's time, in color cycles */
 	private static float phase(float speed) {
 		return (float) (System.nanoTime() / 1_000_000_000.0 * GRADIENT_CYCLES_PER_SECOND * speed % 1000.0);
-	}
-
-	private static int argb(int rgb, float alpha) {
-		return (Math.round(Mth.clamp(alpha, 0f, 1f) * 255f) << 24) | (rgb & 0xFFFFFF);
 	}
 
 	private static void outline(LevelRenderContext context, PoseStack pose, VoxelShape shape, int argb, float lineWidth) {

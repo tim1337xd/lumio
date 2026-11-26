@@ -253,7 +253,7 @@ public final class PanelLook {
 
 	/** @return the one row a page has for the look: where it comes from, and the button to its sheet */
 	public ActionRowSetting row(Runnable open) {
-		ActionRowSetting row = new ActionRowSetting("look_row", Component.literal("Look"), new ActionRowSetting.Look(() -> null, () -> -1, () -> "Look", this::summary, () -> null,
+		ActionRowSetting row = new ActionRowSetting("look_row", Component.literal("Panel look"), new ActionRowSetting.Look(() -> null, () -> -1, () -> "Look", this::summary, () -> null,
 			() -> mode.get().displayName().getString(), () -> "Customize…"), open);
 		row.setSection(ROW_GROUP);
 		return row;
@@ -261,9 +261,10 @@ public final class PanelLook {
 
 	private String summary() {
 		if (!themed()) {
-			return "Its own look, on this panel only";
+			return "Own look, this panel only";
 		}
-		return ModFeatures.MENU.hudTheme().displayName().getString() + " · accent and glow from the HUD theme";
+		// the chip beside it says that the theme decides
+		return ModFeatures.MENU.hudTheme().displayName().getString() + " HUD theme";
 	}
 
 	/**

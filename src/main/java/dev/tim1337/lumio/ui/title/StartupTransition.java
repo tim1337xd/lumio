@@ -86,7 +86,9 @@ public final class StartupTransition {
 		if (phase != Phase.LOADING) {
 			return false;
 		}
-		if (!ModFeatures.MENUS.startupActive()) {
+		// Only the main menu moves the way on: when the game goes elsewhere first (quick play straight into a server or a world, a server's pack),
+		// the game's own fade shows whatever comes next, and the menu, the setup and the rest come the next time the main menu opens.
+		if (!ModFeatures.MENUS.startupActive() || !(Minecraft.getInstance().gui.screen() instanceof dev.tim1337.lumio.ui.MacTitleScreen)) {
 			phase = Phase.DONE;
 			FRAMES.finish();
 			return false;
@@ -190,6 +192,11 @@ public final class StartupTransition {
 			return;
 		}
 		Minecraft client = Minecraft.getInstance();
+		if (!(client.gui.screen() instanceof dev.tim1337.lumio.ui.MacTitleScreen)) {
+			// the main menu was left while the way into it still showed (a world or server joined at once): it never stays over anything else
+			skip();
+			return;
+		}
 		int width = graphics.guiWidth();
 		int height = graphics.guiHeight();
 		boolean dark = client.options.darkMojangStudiosBackground().get();

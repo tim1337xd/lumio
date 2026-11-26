@@ -16,7 +16,6 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonPrimitive;
 
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.Identifier;
 
 import java.util.List;
 import java.util.function.Function;
@@ -39,9 +38,15 @@ public class EnumSetting<E extends Enum<E>> extends Setting<E> implements Choice
 		CARDS
 	}
 
-	private final Class<E> type;
+	/** The constants in order, kept once: controls ask for them every frame, and {@code getEnumConstants} copies the array each time. */
+	private final List<E> choices;
 	private final Function<E, Component> displayName;
 	private final Style style;
+
+	/** @return how the choices are displayed */
+	public Style style() {
+		return style;
+	}
 
 	public EnumSetting(String key, Component label, E defaultValue, Function<E, Component> displayName) {
 		this(key, label, defaultValue, displayName, Style.SEGMENTED);
@@ -49,7 +54,7 @@ public class EnumSetting<E extends Enum<E>> extends Setting<E> implements Choice
 
 	public EnumSetting(String key, Component label, E defaultValue, Function<E, Component> displayName, Style style) {
 		super(key, label, defaultValue);
-		this.type = defaultValue.getDeclaringClass();
+		this.choices = List.of(defaultValue.getDeclaringClass().getEnumConstants());
 		this.displayName = displayName;
 		this.style = style;
 	}
@@ -57,6 +62,19 @@ public class EnumSetting<E extends Enum<E>> extends Setting<E> implements Choice
 	private Predicate<E> warnWhen;
 	private String warnTitle = "";
 	private String warnText = "";
+
+	private Predicate<E> unavailable;
+
+	/** Choices matching the predicate are shown but cannot be chosen now: faint in the control, which says why in the setting's note. */
+	public EnumSetting<E> unavailableWhen(Predicate<E> when) {
+		this.unavailable = when;
+		return this;
+	}
+
+	/** @return whether a choice is shown faint and cannot be chosen now */
+	public boolean unavailable(E choice) {
+		return unavailable != null && unavailable.test(choice);
+	}
 
 	/** Choices matching the predicate show a warning first, which the player can cancel or accept. */
 	public void warnOn(Predicate<E> when, String title, String text) {
@@ -79,19 +97,6 @@ public class EnumSetting<E extends Enum<E>> extends Setting<E> implements Choice
 		}
 		set(value);
 		after.run();
-	}
-
-	private Function<E, Identifier> previews;
-
-	/** Sets a preview image per choice for the card style: a 320x180 texture, or null for none. */
-	public EnumSetting<E> withPreviews(Function<E, Identifier> previews) {
-		this.previews = previews;
-		return this;
-	}
-
-	/** @return the preview image of a choice, or null */
-	public Identifier previewOf(E choice) {
-		return previews == null ? null : previews.apply(choice);
 	}
 
 	/** A choice's state, such as "Working" or "Needs a token", shown as a chip in its color, or in the neutral color with -1. */
@@ -140,7 +145,7 @@ public class EnumSetting<E extends Enum<E>> extends Setting<E> implements Choice
 	}
 
 	public List<E> choices() {
-		return List.of(type.getEnumConstants());
+		return choices;
 	}
 
 	public Component nameOf(E choice) {
@@ -167,10 +172,20 @@ public class EnumSetting<E extends Enum<E>> extends Setting<E> implements Choice
 		if (json == null || !json.isJsonPrimitive()) {
 			return;
 		}
-		for (E constant : type.getEnumConstants()) {
+		for (E constant : choices) {
 			if (constant.name().equals(json.getAsString())) {
 				set(constant);
 				return;
+			}
+		}
+		// a number saved by the slider this choice once was ("2 / 3" colors): the choice labelled with that number
+		if (json.getAsJsonPrimitive().isNumber()) {
+			String number = String.valueOf(Math.round(json.getAsDouble()));
+			for (E constant : choices) {
+				if (displayName.apply(constant).getString().equals(number)) {
+					set(constant);
+					return;
+				}
 			}
 		}
 	}

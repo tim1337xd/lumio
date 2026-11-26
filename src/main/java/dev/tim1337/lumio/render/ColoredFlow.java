@@ -2,11 +2,12 @@ package dev.tim1337.lumio.render;
 
 import dev.tim1337.lumio.Lumio;
 import dev.tim1337.lumio.ModFeatures;
+import dev.tim1337.lumio.api.experimental.debug.DebugCategory;
+import dev.tim1337.lumio.api.experimental.debug.DebugHooks;
 import dev.tim1337.lumio.menu.MenuFeature;
 import dev.tim1337.lumio.ui.ColoredMood;
 import dev.tim1337.lumio.ui.ColoredPalette;
 import dev.tim1337.lumio.ui.HudStyle;
-import dev.tim1337.lumio.ui.MacTheme;
 
 import org.joml.Matrix4f;
 
@@ -304,7 +305,8 @@ public final class ColoredFlow {
 	/** Draws the colors into their texture, in every frame where a pane reads them, in the game and on any screen. Called while no pass of the game is open, before the panes that read them are drawn. */
 	public static void render() {
 		MenuFeature menu = ModFeatures.MENU;
-		if (ModFeatures.DEBUG != null && ModFeatures.DEBUG.logsColored() && menu != null) {
+		// a debug tool's "Log the Colored colors": once a second, only while it asks
+		if (menu != null && DebugHooks.wants(DebugCategory.COLORED)) {
 			Screen screen = Minecraft.getInstance().gui.screen();
 			LOG.frame(wanted, System.nanoTime(), flowSeconds, ColoredMood.rate(menu.coloredSpeed()), screen == null ? "none" : screen.getClass().getSimpleName(), menu.coloredFollowsSong(),
 				ModFeatures.MUSIC == null ? null : ModFeatures.MUSIC.coverPalette(), Arrays.copyOf(SHOWN, LOGGED_FIELDS));
@@ -383,12 +385,8 @@ public final class ColoredFlow {
 		int base = SHOWN[ColoredPalette.FIELDS];
 		parameters.set(BASE_TEXEL, base >> 16 & 0xFF, base >> 8 & 0xFF, base & 0xFF, Math.round(Math.clamp(aspect / 4f, 0f, 1f) * 255f));
 		float stretch = stretchOf(movementBefore) + (stretchOf(movementNow) - stretchOf(movementBefore)) * blend;
-		parameters.set(MOOD_TEXEL, unit(ColoredMood.fall(menu.coloredEdges()) / MOST_FALL), unit((stretch - 1f) / (MOST_STRETCH - 1f)), unit(ColoredMood.sharp(menu.coloredEdges())), 0);
+		parameters.set(MOOD_TEXEL, ParameterTexture.unit(ColoredMood.fall(menu.coloredEdges()) / MOST_FALL), ParameterTexture.unit((stretch - 1f) / (MOST_STRETCH - 1f)), ParameterTexture.unit(ColoredMood.sharp(menu.coloredEdges())), 0);
 		parameters.upload();
-	}
-
-	private static int unit(float value) {
-		return Math.round(Math.clamp(value, 0f, 1f) * 255f);
 	}
 
 	private static float stretchOf(ColoredMood.Movement movement) {

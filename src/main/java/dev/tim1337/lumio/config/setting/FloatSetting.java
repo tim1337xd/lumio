@@ -158,7 +158,8 @@ public class FloatSetting extends Setting<Float> implements Slider {
 			return (float) CoinAmount.parse(text);
 		}
 		try {
-			float value = Float.parseFloat(text.replace(",", ".").replace("%", "").trim());
+			String number = unit.isEmpty() ? text : text.replace(unit.strip(), "");
+			float value = Float.parseFloat(number.replace(",", ".").replace("%", "").trim());
 			return percent ? value / 100f : value;
 		} catch (NumberFormatException e) {
 			return Float.NaN;
@@ -192,7 +193,16 @@ public class FloatSetting extends Setting<Float> implements Slider {
 	}
 
 	private boolean percent;
-	private boolean offAtZero;
+	/** What the lowest value, 0, shows as ("Off", "Auto", "Any"), or null to show the number. */
+	private String atZero;
+	/** What follows the number when it is shown ("px", "×"), or "". */
+	private String unit = "";
+
+	/** Shows a unit after the value: " px" for a size in pixels, "×" for a factor. Only the display; the stored value stays the number. */
+	public FloatSetting unit(String suffix) {
+		unit = suffix;
+		return this;
+	}
 
 	/** Displays the value as a percentage (0.5 as 50%), for amounts such as volume. */
 	public FloatSetting percent() {
@@ -202,14 +212,19 @@ public class FloatSetting extends Setting<Float> implements Slider {
 
 	/** Shows the lowest value, 0, as "Off", for an amount where nothing at all is the same as off. */
 	public FloatSetting offAtZero() {
-		offAtZero = true;
+		return offAtZero("Off");
+	}
+
+	/** Shows the lowest value, 0, as a word: "Auto" where 0 leaves it to the game or the data, "Any" where 0 sets no limit. */
+	public FloatSetting offAtZero(String shown) {
+		atZero = shown;
 		return this;
 	}
 
 	/** @return the value as displayed next to the slider */
 	public String format(float value) {
-		if (offAtZero && value <= 0f) {
-			return "Off";
+		if (atZero != null && value <= 0f) {
+			return atZero;
 		}
 		if (percent) {
 			return Math.round(value * 100f) + "%";
@@ -217,7 +232,7 @@ public class FloatSetting extends Setting<Float> implements Slider {
 		if (coins) {
 			return CoinAmount.format(value);
 		}
-		return String.format(Locale.ROOT, "%." + decimals + "f", value);
+		return String.format(Locale.ROOT, "%." + decimals + "f", value) + unit;
 	}
 
 	@Override

@@ -3,7 +3,7 @@ package dev.tim1337.lumio.ui.setup;
 import net.minecraft.client.input.KeyEvent;
 
 /** A step of the setup in its window: its name in the step indicator, and its content between the header and the footer. */
-interface SetupStep {
+sealed interface SetupStep permits LookStep, MenuStep, MusicStep, PlayStep, ReadyStep {
 	/** @return the step's name in the indicator at the top */
 	String name();
 

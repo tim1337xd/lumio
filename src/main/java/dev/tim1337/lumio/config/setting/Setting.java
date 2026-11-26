@@ -59,12 +59,37 @@ public abstract class Setting<T> implements AddonSetting<T> {
 	}
 
 	/** @return the explanation shown under the name, or null */
+	/** @return more words the menu's search finds the setting by, such as a key's combination ("Tab + R"); empty for none */
+	public String searchText() {
+		return "";
+	}
+
 	public String description() {
-		return description;
+		return liveDescription != null ? liveDescription.get() : description;
+	}
+
+	/** A description read each time it is shown, for one that names something the player can change, such as a bound key. */
+	private java.util.function.Supplier<String> liveDescription;
+
+	public void setDescription(java.util.function.Supplier<String> description) {
+		liveDescription = description;
 	}
 
 	public void setDescription(String description) {
 		this.description = description == null || description.isBlank() ? null : description;
+	}
+
+	/** A longer explanation, shown on hover of the name; null for none. */
+	private String tooltip;
+
+	@Override
+	public void setTooltip(String tooltip) {
+		this.tooltip = tooltip == null || tooltip.isBlank() ? null : tooltip;
+	}
+
+	/** @return the explanation shown on hover of the name, or null */
+	public String tooltip() {
+		return tooltip;
 	}
 
 	public T get() {
@@ -115,6 +140,18 @@ public abstract class Setting<T> implements AddonSetting<T> {
 		listedInRecent = false;
 	}
 
+	/** Leaves the setting out of the search: a row shown only somewhere the search cannot lead to (the setup). */
+	public void hideFromSearch() {
+		searchable = false;
+	}
+
+	/** @return whether the search offers the setting */
+	public boolean searchable() {
+		return searchable;
+	}
+
+	private boolean searchable = true;
+
 	/** @return whether a change of the setting is listed among the recent changes */
 	public boolean listedInRecent() {
 		return listedInRecent;
@@ -156,10 +193,10 @@ public abstract class Setting<T> implements AddonSetting<T> {
 	}
 
 	public boolean isVisible() {
-		return visibility.getAsBoolean();
+		return visibility.getAsBoolean() && !disabled.getAsBoolean();
 	}
 
-	/** Greys out the setting in the settings screen while the condition is true. */
+	/** Hides the setting while the condition is true: a row that does nothing now is not shown, and comes back with what it depends on. */
 	public void disabledWhen(BooleanSupplier condition) {
 		this.disabled = condition;
 	}
@@ -170,13 +207,13 @@ public abstract class Setting<T> implements AddonSetting<T> {
 
 	private String disabledNote;
 
-	/** Greys out the setting while the condition is true, with a short note on why. */
+	/** The same, with a short note on why. */
 	public void disabledWhen(BooleanSupplier condition, String note) {
 		this.disabled = condition;
 		this.disabledNote = note;
 	}
 
-	/** @return the short note on why it is greyed out, or null for the usual one */
+	/** @return the short note on why it is off, or null for the usual one */
 	public String disabledNote() {
 		return disabledNote;
 	}
@@ -210,6 +247,11 @@ public abstract class Setting<T> implements AddonSetting<T> {
 	 * @param onChanged to be called whenever the value was changed through the control
 	 */
 	public abstract Control createControl(Runnable onChanged);
+
+	/** Makes the current value the default: the shipped default settings (see {@code FeatureManager#applyShippedDefaults}), read before the player's own. */
+	public void adoptAsDefault() {
+		this.defaultValue = value;
+	}
 
 	/** Changes the default and the current value: for settings shared by many features (the glow of every panel) that only some enable by default. */
 	public void setDefault(T value) {

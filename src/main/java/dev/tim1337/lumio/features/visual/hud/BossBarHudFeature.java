@@ -66,12 +66,19 @@ public class BossBarHudFeature extends HudPanelFeature {
 	private long lastFrame;
 
 	public BossBarHudFeature() {
-		super("boss_bars", "Boss bars", "The boss bars of the game, in the style of the mod. Move them in the editor of the layout.", false, Anchor.CENTER, false, 0f, 12f);
+		super("boss_bars", "Boss bars", "Boss bars in Lumio's style.", false, Anchor.CENTER, false, 0f, 12f);
 		iconRgb(SystemColors.RED_RGB);
 		iconName("crown");
 		summary("The boss bars in the style of the mod");
 		showPercent.visibleWhen(() -> true);
 		barHeight.under(look, () -> look.get() == Look.SLIM || look.get() == Look.PANEL);
+		// the name and the percentage are all the text there is
+		font.visibleWhen(() -> showName.get() || showPercent.get());
+		// only the Panel look has a surface, and it does not use the panels' see-through
+		background.visibleWhen(() -> look.get() == Look.PANEL);
+		seeThrough.visibleWhen(() -> false);
+		glowRow.visibleWhen(() -> look.get() == Look.PANEL && hasBackground());
+		panelDepth.visibleWhen(() -> look.get() == Look.PANEL && hasBackground());
 	}
 
 	/** @return whether the vanilla boss bars are hidden because they are drawn here */

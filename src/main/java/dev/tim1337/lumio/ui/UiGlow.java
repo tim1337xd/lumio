@@ -126,6 +126,8 @@ public final class UiGlow {
 		final float soft;
 		/** How many colors the Colored theme has: its pulse swells in as many places. */
 		final int coloredCount;
+		/** Whether panes of the Colored theme glow in the theme's colors ("Color from: Theme colors"), or in the glow colors like every other pane. */
+		final boolean themeGlow;
 
 		Look(MenuFeature menu) {
 			soft = menu.glowBlend();
@@ -136,6 +138,7 @@ public final class UiGlow {
 			strength = menu.glowStrength();
 			size = menu.glowSize();
 			coloredCount = Math.max(1, menu.coloredColors().length);
+			themeGlow = menu.themeGlow();
 		}
 
 		/** Colors at 64 edge positions, computed once per snapshot; edge pieces look their color up here instead of computing it. */
@@ -178,7 +181,7 @@ public final class UiGlow {
 
 		/** @return the color of the glow where it is painted and not drawn by the shader: in the Colored theme the plain color the window is painted in then, as bright as its glow is at that place */
 		int painted(float place) {
-			if (!HudStyle.colored()) {
+			if (!HudStyle.colored() || !themeGlow) {
 				return lut(place);
 			}
 			int[] brightness = coloredBrightness();
@@ -291,7 +294,7 @@ public final class UiGlow {
 	/** @return current glow colors at {@link #TABLE_SIZE} edge positions as ARGB with brightness as alpha, or null without glow */
 	public static int[] table() {
 		MenuFeature menu = ModFeatures.MENU;
-		if (menu == null || !menu.glowEnabled()) {
+		if (menu == null || !menu.glowOn()) {
 			return null;
 		}
 		Look look = look(menu);
@@ -299,10 +302,16 @@ public final class UiGlow {
 		return look.table;
 	}
 
+	/** @return whether panes of the Colored theme glow in the theme's own colors; else they glow in the glow colors like every other pane */
+	public static boolean themeGlow() {
+		MenuFeature menu = ModFeatures.MENU;
+		return menu != null && menu.glowOn() && look(menu).themeGlow;
+	}
+
 	/** @return how bright the Colored theme's glow is at {@link #TABLE_SIZE} edge positions, from 0 to 255, or null without glow */
 	public static int[] coloredBrightness() {
 		MenuFeature menu = ModFeatures.MENU;
-		return menu == null || !menu.glowEnabled() ? null : look(menu).coloredBrightness();
+		return menu == null || !menu.glowOn() ? null : look(menu).coloredBrightness();
 	}
 
 	/** @return how far the glow of an element kind extends from its edge in menu pixels, or 0 without glow */

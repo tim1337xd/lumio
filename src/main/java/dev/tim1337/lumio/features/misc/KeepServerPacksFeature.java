@@ -1,8 +1,9 @@
 package dev.tim1337.lumio.features.misc;
 
 import dev.tim1337.lumio.ModFeatures;
+import dev.tim1337.lumio.api.experimental.debug.DebugCategory;
+import dev.tim1337.lumio.api.experimental.debug.DebugHooks;
 import dev.tim1337.lumio.api.experimental.draw.SystemColors;
-import dev.tim1337.lumio.api.experimental.util.Debug;
 import dev.tim1337.lumio.config.Feature;
 import dev.tim1337.lumio.config.FeatureManager;
 import dev.tim1337.lumio.config.setting.StringSetting;
@@ -68,12 +69,11 @@ public class KeepServerPacksFeature extends Feature {
 	/** The server being joined or played on, from the start of its configuration (when it sends its packs), or null in a world of the player's own. */
 	private ServerData joined;
 	/** The packs to load again at the next start: the server's address, then a line per pack with its id and file name. Hidden and private. */
-	private final StringSetting saved = add(new StringSetting("saved_packs", Component.literal("Saved server packs"), "", false));
+	private final StringSetting saved = add(new StringSetting("saved_packs", Component.literal("Saved packs"), "", false));
 
 	public KeepServerPacksFeature() {
 		super("keep_server_packs", "Keep server resource packs",
-			"Joining a server again, also after restarting the game, or changing servers on a network does not reload the game's resources when the "
-				+ "server's resource pack is the same. The kept pack stays active in the main menu until you join another server or open a world.",
+			"No reload when a server's pack is the same.",
 			true);
 		iconRgb(SystemColors.ORANGE_RGB);
 		iconName("layers");
@@ -94,11 +94,15 @@ public class KeepServerPacksFeature extends Feature {
 		}
 		if (isEnabled() && ServerPackMemory.skip(requested, loaded, leaving, reloadRunning)) {
 			kept = leaving && !loaded.isEmpty();
-			Debug.log("Keep server resource packs: reload left out for {} ({})", files(requested), leaving ? "kept after leaving" : "already loaded");
+			if (DebugHooks.ACTIVE) {
+				DebugHooks.log(DebugCategory.PACKS, "Keep server resource packs: reload left out for {} ({})", files(requested), leaving ? "kept after leaving" : "already loaded");
+			}
 			return true;
 		}
-		Debug.log("Keep server resource packs: reload for {}; the resources held {}{}", files(requested), loaded == null ? "unknown packs" : files(loaded),
-			reloadRunning ? " (a reload was still running)" : "");
+		if (DebugHooks.ACTIVE) {
+			DebugHooks.log(DebugCategory.PACKS, "Keep server resource packs: reload for {}; the resources held {}{}", files(requested), loaded == null ? "unknown packs" : files(loaded),
+				reloadRunning ? " (a reload was still running)" : "");
+		}
 		loaded = List.copyOf(requested);
 		kept = false;
 		loadedFrom = requested.isEmpty() || joined == null ? null : joined.ip;
@@ -129,7 +133,9 @@ public class KeepServerPacksFeature extends Feature {
 	public void configurationFinished() {
 		if (kept && !requestedSinceJoin && (!isEnabled() || joined == null || !joined.ip.equals(loadedFrom)
 			|| joined.getResourcePackStatus() == ServerData.ServerPackStatus.DISABLED)) {
-			Debug.log("Keep server resource packs: the kept packs are removed, they belong to another server");
+			if (DebugHooks.ACTIVE) {
+				DebugHooks.log(DebugCategory.PACKS, "Keep server resource packs: the kept packs are removed, they belong to another server");
+			}
 			removeKept();
 		}
 	}
@@ -181,13 +187,17 @@ public class KeepServerPacksFeature extends Feature {
 		// include them
 		List<PackReloadConfig.IdAndPath> packs = ServerPackMemory.restorable(text, gameDirectory.resolve(DOWNLOADS).toAbsolutePath().normalize());
 		if (packs.isEmpty()) {
-			Debug.log("Keep server resource packs: the saved packs are no longer in the game's downloads, or changed; the game starts without them");
+			if (DebugHooks.ACTIVE) {
+				DebugHooks.log(DebugCategory.PACKS, "Keep server resource packs: the saved packs are no longer in the game's downloads, or changed; the game starts without them");
+			}
 			return;
 		}
 		DownloadedPackSourceAccessor accessor = (DownloadedPackSourceAccessor) source;
 		List<Pack> opened = accessor.lumio$loadRequestedPacks(packs);
 		if (opened == null) {
-			Debug.log("Keep server resource packs: a saved pack could not be opened; the game starts without it");
+			if (DebugHooks.ACTIVE) {
+				DebugHooks.log(DebugCategory.PACKS, "Keep server resource packs: a saved pack could not be opened; the game starts without it");
+			}
 			return;
 		}
 		accessor.lumio$setPackSource(DownloadedPackSourceAccessor.lumio$configureSource(opened));
@@ -196,21 +206,25 @@ public class KeepServerPacksFeature extends Feature {
 		loadedFrom = ServerPackMemory.server(text);
 		kept = true;
 		leaving = true;
-		Debug.log("Keep server resource packs: loaded with the game's start: {} of {}", files(packs), loadedFrom);
+		if (DebugHooks.ACTIVE) {
+			DebugHooks.log(DebugCategory.PACKS, "Keep server resource packs: loaded with the game's start: {} of {}", files(packs), loadedFrom);
+		}
 	}
 
 	/** With the debug log on: a pack the server sent, by its id, hash and address (without its query, which could hold more than the file's name). */
 	public void serverSent(UUID id, URL url, String hash) {
-		if (Debug.on()) {
+		if (DebugHooks.ACTIVE) {
 			String address = url == null ? "none" : url.getProtocol() + "://" + url.getHost() + url.getPath();
-			Debug.log("Keep server resource packs: the server sent pack {} with hash {} from {}; the resources hold {}", id,
+			DebugHooks.log(DebugCategory.PACKS, "Keep server resource packs: the server sent pack {} with hash {} from {}; the resources hold {}", id,
 				hash == null || hash.isEmpty() ? "none" : hash, address, loaded == null ? "unknown packs" : files(loaded));
 		}
 	}
 
 	/** With the debug log on: the server removed its packs (all of them, or the one with this id). */
 	public void serverRemoved(UUID id) {
-		Debug.log("Keep server resource packs: the server removed {}", id == null ? "all its packs" : "pack " + id);
+		if (DebugHooks.ACTIVE) {
+			DebugHooks.log(DebugCategory.PACKS, "Keep server resource packs: the server removed {}", id == null ? "all its packs" : "pack " + id);
+		}
 	}
 
 	/** @return the packs' file names (their hashes), for the debug log */

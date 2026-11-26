@@ -15,10 +15,12 @@ import net.minecraft.client.renderer.state.gui.GuiElementRenderState;
  */
 public record GlassPaneState(float x0, float y0, float x1, float y1, int index, float part, float fade, Matrix3x2f pose, ScreenRectangle scissorArea,
 							 ScreenRectangle bounds, TextureSetup textureSetup) implements GuiElementRenderState {
-	/** Which part of a pane a quad draws, in its second texture coordinate: all of it, what lies outside of its edge, or the pane itself. */
+	/** Which part of a pane a quad draws, in its second texture coordinate: all of it, what lies outside of its edge, the pane itself, or only the blurred picture. */
 	static final float WHOLE = 0f;
 	static final float OUTSIDE = 1f;
 	static final float INSIDE = 2f;
+	/** The blurred picture as it is, with no look of glass: the backdrop that takes the place of the game's blur behind the menu. */
+	static final float BACKDROP = 3f;
 
 	@Override
 	public void buildVertices(VertexConsumer consumer) {

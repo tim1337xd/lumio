@@ -563,7 +563,7 @@ public final class SourceSetupScreen extends Screen {
 		int tx = x + h + 2;
 		String label = title.isEmpty() ? "CONNECTED" : "CONNECTED · PLAYING NOW";
 		ui.textAtScaledBold(label, tx, y + 6, TextScale.SMALL, goodText());
-		ui.textAtScaledBold(ui.fit(title.isEmpty() ? "Nothing plays right now" : title, w - h - 10), tx, y + 16, 1f, HudStyle.text());
+		ui.textAtScaledBold(ui.fit(title.isEmpty() ? "Nothing playing" : title, w - h - 10), tx, y + 16, 1f, HudStyle.text());
 		if (!artist.isEmpty()) {
 			ui.textAtScaled(ui.fitScaled(artist, w - h - 10, TextScale.SMALL), tx, y + 28, TextScale.SMALL, HudStyle.secondary());
 		}

@@ -1,6 +1,8 @@
 package dev.tim1337.lumio.render;
 
 import dev.tim1337.lumio.Lumio;
+import dev.tim1337.lumio.api.experimental.debug.DebugHooks;
+import dev.tim1337.lumio.api.experimental.debug.DebugPass;
 import dev.tim1337.lumio.api.experimental.util.Logs;
 
 import org.joml.Matrix4f;
@@ -326,6 +328,15 @@ public final class EchoFeedback {
 
 	/** Called at the end of the hand pass: makes the after-glow of this frame and lays it over the screen, if Radiance asked for it. */
 	public static void render() {
+		DebugHooks.passBegin(DebugPass.ECHO);
+		try {
+			renderPass();
+		} finally {
+			DebugHooks.passEnd(DebugPass.ECHO);
+		}
+	}
+
+	private static void renderPass() {
 		boolean asked = wanted;
 		wanted = false;
 		int lines = lineCount;

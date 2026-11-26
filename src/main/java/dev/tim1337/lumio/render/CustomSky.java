@@ -2,6 +2,8 @@ package dev.tim1337.lumio.render;
 
 import dev.tim1337.lumio.Lumio;
 import dev.tim1337.lumio.ModFeatures;
+import dev.tim1337.lumio.api.experimental.debug.DebugHooks;
+import dev.tim1337.lumio.api.experimental.debug.DebugPass;
 import dev.tim1337.lumio.features.visual.world.SkyFeature;
 
 import org.joml.Matrix4f;
@@ -69,12 +71,12 @@ public final class CustomSky {
 
 	/**
 	 * The smooth sky light (nebulae, aurora) is rendered at this fraction of the screen size in a separate pass and upsampled with filtering by the
-	 * main sky pass. It is soft, so it looks the same at a quarter of the pixel cost. Stars are sharp and rendered at full size. The shader uses
-	 * this value as well.
+	 * main sky pass. It is soft, so it looks the same at a quarter of the pixel cost. Stars are sharp and rendered at full size. The sky pass
+	 * reads the divisor in use from the parameters (texel 9).
 	 */
 	private static final int LOWRES_DIVISOR = 2;
-	/** Themes from this index on (the storm) have no light layer and render in a single pass. */
-	private static final int FIRST_THEME_WITHOUT_LIGHT = 4;
+	/** On Low the light is made at a quarter of the size across: softer, and an aurora curtain a little blurred, for a quarter of the cost. */
+	private static final int LOWRES_DIVISOR_LOW = 4;
 
 	/** Light pass without blending: writes the light as is, into an HDR texture. */
 	private static final RenderPipeline LIGHT_PIPELINE = ModPipelines.register(
@@ -96,7 +98,6 @@ public final class CustomSky {
 			.withVertexShader(Lumio.id("core/sky"))
 			.withFragmentShader(Lumio.id("core/sky"))
 			.withShaderDefine("SPLIT")
-			.withShaderDefine("LOWRES_DIVISOR", LOWRES_DIVISOR)
 			.withBindGroupLayout(BindGroupLayout.builder().withSampler("Sampler1").build())
 			.withCull(false)
 			.withColorTargetState(new ColorTargetState(BlendFunction.TRANSLUCENT))
@@ -119,9 +120,11 @@ public final class CustomSky {
 	 * clouds in many steps, too expensive for every pixel of a large screen, and soft clouds look the same upsampled. The shader uses this value as
 	 * well.
 	 */
-	private static final int VOLUME_DIVISOR = 3;
-	/** On the lowest graphics the picture of the clouds is smaller still; never a flat one. */
-	private static final int VOLUME_DIVISOR_FAST = 4;
+	private static final int VOLUME_DIVISOR = 4;
+	/** On High, and for the blocky clouds, whose sharp edges need it, the picture of the clouds is larger. */
+	private static final int VOLUME_DIVISOR_FINE = 2;
+	/** On Low the clouds are marched at a sixth of the size across: softer edges, under half the cost. */
+	private static final int VOLUME_DIVISOR_LOW = 6;
 
 	/** Volumetric cloud pass: cloud radiance and the remaining transmittance of the sky behind, into an HDR texture. */
 	private static final RenderPipeline VOLUME_PIPELINE = ModPipelines.register(
@@ -189,6 +192,10 @@ public final class CustomSky {
 	private static float[] lastRotation;
 	private static long lastVolumeNanos;
 	private static Vec3 lastVolumeEye = Vec3.ZERO;
+	/** The clouds' quality and kind last drawn, and for how many frames more a change of them is still being faded over. */
+	private static final int CROSS_FADE_FRAMES = 40;
+	private static int volumeLook = -1;
+	private static int crossFadeFrames;
 	/** The history is discarded after this long without clouds (another sky, a menu), or after a move this far in blocks. */
 	private static final long HISTORY_GAP_NANOS = 250_000_000L;
 	private static final double HISTORY_JUMP_BLOCKS = 32.0;
@@ -229,17 +236,34 @@ public final class CustomSky {
 	private CustomSky() {
 	}
 
+	/** How much of the moon is lit, from the game's moon phase: 1 at full moon, 0 at new moon. */
+	private static float moonLit = 1f;
+
+	/** Takes the game's moon phase (0 full, 4 new, of 8), for the moon's glow; it is drawn with the sky in the frame after. */
+	public static void moonPhase(int index) {
+		moonLit = (1f + (float) Math.cos(index / 8.0 * Math.PI * 2.0)) * 0.5f;
+	}
+
 	/**
 	 * Draws the sky if it is enabled and dark enough.
 	 *
 	 * @param box            the box around the camera that the game draws the End sky on
-	 * @param starAngle      rotation of the vanilla stars
 	 * @param rainBrightness 1 in clear weather
 	 * @param starBrightness brightness of the vanilla stars
 	 */
-	public static void draw(GpuBuffer box, RenderTarget target, float starAngle, float rainBrightness, float starBrightness) {
-		prepare(box, target, starAngle, rainBrightness, starBrightness);
-		if (preparedPipeline != null) {
+	public static void draw(GpuBuffer box, RenderTarget target, float rainBrightness, float starBrightness) {
+		DebugHooks.passBegin(DebugPass.SKY);
+		try {
+			drawPass(box, target, rainBrightness, starBrightness);
+		} finally {
+			DebugHooks.passEnd(DebugPass.SKY);
+		}
+		skyPassDone();
+	}
+
+	private static void drawPass(GpuBuffer box, RenderTarget target, float rainBrightness, float starBrightness) {
+		prepare(box, target, rainBrightness, starBrightness);
+		if (preparedPipeline != null || MoltenSky.isPrepared()) {
 			try (RenderPass pass = RenderSystem.getDevice().createCommandEncoder().createRenderPass(
 				() -> "Lumio sky", target.getColorTextureView(), Optional.empty(), target.getDepthTextureView(), OptionalDouble.empty())) {
 				drawPrepared(pass);
@@ -247,8 +271,14 @@ public final class CustomSky {
 		}
 	}
 
+	/** The sky's pass is closed: the end of what the sky quality Auto times of it. */
+	public static void skyPassDone() {
+		SkyAutoQuality.end(SkyAutoQuality.SKY);
+	}
+
 	/** Draws what {@link #prepare} made ready into a pass on the screen's target; nothing when it made nothing ready. */
 	public static void drawPrepared(RenderPass pass) {
+		MoltenSky.drawPrepared(pass);
 		if (preparedPipeline == null) {
 			return;
 		}
@@ -264,10 +294,25 @@ public final class CustomSky {
 	 * Everything of the sky of a frame but the last draw: its parameters, and the passes into textures of its own, which cannot run while a pass on the
 	 * screen's target is open.
 	 */
-	public static void prepare(GpuBuffer box, RenderTarget target, float starAngle, float rainBrightness, float starBrightness) {
+	public static void prepare(GpuBuffer box, RenderTarget target, float rainBrightness, float starBrightness) {
+		SkyAutoQuality.frameStart();
+		DebugHooks.passBegin(DebugPass.SKY);
+		try {
+			preparePass(box, target, rainBrightness, starBrightness);
+			if (preparedPipeline != null || MoltenSky.isPrepared() || cloudsPending) {
+				SkyAutoQuality.drew();
+			}
+		} finally {
+			DebugHooks.passEnd(DebugPass.SKY);
+		}
+	}
+
+	private static void preparePass(GpuBuffer box, RenderTarget target, float rainBrightness, float starBrightness) {
 		preparedPipeline = null;
 		preparedLayer = null;
 		cloudsPending = false;
+		// the Molten sky has its own pipelines and is drawn first in the same pass; the other skies leave it alone
+		MoltenSky.prepare(box, target);
 		SkyFeature sky = ModFeatures.SKY;
 		if (!pipelinesUsable()) {
 			return;
@@ -282,10 +327,10 @@ public final class CustomSky {
 			parameters = new ParameterTexture("sky_parameters", TEXELS);
 		}
 		float phase = CLOCK.advance(1f, CYCLE_SECONDS);
-		float turns = (starAngle / TAU) % 1f;
+		float turns = (sky.skyStarAngle() / TAU) % 1f;
 		int rgb = sky.rgb();
 		parameters.setPacked16(0, phase, sky.themeIndex(), Math.round(opacity * 255f));
-		parameters.setPacked16(1, turns < 0f ? turns + 1f : turns, Math.round(sky.brightness() * sky.shownAfterJump() * 64f), Math.round(sky.starDensity() * 255f));
+		parameters.setPacked16(1, turns < 0f ? turns + 1f : turns, Math.round(sky.brightness() * 64f), Math.round(sky.starDensity() * 255f));
 		parameters.set(2, rgb >> 16 & 0xFF, rgb >> 8 & 0xFF, rgb & 0xFF, Math.round(sky.netherMood() * 255f));
 		// background: the color at the horizon and at the zenith
 		float[] horizon = sky.horizonNow();
@@ -313,7 +358,8 @@ public final class CustomSky {
 		double auroraKept = auroraSeconds % 65536.0;
 		int auroraWhole = (int) auroraKept;
 		parameters.set(47, auroraWhole & 0xFF, auroraWhole >> 8 & 0xFF, Math.min(255, (int) ((auroraKept - auroraWhole) * 255.0)), 255);
-		parameters.set(9, 0, 0, 0, volumetric ? 2 : 0);
+		// how much smaller the light picture is, which the sky pass reads it by
+		parameters.set(9, lightDivisor(sky), 0, 0, volumetric ? 2 : 0);
 		for (int i = 0; i < 3; i++) {
 			int aurora = sky.auroraRgb(i);
 			parameters.set(29 + i, aurora >> 16 & 0xFF, aurora >> 8 & 0xFF, aurora & 0xFF, 255);
@@ -324,7 +370,8 @@ public final class CustomSky {
 		float[] rotation = {view.m00(), view.m01(), view.m02(), view.m10(), view.m11(), view.m12(), view.m20(), view.m21(), view.m22()};
 		if (volumetric) {
 			Vec3 before = lastVolumeEye;
-			history = prepareVolume(target);
+			// the blocky clouds are sharp and the same every frame: they mix in no frames before, but for the cross-fade of a change of their look
+			history = prepareVolume(target) && (!sky.blockClouds() || crossFadeFrames > 0);
 			writeMove(history ? lastVolumeEye.subtract(before) : Vec3.ZERO);
 			writeRotation(history ? lastRotation : rotation);
 			parameters.set(21, volumeFrame & 0xFF, history ? 255 : 0, 0, 255);
@@ -339,11 +386,13 @@ public final class CustomSky {
 			// the clouds are ray-marched at reduced size and the sky is rendered over them at full size
 			TextureTarget volume = volumeTargets[volumeCurrent];
 			TextureTarget before = volumeTargets[1 - volumeCurrent];
+			DebugHooks.passBegin(DebugPass.CLOUD_MARCH);
 			try (RenderPass pass = RenderSystem.getDevice().createCommandEncoder().createRenderPass(
 				() -> "Lumio sky volume", volume.getColorTextureView(), Optional.empty(), volume.getDepthTextureView(), OptionalDouble.empty())) {
 				pass.bindTexture("Sampler1", before.getColorTextureView(), RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR));
 				drawBox(pass, VOLUME_PIPELINE, box, indexBuffer, indices, transform);
 			}
+			DebugHooks.passEnd(DebugPass.CLOUD_MARCH);
 		// this frame becomes the history of the next; the textures ping-pong
 			lastRotation = rotation;
 			volumeCurrent = 1 - volumeCurrent;
@@ -359,8 +408,8 @@ public final class CustomSky {
 			return;
 		}
 
-		// "detailed" quality renders everything at full size, as does the storm, which has no light layer
-		boolean split = sky.quality() < 2 && sky.themeIndex() < FIRST_THEME_WITHOUT_LIGHT;
+		// "detailed" quality renders everything at full size
+		boolean split = sky.quality() < 2;
 		if (split) {
 			TextureTarget light = lightTarget(target);
 			try (RenderPass pass = RenderSystem.getDevice().createCommandEncoder().createRenderPass(
@@ -377,18 +426,40 @@ public final class CustomSky {
 
 	/** Lays the clouds over the sky, right after the sky pass and before the world, when {@link #prepare} marched them this frame. */
 	public static void drawCloudsOverSky(RenderTarget target) {
+		DebugHooks.passBegin(DebugPass.CLOUDS_OVER_SKY);
+		try {
+			drawCloudsOverSkyPass(target);
+		} finally {
+			DebugHooks.passEnd(DebugPass.CLOUDS_OVER_SKY);
+		}
+	}
+
+	private static void drawCloudsOverSkyPass(RenderTarget target) {
 		if (cloudsPending) {
+			SkyAutoQuality.begin(SkyAutoQuality.CLOUDS_OVER_SKY);
 			composite(target, CLOUD_SKY_PIPELINE, "Lumio clouds over the sky");
+			SkyAutoQuality.end(SkyAutoQuality.CLOUDS_OVER_SKY);
 		}
 	}
 
 	/** Lays the clouds over the land behind them, and their shadow on it, at the end of the world. */
 	public static void drawClouds(RenderTarget target) {
+		DebugHooks.passBegin(DebugPass.CLOUDS);
+		try {
+			drawCloudsPass(target);
+		} finally {
+			DebugHooks.passEnd(DebugPass.CLOUDS);
+		}
+	}
+
+	private static void drawCloudsPass(RenderTarget target) {
 		if (!cloudsPending) {
 			return;
 		}
 		cloudsPending = false;
+		SkyAutoQuality.begin(SkyAutoQuality.CLOUDS);
 		composite(target, CLOUD_PIPELINE, "Lumio clouds");
+		SkyAutoQuality.end(SkyAutoQuality.CLOUDS);
 	}
 
 	private static void composite(RenderTarget target, RenderPipeline pipeline, String name) {
@@ -404,11 +475,14 @@ public final class CustomSky {
 		int sunX = signed16(sky.sunX());
 		int sunY = signed16(sky.sunY());
 		parameters.set(22, sunX & 0xFF, sunX >> 8, sunY & 0xFF, sunY >> 8);
-		parameters.set(23, Math.round(sky.rainNow() * 255f), Math.round(sky.rainDarkness() * 255f), Math.round(sky.shadowStrength() * 255f), (sky.lightAndShadows() ? 1 : 0) | (sky.sunsetGlow() ? 2 : 0));
+		parameters.set(23, Math.round(sky.rainNow() * 255f), Math.round(sky.rainDarkness() * 255f), Math.round(sky.shadowStrength() * 255f), (sky.lightAndShadows() ? 1 : 0) | (sky.sunsetGlow() ? 2 : 0) | (sky.fastClouds() ? 4 : 0));
+		// the night sky's switches, and how much of the moon is lit by its phase (full is all, new none)
+		parameters.set(27, (sky.milkyWay() ? 1 : 0) | (sky.moonGlow() ? 2 : 0), Math.round(moonLit * 255f), Math.round(sky.auroraIntensity() * 255f), 255);
 		parameters.set(24, Math.round(sky.cover() * 255f), sky.gaps().ordinal() * 127, Math.round(sky.gapSize() * 255f), Math.round(sky.cloudSize() * 255f));
 		int bottom = Mth.clamp(Math.round((sky.cloudBottom() + 512f) * 16f), 0, 65535);
 		parameters.set(25, Math.round(sky.puffiness() * 255f), Math.round(sky.thickness() * 255f), bottom & 0xFF, bottom >> 8);
-		parameters.set(26, 0, 0, 0, Math.round(sky.cloudLevel() * 255f));
+		// how the clouds are drawn: the blocky cells (bit 1) or the soft layers shown (the bits above it), the quality (steps)
+		parameters.set(26, (sky.blockClouds() ? 1 : 0) | sky.cloudLayers() << 1, sky.quality(), 0, Math.round(sky.cloudLevel() * 255f));
 		setPlace(WIND_X_TEXEL, sky.windX());
 		setPlace(WIND_Z_TEXEL, sky.windZ());
 		parameters.set(WIND_FRACTIONS_TEXEL, SkyCoordinates.fraction(sky.windX()), SkyCoordinates.fraction(sky.windZ()), 0, 255);
@@ -458,10 +532,16 @@ public final class CustomSky {
 		pass.drawIndexed(INDICES, 1, 0, 0, 0);
 	}
 
+	/** @return how much smaller across the light picture is made: {@link #LOWRES_DIVISOR}, or {@link #LOWRES_DIVISOR_LOW} on Low */
+	private static int lightDivisor(SkyFeature sky) {
+		return sky.quality() == 0 ? LOWRES_DIVISOR_LOW : LOWRES_DIVISOR;
+	}
+
 	/** @return the light texture, sized to the screen divided by {@link #LOWRES_DIVISOR}, rounded up, as the shader expects */
 	private static TextureTarget lightTarget(RenderTarget screen) {
-		int width = Math.max(1, (screen.width + LOWRES_DIVISOR - 1) / LOWRES_DIVISOR);
-		int height = Math.max(1, (screen.height + LOWRES_DIVISOR - 1) / LOWRES_DIVISOR);
+		int divisor = lightDivisor(ModFeatures.SKY);
+		int width = Math.max(1, (screen.width + divisor - 1) / divisor);
+		int height = Math.max(1, (screen.height + divisor - 1) / divisor);
 		if (lightTarget == null) {
 			lightTarget = new TextureTarget("Lumio sky light", width, height, true, GpuFormat.RGBA16_FLOAT);
 		} else if (lightTarget.width != width || lightTarget.height != height) {
@@ -476,7 +556,8 @@ public final class CustomSky {
 	 * @return whether the history is usable: present, of this size, recent, and from roughly the same position
 	 */
 	private static boolean prepareVolume(RenderTarget screen) {
-		int divisor = GraphicsQuality.isFast() ? VOLUME_DIVISOR_FAST : VOLUME_DIVISOR;
+		SkyFeature sky = ModFeatures.SKY;
+		int divisor = sky.blockClouds() || sky.quality() == 2 ? VOLUME_DIVISOR_FINE : sky.quality() == 0 ? VOLUME_DIVISOR_LOW : VOLUME_DIVISOR;
 		int width = Math.max(1, (screen.width + divisor - 1) / divisor);
 		int height = Math.max(1, (screen.height + divisor - 1) / divisor);
 		boolean usable = lastRotation != null;
@@ -484,10 +565,20 @@ public final class CustomSky {
 			if (volumeTargets[i] == null) {
 				volumeTargets[i] = new TextureTarget("Lumio sky volume " + i, width, height, true, GpuFormat.RGBA16_FLOAT);
 				usable = false;
-			} else if (volumeTargets[i].width != width || volumeTargets[i].height != height) {
-				volumeTargets[i].resize(width, height);
-				usable = false;
 			}
+		}
+		// only the picture being made takes a new size: the one before stays as it is and is read by its share of the screen, so a change of quality
+		// is a cross-fade through the frames mixed together
+		TextureTarget making = volumeTargets[volumeCurrent];
+		if (making.width != width || making.height != height) {
+			making.resize(width, height);
+		}
+		int look = sky.quality() << 1 | (sky.blockClouds() ? 1 : 0);
+		if (look != volumeLook) {
+			volumeLook = look;
+			crossFadeFrames = CROSS_FADE_FRAMES;
+		} else if (crossFadeFrames > 0) {
+			crossFadeFrames--;
 		}
 		long now = System.nanoTime();
 		Vec3 eye = Minecraft.getInstance().gameRenderer.mainCamera().position();

@@ -34,14 +34,6 @@ public final class FogState {
 		return end;
 	}
 
-	/** @return how clearly something at this distance is seen through the fog, from 1 (no fog) to 0 (hidden in it) */
-	public static float clearness(double distance) {
-		if (end >= Float.MAX_VALUE / 2 || end <= start) {
-			return distance < end ? 1f : 0f;
-		}
-		return clamp((float) ((end - distance) / (end - start)));
-	}
-
 	/** @return the fog's color as ARGB */
 	public static int color() {
 		return color;

@@ -104,7 +104,7 @@ public final class HudSimulation {
 
 	/** @return whether the element of a feature is shown in the editor: always without a simulation, otherwise if it belongs to it */
 	public static boolean shows(Feature feature) {
-		return !active() || running.simulator().shows(Adapters.viewOf(feature));
+		return !active() || dev.tim1337.lumio.ui.HudEditPreview.allPanels() || running.simulator().shows(Adapters.viewOf(feature));
 	}
 
 	/** @return whether the element of a feature is shown with sample content for the simulation */

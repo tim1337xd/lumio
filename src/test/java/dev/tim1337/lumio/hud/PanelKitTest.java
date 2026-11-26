@@ -31,6 +31,17 @@ class PanelKitTest {
 	}
 
 	@Test
+	void countsAsTheFormatterWroteThem() {
+		for (long value = 0; value < 2_000_000; value += value < 20_000 ? 1 : 997) {
+			String expected = value >= 1_000_000 ? value / 1_000_000 + "m"
+				: value >= 10_000 ? value / 1_000 + "k"
+				: value >= 1_000 ? String.format(java.util.Locale.ROOT, "%.1fk", value / 1000.0)
+				: String.valueOf(value);
+			assertEquals(expected, PanelKit.count(value), "count of " + value);
+		}
+	}
+
+	@Test
 	void decimalsArePaddedAndRounded() {
 		assertEquals("18.4", PanelKit.decimals(18.44, 1));
 		assertEquals("5.30", PanelKit.decimals(5.3, 2));

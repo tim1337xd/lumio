@@ -7,12 +7,24 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import net.minecraft.client.CameraType;
 import net.minecraft.client.Minecraft;
 
-/** Prevents the focus-loss pause menu during cinematic mode, and removes server packs kept from a server when a world of the player's own loads. */
+import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
+
+/**
+ * Prevents the focus-loss pause menu during cinematic mode, removes server packs kept from a server when a world of the player's own loads, and lets
+ * the perspective key skip the view from the front (Camera).
+ */
 @Mixin(Minecraft.class)
 public abstract class MinecraftMixin {
 	/** The game opens the pause menu when the window loses focus; in cinematic mode that would end the shot, so it is suppressed there. */
+	/** The perspective key: the Camera module can skip the view from the front, so the key goes from first person to behind and back. Only the view. */
+	@ModifyExpressionValue(method = "handleKeybinds", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/CameraType;cycle()Lnet/minecraft/client/CameraType;"))
+	private CameraType lumio$skipFrontView(CameraType next) {
+		return ModFeatures.CAMERA == null ? next : ModFeatures.CAMERA.nextPerspective(next);
+	}
+
 	@Inject(method = "pauseIfInactive", at = @At("HEAD"), cancellable = true)
 	private void lumio$keepFilm(CallbackInfo ci) {
 		if (ModFeatures.CINEMATIC != null && ModFeatures.CINEMATIC.active()) {

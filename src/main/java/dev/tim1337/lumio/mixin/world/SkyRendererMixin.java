@@ -64,20 +64,28 @@ public abstract class SkyRendererMixin {
 	//$ @Inject(method = "render", at = @At("HEAD"))
 	//$ private void lumio$prepareSky(com.mojang.renderpearl.api.buffers.GpuBufferSlice fog, net.minecraft.client.renderer.state.level.SkyRenderState state, CallbackInfo ci) {
 	//$ 	if (state.skybox == net.minecraft.world.level.dimension.DimensionType.Skybox.OVERWORLD) {
-	//$ 		CustomSky.prepare(endSkyBuffer, renderTarget, state.starAngle, state.rainBrightness, state.starBrightness);
+	//$ 		CustomSky.prepare(endSkyBuffer, renderTarget, state.rainBrightness, state.starBrightness);
 	//$ 	}
+	//$ }
+	//$
+	//$ /** The game's sky pass is closed here: the end of the sky's time for the quality Auto. */
+	//$ @Inject(method = "render", at = @At("RETURN"))
+	//$ private void lumio$skyDone(com.mojang.renderpearl.api.buffers.GpuBufferSlice fog, net.minecraft.client.renderer.state.level.SkyRenderState state, CallbackInfo ci) {
+	//$ 	CustomSky.skyPassDone();
 	//$ }
 	//$
 	//$ @Inject(method = "renderSunMoonAndStars", at = @At("HEAD"))
 	//$ private void lumio$drawSky(com.mojang.renderpearl.api.commands.RenderPass pass, PoseStack pose, float sunAngle, float moonAngle, float starAngle, MoonPhase moonPhase,
 	//$ 	float rainBrightness, float starBrightness, CallbackInfo ci) {
+	//$ 	CustomSky.moonPhase(moonPhase.index());
 	//$ 	CustomSky.drawPrepared(pass);
 	//$ }
 	//#else
 	@Inject(method = "renderSunMoonAndStars", at = @At("HEAD"))
 	private void lumio$drawSky(PoseStack pose, float sunAngle, float moonAngle, float starAngle, MoonPhase moonPhase,
 										 float rainBrightness, float starBrightness, CallbackInfo ci) {
-		CustomSky.draw(endSkyBuffer, renderTarget, starAngle, rainBrightness, starBrightness);
+		CustomSky.moonPhase(moonPhase.index());
+		CustomSky.draw(endSkyBuffer, renderTarget, rainBrightness, starBrightness);
 	}
 	//#endif
 
@@ -106,16 +114,16 @@ public abstract class SkyRendererMixin {
 	/** The sun, the moon and the game's stars fade while a jump of the time of day is hidden, so they are never seen to sweep to their new places. */
 	@ModifyVariable(method = "renderSun", at = @At("HEAD"), argsOnly = true)
 	private float lumio$fadeSun(float alpha) {
-		return alpha * ModFeatures.SKY.shownAfterJump();
+		return alpha * ModFeatures.SKY.shownAfterJump() * ModFeatures.SKY.sunShown();
 	}
 
 	@ModifyVariable(method = "renderMoon", at = @At("HEAD"), argsOnly = true)
 	private float lumio$fadeMoon(float alpha) {
-		return alpha * ModFeatures.SKY.shownAfterJump();
+		return alpha * ModFeatures.SKY.shownAfterJump() * ModFeatures.SKY.moonShown();
 	}
 
 	@ModifyVariable(method = "renderStars", at = @At("HEAD"), argsOnly = true)
 	private float lumio$fadeStars(float brightness) {
-		return brightness * ModFeatures.SKY.shownAfterJump();
+		return brightness * ModFeatures.SKY.shownAfterJump() * ModFeatures.SKY.starsShown();
 	}
 }

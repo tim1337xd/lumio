@@ -1,11 +1,13 @@
 package dev.tim1337.lumio.mixin.gui;
 
 import dev.tim1337.lumio.ModFeatures;
-import dev.tim1337.lumio.api.experimental.draw.Radius;
 import dev.tim1337.lumio.api.experimental.draw.SystemColors;
-import dev.tim1337.lumio.ui.Glass;
+import dev.tim1337.lumio.api.experimental.draw.TextScale;
+import dev.tim1337.lumio.ui.HudStyle;
 import dev.tim1337.lumio.ui.MacTheme;
 import dev.tim1337.lumio.ui.Ui;
+import dev.tim1337.lumio.ui.UiGlow;
+import dev.tim1337.lumio.ui.VanillaLook;
 
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -21,24 +23,40 @@ import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.util.Mth;
 
 /**
- * The game's sliders as glass like the buttons: the filled part takes the menu color and the handle is a slim light pill. The label is written inside the
- * track, so where the handle reaches it, the handle fades behind the label and the label takes a soft shadow: no letter is ever lost.
+ * The game's sliders in the menu's look: the same box as a button, its name on the left and its value on the right (whole, its digits in equal
+ * cells; the name is what shortens), a soft tint in the menu color up to the value, a thin bright line along the bottom edge filled to the value,
+ * and a round knob on that line that grows slightly under the pointer and while it is dragged. At nothing it says "Off" where the game says OFF,
+ * and has no tint. Nothing lies over the texts. Only the drawing: dragging, clicks in the bar, the wheel and the keys are the game's own.
  */
 @Mixin(AbstractSliderButton.class)
 public abstract class AbstractSliderButtonMixin {
-	/** How close to the label the handle starts to fade, in GUI pixels. */
+	/** How strong the tint is, and how much stronger under the pointer. */
 	@Unique
-	private static final float HANDLE_FADE_REACH = 6f;
-	/** How much of the handle shows behind the label. */
+	private static final float TINT = 0.22f;
 	@Unique
-	private static final float HANDLE_BEHIND_LABEL = 0.28f;
+	private static final float TINT_LIT = 0.08f;
+	/** How much the whole box brightens under the pointer. */
 	@Unique
-	private static final float LABEL_SHADOW_OPACITY = 0.7f;
+	private static final float BOX_LIT = 0.06f;
+	/** The line: how bright its empty part is, and how far its filled part is from the menu color toward white. */
 	@Unique
-	private static final int LABEL_SIDES = 28;
+	private static final float LINE_EMPTY = 0.12f;
+	@Unique
+	private static final float LINE_WHITER = 0.45f;
+	/** How bright the knob is at rest; under the pointer and while dragged it is white. */
+	@Unique
+	private static final float KNOB_REST_LIGHT = 0.88f;
+	@Unique
+	private static final float DISABLED = 0.5f;
+	@Unique
+	private static final float FOCUS_RING = 0.95f;
+	@Unique
+	private static final float HOVER_PER_SECOND = 12f;
 
 	@Shadow
 	protected double value;
+	@Shadow
+	private boolean dragging;
 
 	@Unique
 	private float lumio$hover;
@@ -55,8 +73,8 @@ public abstract class AbstractSliderButtonMixin {
 		long now = System.nanoTime();
 		float dt = lumio$stamp == 0 ? 0.1f : Math.min(0.1f, (now - lumio$stamp) / 1_000_000_000f);
 		lumio$stamp = now;
-		boolean lit = widget.isActive() && widget.isHoveredOrFocused();
-		lumio$hover += ((lit ? 1f : 0f) - lumio$hover) * (1f - (float) Math.exp(-dt * 12f));
+		boolean lit = widget.isActive() && (widget.isHoveredOrFocused() || dragging);
+		lumio$hover += ((lit ? 1f : 0f) - lumio$hover) * (1f - (float) Math.exp(-dt * HOVER_PER_SECOND));
 		float h = Mth.clamp(lumio$hover, 0f, 1f);
 		Ui.setZoom(1f);
 		Ui ui = new Ui(graphics, client.font, ModFeatures.MENU.theme().palette(), ModFeatures.MENU.accentArgb(), dt, false);
@@ -64,38 +82,69 @@ public abstract class AbstractSliderButtonMixin {
 		int y = widget.getY();
 		int width = widget.getWidth();
 		int height = widget.getHeight();
-		float radius = Math.min(10f, height / 2f);
-		float fade = widget.isActive() ? 1f : 0.5f;
+		float radius = VanillaLook.radius(height);
+		float fade = widget.isActive() ? 1f : DISABLED;
 		float amount = Mth.clamp((float) value, 0f, 1f);
 
-		Glass.button(ui, x, y, width, height, radius, h, fade);
-		// pane, edge light and glow are the same as the buttons'
-		// The handle travels between both ends with room for its width at each, and the fill reaches its center. The fill is the full capsule
-		// clipped at the handle, so its ends keep the capsule shape at any value and nothing sticks out past the handle.
-		int handleWidth = 3;
-		int travel = width - 2 * Math.round(radius) - handleWidth;
-		int handleX = x + Math.round(radius) + Math.round(amount * Math.max(0, travel));
-		int filled = Mth.clamp(handleX + handleWidth / 2 - x, 0, width);
-		graphics.enableScissor(x, y, x + filled, y + height);
-		ui.rounded(x, y, width, height, radius, Ui.withOpacity(ui.accent, (0.38f + 0.14f * h) * fade));
-		// highlight along the top of the fill
-		ui.rounded(x + 2, y + 1, Math.max(0, width - 4), 1, Radius.pill(1), Ui.withOpacity(0xFFFFFFFF, 0.22f * fade));
-		graphics.disableScissor();
-		String message = widget.getMessage().getString();
-		String label = message.isEmpty() ? message : ui.fit(message, Math.max(8, width - LABEL_SIDES));
-		int labelHalf = ui.width(label) / 2;
-		int center = x + width / 2;
-		// 0 where the handle reaches the label, 1 from a little beside it
-		float apart = label.isEmpty() ? 1f : Mth.clamp(Math.max(center - labelHalf - (handleX + handleWidth), handleX - (center + labelHalf)) / HANDLE_FADE_REACH, 0f, 1f);
-		float handle = Mth.lerp(apart, HANDLE_BEHIND_LABEL, 1f) * fade;
-		ui.rounded(handleX - 1, y + 3, handleWidth + 2, height - 6, (handleWidth + 2) / 2f, Ui.withOpacity(ui.accent, 0.25f * (0.5f + h) * handle));
-		ui.rounded(handleX, y + 4, handleWidth, height - 8, handleWidth / 2f, Ui.withOpacity(0xFFFFFFFF, (0.8f + 0.2f * h) * handle));
-		if (!label.isEmpty()) {
-			if (apart < 1f) {
-				ui.textCentered(label, center, y + height / 2 + 1, Ui.withOpacity(0xFF000000, LABEL_SHADOW_OPACITY * (1f - apart) * fade));
+		// the box of a button: the empty part is the plain dark box
+		HudStyle.panel(ui, x, y, width, height, radius, HudStyle.opacity() * fade, UiGlow.Target.BUTTONS, h * fade);
+		// the soft tint, up to the knob's middle, ending in a soft edge; nothing at 0
+		int tinted = VanillaLook.tinted(x, width, amount);
+		if (tinted > 0) {
+			int tint = Ui.withOpacity(ui.accent, (TINT + TINT_LIT * h) * fade);
+			int solid = Math.max(0, tinted - VanillaLook.FILL_EDGE);
+			graphics.enableScissor(x, y, x + solid, y + height);
+			ui.rounded(x, y, width, height, radius, tint);
+			graphics.disableScissor();
+			for (int step = 0; step < tinted - solid; step++) {
+				float share = 1f - (step + 1f) / (VanillaLook.FILL_EDGE + 1f);
+				graphics.enableScissor(x + solid + step, y, x + solid + step + 1, y + height);
+				ui.rounded(x, y, width, height, radius, Ui.withOpacity(tint, share));
+				graphics.disableScissor();
 			}
-			ui.textCentered(label, center, y + height / 2, widget.isActive() ? MacTheme.DARK.palette().text() : SystemColors.GRAY);
 		}
+		if (h > 0.01f) {
+			ui.rounded(x, y, width, height, radius, Ui.withOpacity(0xFFFFFFFF, BOX_LIT * h * fade));
+		}
+		if (widget.isFocused() && widget.isActive()) {
+			ui.ring(x, y, width, height, radius, 1, Ui.withOpacity(ui.accent, FOCUS_RING));
+		}
+
+		// the line along the bottom edge, bright up to the value, and the round knob on it
+		float lineY = y + height - VanillaLook.LINE_HEIGHT;
+		float lineLeft = x + VanillaLook.LINE_INSET;
+		float lineWidth = width - 2f * VanillaLook.LINE_INSET;
+		float knobX = VanillaLook.knobX(x, width, amount);
+		ui.roundedSmooth(lineLeft, lineY, lineWidth, VanillaLook.LINE_HEIGHT, VanillaLook.LINE_HEIGHT / 2f, Ui.withOpacity(0xFFFFFFFF, LINE_EMPTY * fade));
+		if (knobX > lineLeft) {
+			ui.roundedSmooth(lineLeft, lineY, knobX - lineLeft, VanillaLook.LINE_HEIGHT, VanillaLook.LINE_HEIGHT / 2f, Ui.withOpacity(Ui.mix(ui.accent, 0xFFFFFFFF, LINE_WHITER), fade));
+		}
+		float gripRadius = VanillaLook.knobRadius(Math.max(h, dragging ? 1f : 0f));
+		float knobLight = (KNOB_REST_LIGHT + (1f - KNOB_REST_LIGHT) * Math.max(h, dragging ? 1f : 0f)) * fade;
+		ui.roundedSmooth(knobX - gripRadius, lineY + VanillaLook.LINE_HEIGHT / 2f - gripRadius, 2f * gripRadius, 2f * gripRadius, gripRadius, Ui.withOpacity(0xFFFFFFFF, knobLight));
+
+		// the name on the left, the value on the right: the value is drawn whole, the name has what is left
+		String message = widget.getMessage().getString();
+		String shown = VanillaLook.shownValue(VanillaLook.sliderValue(message));
+		int valueWidth = ui.tabularWidth(shown);
+		// a name too long for its room is set smaller first, and only then shortened
+		String whole = VanillaLook.sliderName(message);
+		int room = VanillaLook.nameRoom(width, valueWidth);
+		float nameScale = ui.width(whole) <= room ? TextScale.BODY : TextScale.SMALL;
+		String name = nameScale == TextScale.BODY ? whole : ui.fitScaled(whole, room, nameScale);
+		int middle = y + height / 2;
+		int text = widget.isActive() ? MacTheme.DARK.palette().text() : SystemColors.GRAY;
+		if (nameScale == TextScale.BODY) {
+			ui.textMiddle(name, x + VanillaLook.SLIDER_SIDE, middle, text);
+		} else {
+			ui.textAtScaled(name, x + VanillaLook.SLIDER_SIDE, middle - client.font.lineHeight * nameScale / 2f, nameScale, text);
+		}
+		// at nothing the value is quieter, as the mockup has "Off"
+		ui.textRightTabular(shown, x + width - VanillaLook.SLIDER_SIDE, middle, amount <= 0f ? Ui.withOpacity(text, OFF_LIGHT) : text);
 		ci.cancel();
 	}
+
+	/** How bright the value is at nothing. */
+	@Unique
+	private static final float OFF_LIGHT = 0.6f;
 }

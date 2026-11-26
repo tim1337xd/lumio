@@ -37,6 +37,13 @@ public final class Confirm extends Screen {
 	private static final int COLUMN_W = 190;
 	private static final int COLUMN_GAP = 12;
 	private static final int MIN_ROWS = 4;
+	/** The confirm button of a dangerous question: the system red. */
+	private static final int DANGER_RGB = 0xFFFF453A;
+	/** The warning tile of a dangerous question: its size, the icon's inset, its gap to the text, and how strong its red is. */
+	private static final int WARNING_TILE = 22;
+	private static final int WARNING_INSET = 5;
+	private static final int WARNING_GAP = 10;
+	private static final float WARNING_TILE_OPACITY = 0.18f;
 	/** The space kept free around the card on a small screen. */
 	private static final int SCREEN_MARGIN = 10;
 
@@ -47,6 +54,8 @@ public final class Confirm extends Screen {
 	private final Consumer<Boolean> onYes;
 	private final String option;
 	private final List<String> details;
+	/** A question before something that cannot simply be taken back: a red confirm button, and only a click on it confirms. */
+	private boolean danger;
 	private boolean optionOn;
 	private final Spring optionKnob = Spring.smooth(Spring.SNAPPY);
 	private int optionY;
@@ -71,6 +80,17 @@ public final class Confirm extends Screen {
 		this.onYes = onYes;
 		this.option = option;
 		this.details = details;
+	}
+
+	/**
+	 * Asks before something big (resetting or switching off everything): the confirm button is red, only a click on it confirms (not Enter), and
+	 * Esc, Cancel or a click outside the card cancel. Nothing happens before the confirm click.
+	 */
+	public static void askDanger(String title, String text, String yes, String no, Runnable onYes) {
+		Minecraft client = Minecraft.getInstance();
+		Confirm confirm = new Confirm(client.gui.screen(), title, text, yes, no, null, List.of(), withOption -> onYes.run());
+		confirm.danger = true;
+		client.setScreenAndShow(confirm);
 	}
 
 	public static void ask(String title, String text, String yes, String no, Runnable onYes) {
@@ -105,7 +125,9 @@ public final class Confirm extends Screen {
 		Ui ui = new Ui(graphics, font, HudStyle.palette(), 0xFF000000 | MenuFeature.accentRgb(), 0f, true);
 		graphics.fill(0, 0, width, height, Ui.withOpacity(0xFF000000, 0.45f * Mth.clamp(amount, 0f, 1f)));
 
-		List<String> lines = ui.wrap(text, CARD_W - PAD * 2, 6);
+		// a dangerous question has the warning tile at its left: its title and text start after it
+		int textLeft = danger ? WARNING_TILE + WARNING_GAP : 0;
+		List<String> lines = ui.wrap(text, CARD_W - PAD * 2 - textLeft, 6);
 		int baseH = PAD + 14 + 8 + lines.size() * 11 + 14 + BUTTON_H + PAD;
 		int optionHeight = 0;
 		cardW = CARD_W;
@@ -136,10 +158,15 @@ public final class Confirm extends Screen {
 		Ui.setAlpha(Mth.clamp(amount, 0f, 1f));
 		try {
 			HudStyle.panel(ui, cardX, cardY, cardW, cardH, Radius.XXL, Math.max(0.94f, HudStyle.opacity()));
-			ui.textAtScaledBold(title.getString(), cardX + PAD, cardY + PAD, TextScale.BODY, HudStyle.text());
+			if (danger) {
+				ui.rounded(cardX + PAD, cardY + PAD - 2, WARNING_TILE, WARNING_TILE, Radius.SM, Ui.withOpacity(DANGER_RGB, WARNING_TILE_OPACITY));
+				int icon = WARNING_TILE - 2 * WARNING_INSET;
+				ui.icon("warning", cardX + PAD + WARNING_INSET, cardY + PAD - 2 + WARNING_INSET, icon, DANGER_RGB);
+			}
+			ui.textAtScaledBold(title.getString(), cardX + PAD + textLeft, cardY + PAD, TextScale.BODY, HudStyle.text());
 			int y = cardY + PAD + 14 + 8;
 			for (String line : lines) {
-				ui.textAt(line, cardX + PAD, y, HudStyle.secondary());
+				ui.textAt(line, cardX + PAD + textLeft, y, HudStyle.secondary());
 				y += 11;
 			}
 			if (option != null) {
@@ -151,9 +178,10 @@ public final class Confirm extends Screen {
 			yesHover.follow(overYes ? 1f : 0f);
 			int noX = cardX + PAD;
 			int yesX = noX + buttonW + 8;
-			ui.rounded(noX, buttonY, buttonW, BUTTON_H, BUTTON_H / 2f, Ui.withOpacity(0xFFFFFFFF, 0.08f + 0.08f * noHover.value()));
+			ui.rounded(noX, buttonY, buttonW, BUTTON_H, Radius.SM, Ui.withOpacity(0xFFFFFFFF, 0.08f + 0.08f * noHover.value()));
 			ui.textCentered(no, noX + buttonW / 2, buttonY + BUTTON_H / 2, HudStyle.text());
-			ui.rounded(yesX, buttonY, buttonW, BUTTON_H, BUTTON_H / 2f, Ui.mix(ui.accent, 0xFFFFFFFF, 0.14f * yesHover.value()));
+			int confirmColor = danger ? DANGER_RGB : ui.accent;
+			ui.rounded(yesX, buttonY, buttonW, BUTTON_H, Radius.SM, Ui.mix(confirmColor, 0xFFFFFFFF, 0.14f * yesHover.value()));
 			ui.textCentered(yes, yesX + buttonW / 2, buttonY + BUTTON_H / 2, 0xFFFFFFFF);
 		} finally {
 			Ui.setAlpha(alphaBefore);
@@ -209,6 +237,9 @@ public final class Confirm extends Screen {
 			answer(true);
 		} else if (over(event.x(), event.y(), cardX + PAD)) {
 			answer(false);
+		} else if (danger && !insideCard(event.x(), event.y())) {
+			// a click beside the question is no answer to it: it cancels
+			answer(false);
 		}
 		return true;
 	}
@@ -216,7 +247,10 @@ public final class Confirm extends Screen {
 	@Override
 	public boolean keyPressed(KeyEvent event) {
 		if (event.key() == InputConstants.KEY_RETURN || event.key() == InputConstants.KEY_NUMPADENTER) {
-			answer(true);
+			// a big change is confirmed by its button only, never by a key pressed out of habit
+			if (!danger) {
+				answer(true);
+			}
 			return true;
 		}
 		if (event.key() == InputConstants.KEY_ESCAPE) {
@@ -232,6 +266,10 @@ public final class Confirm extends Screen {
 	}
 
 	private boolean answered;
+
+	private boolean insideCard(double x, double y) {
+		return x >= cardX && x < cardX + cardW && y >= cardY && y < cardY + cardH;
+	}
 
 	private void answer(boolean accepted) {
 		if (answered) {

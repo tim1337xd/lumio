@@ -35,9 +35,11 @@ import dev.tim1337.lumio.ui.controls.ColorSwatchControl;
 import dev.tim1337.lumio.ui.controls.FeatureListControl;
 import dev.tim1337.lumio.ui.controls.KeyControl;
 import dev.tim1337.lumio.ui.controls.SwitchControl;
+import dev.tim1337.lumio.util.ModVersion;
 
 import com.mojang.blaze3d.platform.cursor.CursorTypes;
 
+import it.unimi.dsi.fastutil.objects.Reference2FloatOpenHashMap;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -69,8 +71,8 @@ public class MacScreen extends Screen {
 	private static final int SETTINGS_WINDOW_WIDTH = 472;
 	/** Inset of the sidebar's items and search field from its edges. */
 	private static final int SIDE_INSET = 8;
-	/** Gap between page groups in the sidebar. */
-	private static final int GROUP_GAP = 6;
+	/** Gap between page groups in the sidebar: 18 px in the mockup, where the rows of a group sit 2 px apart. */
+	private static final int GROUP_GAP = 11;
 	private static final int PAD = 16;
 	private static final int ROW_PAD = 8;
 	private static final int CARD_PAD = 16;
@@ -91,6 +93,23 @@ public class MacScreen extends Screen {
 	private static final Map<Integer, String> TABS = new HashMap<>();
 	/** Expanded collapsible groups, keyed by page and group name. Collapsed ones only show their switch. */
 	private static final Set<String> OPEN_GROUPS = new HashSet<>();
+	/** The name of the row a folded group shows. */
+	private static final String FOLD_LABEL = "Fine-tune";
+	private static final String FOLD_SEPARATOR = " · ";
+
+	/** @return the names of a folded group's settings, for its row: "Edge light · Saturation" */
+	private static String foldedNames(List<Entry> entries, String folder) {
+		StringBuilder names = new StringBuilder();
+		for (Entry each : entries) {
+			if (each.collapsible() && each.folder().equals(folder)) {
+				if (!names.isEmpty()) {
+					names.append(FOLD_SEPARATOR);
+				}
+				names.append(each.setting().labelText());
+			}
+		}
+		return names.toString();
+	}
 
 	private static final float MIN_ZOOM = MenuLayout.MIN_ZOOM;
 	/** The room between the end of the sidebar's list and the fixed part under it. */
@@ -134,13 +153,10 @@ public class MacScreen extends Screen {
 		private final String upperTitle;
 		private final List<Row> rows;
 		private Boolean bare;
-		/** How far the group is shown while it appears or disappears with a change of the page, from 0 to 1, and whether it is on its way out. */
-		float shown = 1f;
-		boolean leaving;
 
 		Group(String title, List<Row> rows) {
 			this.title = title;
-			this.upperTitle = title.toUpperCase(Locale.ROOT);
+			this.upperTitle = headingOf(title).toUpperCase(Locale.ROOT);
 			this.rows = rows;
 		}
 
@@ -170,8 +186,9 @@ public class MacScreen extends Screen {
 		Group group;
 		/** Where the group starts, its title or the cards before its card included: the card can start below what is already in view. */
 		int top;
-		/** How much of the group shows while it grows in or shrinks away, from its top, or -1 for all of it. */
-		int clipHeight = -1;
+		/** How much of their light the title and card, and each row, have while the page's content changes ({@link #keepOutgoing}); 1 otherwise. */
+		float cardLight = 1f;
+		float[] rowLights = new float[8];
 		int cardX;
 		int cardY;
 		int cardWidth;
@@ -194,6 +211,7 @@ public class MacScreen extends Screen {
 				rowDescriptionLines = Arrays.copyOf(rowDescriptionLines, rows * 2);
 				rowDescriptionBelow = Arrays.copyOf(rowDescriptionBelow, rows * 2);
 				rowControlBelow = Arrays.copyOf(rowControlBelow, rows * 2);
+				rowLights = Arrays.copyOf(rowLights, rows * 2);
 			}
 			rowTops[rows] = top;
 			rowHeights[rows] = height;
@@ -202,17 +220,40 @@ public class MacScreen extends Screen {
 			rowControlBelow[rows] = controlBelow;
 			rows++;
 		}
+
+		/** Gives the title, the card and every row the same share of their light. */
+		void light(float light) {
+			cardLight = light;
+			Arrays.fill(rowLights, 0, rows, light);
+		}
+
+		/** @return whether the card and the title are where another group's are */
+		boolean cardWhere(Placed other) {
+			return cardX == other.cardX && cardY == other.cardY && cardWidth == other.cardWidth && cardHeight == other.cardHeight
+				&& titled == other.titled && titleY == other.titleY;
+		}
 	}
 
 	/** Line height of the description under a setting's name. */
 	private static final int DESCRIPTION_LINE = 11;
+	/** The height of a setting's title line, for a control centered on it. */
+	private static final int TITLE_LINE = 12;
 	/** Narrowest column for a description beside a control; with less room (a wide text field), it goes under the row at full width. */
 	private static final int DESCRIPTION_MIN_ROOM = 150;
+	/** The least width a control beside its name is squeezed to, so the name is not cut. */
+	private static final int LEAST_INLINE_CONTROL = 100;
 	/** Descriptions are drawn slightly smaller than names. */
 	private static final float DESCRIPTION_SCALE = TextScale.SMALL;
 
+	/**
+	 * A description wrapped for a width, with what it was wrapped from: the text, the room and the text's whole width, which changes with the
+	 * font and its size, so a wrap is only made again when one of them changed and not on every frame.
+	 */
+	private record DescriptionWrap(String text, int room, float width, List<String> lines) {
+	}
+
 	/** Wrapped description lines per setting for the available width, cached so layout and drawing agree. */
-	private final Map<Setting<?>, List<String>> descriptionLines = new HashMap<>();
+	private final Map<Setting<?>, DescriptionWrap> descriptionLines = new HashMap<>();
 
 	private int descriptionLines(Ui ui, Row row, int room) {
 		String description = row.setting().description();
@@ -220,9 +261,15 @@ public class MacScreen extends Screen {
 			descriptionLines.remove(row.setting());
 			return 0;
 		}
+		float width = ui.widthScaled(description, DESCRIPTION_SCALE);
+		DescriptionWrap last = descriptionLines.get(row.setting());
+		if (last != null && last.room() == room && last.width() == width && last.text().equals(description)) {
+			return last.lines().size();
+		}
 		// as many lines as needed so nothing is cut off; descriptions are kept short, so it is rarely more than two
-		List<String> lines = ui.wrap(description, Math.round(room / DESCRIPTION_SCALE), 4);
-		descriptionLines.put(row.setting(), lines);
+		// measured exactly as it is drawn (the size in quarter steps, the game's font in whole pixels), so no line runs under the control
+		List<String> lines = ui.wrapScaled(description, room, DESCRIPTION_SCALE, 4);
+		descriptionLines.put(row.setting(), new DescriptionWrap(description, room, width, lines));
 		return lines.size();
 	}
 
@@ -243,11 +290,26 @@ public class MacScreen extends Screen {
 	private long lastShownCheck;
 
 	private int windowX;
+	/** The top of the window on screen, the point it is zoomed around; the menu's top bar lies between it and {@link #windowY}, where its body starts. */
+	private int frameY;
 	private int windowY;
 	private int windowWidth;
 	private int windowHeight;
 	/** The window's height for a long page; a short one takes less, from the top down. */
 	private int fullHeight;
+
+	/** The menu's top bar: the Lumio mark, the name and version, the search in the middle and the close button; only the menu has it. */
+	private static final int TOP_BAR = 30;
+
+	/** @return how tall the top bar is: the menu's, none for the settings pane or a settings window of its own */
+	private int bar() {
+		return owner == null && single == null ? TOP_BAR : 0;
+	}
+
+	/** @return the whole window's height, the top bar with the body under it */
+	private int fullHeightShown() {
+		return windowHeight + bar();
+	}
 	private int contentTop;
 	private int contentBottom;
 	private int contentLeft;
@@ -263,8 +325,6 @@ public class MacScreen extends Screen {
 	private final Spring openSpring = Spring.bouncy(Spring.GENTLE);
 	/** Whether the window is closing: it shrinks back to where it came from and then disappears. */
 	private boolean closing;
-	/** The sidebar highlight's position, which springs to the selected page. */
-	private final Spring highlightSpring = Spring.bouncy(Spring.DEFAULT);
 	/** Page transition progress from 0 (just opened) to 1: the page slides and fades in. */
 	private float pageAnimation = 1f;
 	private final Spring pageSpring = Spring.smooth(Spring.GENTLE);
@@ -343,8 +403,11 @@ public class MacScreen extends Screen {
 		this.menu = found;
 		if (single != null) {
 			pages.add(single);
-		} else if (found != null) {
-			pages.add(found);
+		} else {
+			SidebarOrder.sort(pages);
+			if (found != null) {
+				pages.add(found);
+			}
 		}
 	}
 
@@ -374,6 +437,7 @@ public class MacScreen extends Screen {
 			if (lists(menu.pages.get(i), target)) {
 				menu.selectPage(i);
 				menu.openEditor(target);
+				menu.openedOn = target;
 				return;
 			}
 		}
@@ -387,6 +451,8 @@ public class MacScreen extends Screen {
 	// given input by the menu, in the menu's window coordinates
 	private MacScreen editor;
 	private MacScreen owner;
+	/** The feature whose settings the menu was opened on from another screen (see {@link #openFrom(Feature)}): Esc from them closes the menu. */
+	private Feature openedOn;
 	/** Share of the page area the pane takes, as in the mockup, and its narrowest width. */
 	private static final float PANE_SHARE = 0.45f;
 	private static final int PANE_MIN_WIDTH = 300;
@@ -402,6 +468,9 @@ public class MacScreen extends Screen {
 	/** Whether the pane is animating out; it is removed when it is gone. */
 	private boolean paneClosing;
 
+	/** A feature whose tab the list shows at its next build, or null. */
+	private Feature tabFor;
+
 	private void openEditor(Feature feature) {
 		if (editor != null) {
 			if (!paneClosing && editor.single == feature) {
@@ -416,8 +485,15 @@ public class MacScreen extends Screen {
 		editor.owner = this;
 		paneClosing = false;
 		editor.init(width, height);
+		showTabOf(feature);
 		// switching from one feature to another slides the new settings in like a page
 		editor.restartPage();
+	}
+
+	/** On a page of features in tabs, shows the tab whose list has the feature, so its row is seen beside its sheet (opened from a search or another screen): on the next build of the tabs. */
+	private void showTabOf(Feature feature) {
+		tabFor = feature;
+		rebuildRequested = true;
 	}
 
 	/** @return the feature whose settings are open in the pane, or null; the feature lists mark its row */
@@ -497,13 +573,14 @@ public class MacScreen extends Screen {
 
 	/** @return the pane's top edge: the window's while docked, or where it floats */
 	private int paneY() {
-		return paneDetached() ? Math.round(windowY + (paneShownY - windowY) / zoom - windowHeight / 2f) : windowY;
+		return paneDetached() ? Math.round(frameY + (paneShownY - frameY) / zoom - windowHeight / 2f) : windowY;
 	}
 
 	/** Gives the pane its place in the window, in the menu's window coordinates; the pane itself is not zoomed, the menu's zoom applies. */
 	private void placePane() {
 		editor.windowX = paneX();
 		editor.windowY = paneY();
+		editor.frameY = editor.windowY;
 		editor.windowWidth = paneWidth();
 		editor.windowHeight = windowHeight;
 		editor.zoom = 1f;
@@ -541,42 +618,26 @@ public class MacScreen extends Screen {
 		return windowY + TITLE_BAR / 2 - PANE_BUTTON / 2;
 	}
 
+	/** @return whether the mouse is over the close button in the title bar of the pane or of a settings window of its own */
 	private boolean overPaneClose(double mouseX, double mouseY) {
-		return owner != null && !showsSheet() && mouseX >= paneCloseX() && mouseX < paneCloseX() + PANE_BUTTON && mouseY >= paneButtonY()
+		return owner == null && single != null && !showsSheet() && mouseX >= paneCloseX() && mouseX < paneCloseX() + PANE_BUTTON && mouseY >= paneButtonY()
 			&& mouseY < paneButtonY() + PANE_BUTTON;
 	}
 
-	/** @return whether the back arrow shows: when the pane covers the page */
-	private boolean paneBack() {
+	/** @return whether this is the pane and covers the page, where the page is too narrow beside it */
+	private boolean paneCoversPage() {
 		return owner != null && owner.paneCovers();
 	}
 
-	private boolean overPaneBack(double mouseX, double mouseY) {
-		return paneBack() && !showsSheet() && mouseX >= windowX + PAD && mouseX < windowX + PAD + PANE_BUTTON && mouseY >= paneButtonY()
-			&& mouseY < paneButtonY() + PANE_BUTTON;
-	}
-
 	private float paneCloseHover;
-	private float paneBackHover;
 
-	/** Draws the pane's close button and, when it covers the page, its back arrow, in place of the window buttons. */
+	/** Draws the close button of a settings window of its own. */
 	private void drawPaneButtons(Ui ui, int mouseX, int mouseY) {
 		Palette palette = ui.palette;
 		int y = paneButtonY();
 		paneCloseHover = ui.approach(paneCloseHover, overPaneClose(mouseX, mouseY) ? 1f : 0f, Ui.HOVER_RATE);
 		ui.rounded(paneCloseX(), y, PANE_BUTTON, PANE_BUTTON, Radius.pill(PANE_BUTTON), Ui.withOpacity(palette.hover(), paneCloseHover));
 		ui.icon("close", paneCloseX() + 4, y + 4, PANE_BUTTON - 8, Ui.mix(palette.textSecondary(), palette.text(), paneCloseHover));
-		if (paneBack()) {
-			paneBackHover = ui.approach(paneBackHover, overPaneBack(mouseX, mouseY) ? 1f : 0f, Ui.HOVER_RATE);
-			int x = windowX + PAD;
-			ui.rounded(x, y, PANE_BUTTON, PANE_BUTTON, Radius.pill(PANE_BUTTON), Ui.withOpacity(palette.hover(), paneBackHover));
-			var pose = ui.graphics.pose();
-			pose.pushMatrix();
-			pose.translate(x + PANE_BUTTON / 2f, y + PANE_BUTTON / 2f);
-			pose.rotate((float) Math.PI);
-			ui.icon("chevron", -4, -4, 8, Ui.mix(palette.textSecondary(), palette.text(), paneBackHover));
-			pose.popMatrix();
-		}
 	}
 
 	// ------------------------------------------------------------------------------------------- the settings window off the menu window
@@ -645,7 +706,7 @@ public class MacScreen extends Screen {
 	}
 
 	private float dockCenterY() {
-		return windowY + windowHeight * zoom / 2f;
+		return screenY(windowY) + windowHeight * zoom / 2f;
 	}
 
 	/** Keeps the floating pane's title bar on the screen, as the window's; a pane wider than the screen is centered. */
@@ -721,7 +782,7 @@ public class MacScreen extends Screen {
 			return true;
 		}
 		double screenX = windowX + (x - windowX) * zoom;
-		double screenY = windowY + (y - windowY) * zoom;
+		double screenY = screenY(y);
 		paneDragPending = true;
 		paneDragStartX = screenX;
 		paneDragStartY = screenY;
@@ -757,7 +818,7 @@ public class MacScreen extends Screen {
 		if (dockNear || (ScreenInput.modifiers(event.modifiers()) & ScreenInput.SHIFT) != 0) {
 			snap.free(paneTargetX - w / 2f, paneTargetY - h / 2f);
 		} else {
-			snap.find(paneTargetX - w / 2f, paneTargetY - h / 2f, w, h, width, height, true, windowX, windowY, windowWidth * zoom, windowHeight * zoom);
+			snap.find(paneTargetX - w / 2f, paneTargetY - h / 2f, w, h, width, height, true, windowX, frameY, windowWidth * zoom, fullHeight * zoom);
 		}
 	}
 
@@ -768,19 +829,20 @@ public class MacScreen extends Screen {
 	 */
 	private boolean wouldDock(double mouseX, double mouseY, float left, float top, float w, float h) {
 		float right = windowX + windowWidth * zoom;
-		float bottom = windowY + windowHeight * zoom;
+		float bodyTop = screenY(windowY);
+		float bottom = bodyTop + windowHeight * zoom;
 		float dockLeft = right - paneWidth() * zoom;
 		if (overDockPlace(mouseX, mouseY, dockLeft, right, bottom) || overDockPlace(left + w / 2f, top + h / 2f, dockLeft, right, bottom)) {
 			return true;
 		}
-		float level = Math.min(top + h, bottom) - Math.max(top, windowY);
+		float level = Math.min(top + h, bottom) - Math.max(top, bodyTop);
 		boolean nearRight = left >= dockLeft - DOCK_EDGE && left <= right + DOCK_EDGE;
 		boolean nearLeft = Math.abs(left + w - windowX) <= DOCK_EDGE;
 		return level >= h / 2f && (nearRight || nearLeft);
 	}
 
 	private boolean overDockPlace(double x, double y, float dockLeft, float right, float bottom) {
-		return x >= dockLeft && x < right && y >= windowY && y < bottom;
+		return x >= dockLeft && x < right && y >= screenY(windowY) && y < bottom;
 	}
 
 	/** Drops the dragged pane: it docks if it is near its place, otherwise it springs to where it snaps and stays there. */
@@ -923,7 +985,7 @@ public class MacScreen extends Screen {
 		int labelW = Math.round(ui.boldWidthScaled(DOCK_LABEL, TextScale.BODY)) + 2 * DOCK_LABEL_PAD;
 		int labelX = windowX + windowWidth - paneWidth() + (paneWidth() - labelW) / 2;
 		int labelY = windowY + (windowHeight - DOCK_LABEL_HEIGHT) / 2;
-		ui.rounded(labelX, labelY, labelW, DOCK_LABEL_HEIGHT, Radius.pill(DOCK_LABEL_HEIGHT), Ui.withOpacity(DOCK_LABEL_BACK, dockHint * fade));
+		ui.rounded(labelX, labelY, labelW, DOCK_LABEL_HEIGHT, Radius.box(DOCK_LABEL_HEIGHT), Ui.withOpacity(DOCK_LABEL_BACK, dockHint * fade));
 		ui.textAtScaledBold(DOCK_LABEL, labelX + DOCK_LABEL_PAD, labelY + DOCK_LABEL_HEIGHT / 2f - 4f, TextScale.BODY, Ui.withOpacity(0xFFFFFFFF, dockHint * fade));
 	}
 
@@ -1027,6 +1089,93 @@ public class MacScreen extends Screen {
 		return pages.get(selectedIndex);
 	}
 
+	// ------------------------------------------------------------------------------------------------------- history
+	// Back and forward through what the menu showed, as in a browser (mouse buttons 4 and 5, Alt + Left and Right): the page chosen, its
+	// sub-page or sheet, the feature whose settings are in the pane and the pane's own sheet. Kept by the menu while it is open.
+
+	/** A place in the menu: the page, its sub-page or sheet, the feature in the pane and the pane's sheet (null where there is none). */
+	private record Place(int page, Feature sub, Feature pane, Feature paneSub) {
+	}
+
+	private final MenuHistory<Place> history = new MenuHistory<>();
+	/** Whether the place shown was reached by going back or forward: it settles as that step instead of becoming a new one. */
+	private boolean travelled;
+
+	/** @return the place shown now, or null while a search or an animation of the pane leaves it open */
+	private Place placeNow() {
+		if (searching() || paneClosing && editor != null) {
+			return null;
+		}
+		boolean pane = editor != null;
+		return new Place(selectedIndex, subPage, pane ? editor.single : null, pane ? editor.subPage : null);
+	}
+
+	/** Notes where the menu is, once per frame: a new step when it moved on, the step itself when going back or forward led here. */
+	private void trackHistory() {
+		Place now = placeNow();
+		if (now == null) {
+			return;
+		}
+		if (travelled) {
+			travelled = false;
+			history.replace(now);
+		} else {
+			history.visit(now);
+		}
+	}
+
+	/** Goes one step back or forward in the history, if there is one. @return whether it moved */
+	private boolean travel(boolean forward) {
+		trackHistory();
+		Place place = forward ? history.forward() : history.back();
+		if (place == null) {
+			return false;
+		}
+		show(place);
+		travelled = true;
+		return true;
+	}
+
+	/** Shows a place of the history: its page and sub-page, and the pane with its sheet, or no pane. */
+	private void show(Place place) {
+		if (searching()) {
+			query = "";
+			queryChanged();
+		}
+		if (place.page() != selectedIndex && place.page() < pages.size()) {
+			selectPage(place.page());
+		}
+		if (place.sub() != subPage) {
+			if (place.sub() == null) {
+				closeSubPage();
+			} else {
+				showSubPage(place.sub());
+			}
+		}
+		if (place.pane() == null) {
+			if (editor != null && !paneClosing) {
+				closeEditor();
+				UiSounds.play(UiSounds.Cue.CLOSE);
+			}
+			return;
+		}
+		if (editor == null || paneClosing || editor.single != place.pane()) {
+			openEditor(place.pane());
+		}
+		if (editor != null && place.paneSub() != editor.subPage) {
+			if (place.paneSub() == null) {
+				editor.closeSubPage();
+			} else {
+				editor.showSubPage(place.paneSub());
+			}
+		}
+	}
+
+	/** @return whether a key press is Alt + Left or Alt + Right, the keyboard's back and forward */
+	private static boolean historyKey(KeyEvent event, boolean forward) {
+		return (ScreenInput.modifiers(event.modifiers()) & ScreenInput.ALT) != 0 && event.key() == (forward ? InputConstants.KEY_RIGHT : InputConstants.KEY_LEFT);
+	}
+
 	// ------------------------------------------------------------------------------------------------------- sub-pages
 	// A long page is a short overview whose rows open sub-pages in the same window: a sub-page takes the place of the page's settings, with a
 	// back button and the way back in its header ("Music › Lyrics"), and the page's preview stays beside it. Esc or the back button returns.
@@ -1039,10 +1188,7 @@ public class MacScreen extends Screen {
 	private static final int SUB_PAGE_KEYS = 1 << 20;
 	/** The back button of a sub-page's header: its size, and where it was drawn for clicks (with the page's name after it). */
 	private static final int BACK_BUTTON = 22;
-	private static final int BACK_CHEVRON = 9;
-	private int backRight = -1;
 	/** The chevron between the page's name and the sub-page's title, and the gaps around it. */
-	private static final String CRUMB = "›";
 	private static final int CRUMB_GAP = 8;
 
 	/**
@@ -1066,9 +1212,15 @@ public class MacScreen extends Screen {
 		}
 		SCROLLS.put(key(), scrollTarget);
 		clearQuery();
+		// a sheet opens over the page as one cross-fade; a sub-page of its own is entered like a page
+		boolean sheet = sub.isSheet() || single != null;
+		if (sheet) {
+			tabDirection = 0;
+			keepOutgoing(groups, false);
+		}
 		underSheet = sub.isSheet() ? ownFeature() : null;
 		subPage = sub;
-		enterPage();
+		enterPage(!sheet);
 	}
 
 	/** Goes back from a sub-page to its page, scrolled where it was. @return whether a sub-page was shown */
@@ -1077,17 +1229,24 @@ public class MacScreen extends Screen {
 			return false;
 		}
 		SCROLLS.put(key(), scrollTarget);
+		boolean sheet = showsSheet();
+		if (sheet) {
+			tabDirection = 0;
+			keepOutgoing(groups, false);
+		}
 		subPage = underSheet;
 		underSheet = null;
-		enterPage();
+		enterPage(!sheet);
 		return true;
 	}
 
-	/** Shows the page or sub-page now chosen: at its scroll position, sliding in with a tick. */
-	private void enterPage() {
+	/** Shows the page or sub-page now chosen: at its scroll position, with a tick; sliding in, unless a sheet opens or closes over the page. */
+	private void enterPage(boolean replay) {
 		scroll = SCROLLS.getOrDefault(key(), 0.0);
 		scrollTarget = scroll;
-		restartPage();
+		if (replay) {
+			restartPage();
+		}
 		UiSounds.play(UiSounds.Cue.TICK);
 		buildPage();
 	}
@@ -1116,45 +1275,29 @@ public class MacScreen extends Screen {
 		Palette palette = ui.palette;
 		int left = pageLeft();
 		int top = windowY + HEADER_TILE_TOP + (HEADER_TILE - BACK_BUTTON) / 2;
-		backRight = -1;
 		ui.iconTile(own.iconName(), left, windowY + HEADER_TILE_TOP, HEADER_TILE, HEADER_ICON, Radius.MD, 0xFF000000 | own.iconRgb(), 0xFFFFFFFF);
 		int textX = left + HEADER_TILE + 9;
 		int textEnd = own.isSwitchable() ? drawPageSwitch(ui, own, right, windowY + HEADER_TILE_TOP + (HEADER_TILE - PAGE_SWITCH_HEIGHT) / 2, "On", mouseX, mouseY) - CRUMB_GAP : right;
 		if (!own.isSwitchable()) {
 			pageSwitchX = -1;
 		}
-		ui.textAtScaledTitle(ui.fit(own.nameText(), Math.max(20, Math.round((textEnd - textX) / (TextScale.TITLE * BOLD_WIDER)))), textX, top + BACK_BUTTON / 2 - TextScale.TITLE * TITLE_HALF, TextScale.TITLE, palette.text());
+		float ownScale = titleScale(ui, own.nameText(), textEnd - textX);
+		ui.textAtScaledTitle(ui.fit(own.nameText(), Math.max(20, Math.round((textEnd - textX) / (ownScale * BOLD_WIDER)))), textX, top + BACK_BUTTON / 2 - ownScale * TITLE_HALF, ownScale,
+			palette.text());
 		ui.textAtScaled(ui.fitScaled(own.descriptionText(), textEnd - textX, TextScale.SMALL), textX, top + BACK_BUTTON + 2, TextScale.SMALL, palette.textSecondary());
 	}
 
-	/** Draws a sub-page's header: the back button, the page's name and the sub-page's title. */
+	/** Draws a sub-page's header: the back button with the page's name, and the sub-page's title after it. */
 	private void drawSubPageHeader(Ui ui, int left, int right, int mouseX, int mouseY) {
 		Palette palette = ui.palette;
-		int top = windowY + HEADER_TILE_TOP + (HEADER_TILE - BACK_BUTTON) / 2;
-		String parent = listedPage().nameText();
-		int parentX = left + BACK_BUTTON + 10;
-		backRight = parentX + ui.width(parent);
-		boolean over = mouseY >= top && mouseY < top + BACK_BUTTON && mouseX >= left && mouseX < backRight;
-		float hover = ui.approach(backHover, over ? 1f : 0f, Ui.HOVER_RATE);
-		backHover = hover;
-		ui.rounded(left, top, BACK_BUTTON, BACK_BUTTON, Radius.SM, Ui.mix(palette.control(), palette.hover(), hover));
-		ui.ring(left, top, BACK_BUTTON, BACK_BUTTON, Radius.SM, 1, palette.cardBorder());
-		var pose = ui.graphics.pose();
-		pose.pushMatrix();
-		pose.translate(left + BACK_BUTTON / 2f, top + BACK_BUTTON / 2f);
-		pose.rotate((float) (Math.PI / 2.0));
-		ui.icon("chevron", -BACK_CHEVRON / 2, -BACK_CHEVRON / 2, BACK_CHEVRON, palette.text());
-		pose.popMatrix();
-		int middle = top + BACK_BUTTON / 2;
-		ui.textMiddle(parent, parentX, middle, Ui.mix(palette.textSecondary(), palette.text(), hover * 0.5f));
-		int crumbX = backRight + CRUMB_GAP;
-		ui.textMiddle(CRUMB, crumbX, middle, palette.textSecondary());
-		int titleX = crumbX + ui.width(CRUMB) + CRUMB_GAP;
+		int middle = windowY + HEADER_TILE_TOP + HEADER_TILE / 2;
+		int chip = drawBackChip(ui, listedPage().nameText(), left, middle, (right - left) / 2, true, mouseX, mouseY);
+		int titleX = left + chip + BACK_CHIP_TITLE_GAP;
 		String title = ui.fit(headerTitle, Math.max(20, Math.round((right - titleX) / (TextScale.TITLE * BOLD_WIDER))));
 		ui.textAtScaledTitle(title, titleX, middle - TextScale.TITLE * TITLE_HALF, TextScale.TITLE, palette.text());
 	}
 
-	// a sheet lies over the page's column, with its title and Done at the top; the sidebar and the page's preview stay beside it
+	// a sheet lies over the page's column, with its back button and title at the top; the sidebar and the page's preview stay beside it
 	private static final int SHEET_MARGIN = 8;
 	private static final int SHEET_PAD = 10;
 	/** Room right of the rows, for the scroll bar. */
@@ -1162,58 +1305,187 @@ public class MacScreen extends Screen {
 	private static final int SHEET_TITLE_Y = 20;
 	private static final int SHEET_LINE_Y = 42;
 	private static final int SHEET_DONE_HEIGHT = 18;
-	private static final String SHEET_DONE = "Done";
-	private int sheetDoneX = -1;
-	private int sheetDoneWidth;
-	private float sheetDoneHover;
 
 	private boolean showsSheet() {
 		// in the pane or a settings window any sub-page is a sheet over the feature's settings: Done takes it back
 		return subPage != null && (subPage.isSheet() || single != null) && !searching();
 	}
 
-	/** Draws the surface of a sheet, behind its title and rows. */
+	/** @return how much of its light the sheet shown has: it fades in over the page it opens on */
+	private float sheetLight() {
+		return outgoing != null && outgoing.sheet == null && tabSwitch < 1f ? eased(tabSwitch) : 1f;
+	}
+
+	/** Draws the surface of the sheet shown, behind its title and rows. */
 	private void drawSheetSurface(Ui ui) {
+		float before = Ui.alpha();
+		Ui.setAlpha(before * sheetLight());
+		drawSheetSurface(ui, sheetTop());
+		Ui.setAlpha(before);
+	}
+
+	/** Draws the sheet shown before, with its title, while it fades out over the page it closed on. */
+	private void drawOutgoingSheet(Ui ui) {
+		float before = Ui.alpha();
+		Ui.setAlpha(before * (1f - eased(tabSwitch)));
+		drawSheetSurface(ui, outgoing.sheetTop);
+		drawSheetHeader(ui, outgoing.sheet, outgoing.sheetTop, -1, -1);
+		Ui.setAlpha(before);
+	}
+
+	private void drawSheetSurface(Ui ui, int sheetTop) {
 		Palette palette = ui.palette;
-		int left = contentLeft - SHEET_PAD;
-		int top = windowY + SHEET_MARGIN + sheetTop();
-		int width = contentRight - previewRoom() + SHEET_RIGHT - left;
-		int height = windowHeight - 2 * SHEET_MARGIN - sheetTop();
+		int left = sheetLeft();
+		int top = sheetTopY(sheetTop);
+		int width = sheetWidth();
+		int height = sheetHeight(sheetTop);
 		ui.shadow(left, top, width, height, Radius.XL, SHADOW_SPREAD_SHEET, SHADOW_OPACITY_SHEET);
 		ui.rounded(left, top, width, height, Radius.XL, palette.popup());
 		ui.ring(left, top, width, height, Radius.XL, 1, palette.popupBorder());
 	}
 
+	private int sheetLeft() {
+		return contentLeft - SHEET_PAD;
+	}
+
+	private int sheetTopY(int sheetTop) {
+		return windowY + SHEET_MARGIN + sheetTop;
+	}
+
+	private int sheetWidth() {
+		return contentRight - previewRoom() + SHEET_RIGHT - sheetLeft();
+	}
+
+	private int sheetHeight(int sheetTop) {
+		return windowHeight - 2 * SHEET_MARGIN - sheetTop;
+	}
+
+	/** Goes back one step for a click beside the sheet shown, or on the page beside the pane. @return whether it went back */
+	private boolean clickBesideGoesBack(double x, double y) {
+		boolean inPage = x >= windowX + side() && x < windowX + windowWidth && y >= windowY && y < windowY + windowHeight;
+		if (!inPage) {
+			return false;
+		}
+		if (showsSheet() && sheetLight() >= 1f && !overSheet(x, y)) {
+			return closeSubPage();
+		}
+		if (owner == null && editor != null && !paneClosing && x < listRight()) {
+			return editor.stepBack();
+		}
+		return false;
+	}
+
+	/** @return whether a point lies on the sheet shown */
+	private boolean overSheet(double x, double y) {
+		int top = sheetTopY(sheetTop());
+		return x >= sheetLeft() && x < sheetLeft() + sheetWidth() && y >= top && y < top + sheetHeight(sheetTop());
+	}
+
 	private static final int SHADOW_SPREAD_SHEET = 14;
 	private static final float SHADOW_OPACITY_SHEET = 0.45f;
 
-	/** Draws a sheet's title, the line under it, and Done at the right. */
+	/** Draws the back button and title of the sheet shown, and the line under them. */
 	private void drawSheetHeader(Ui ui, int mouseX, int mouseY) {
+		float before = Ui.alpha();
+		Ui.setAlpha(before * sheetLight());
+		drawSheetHeader(ui, subPage, sheetTop(), mouseX, mouseY);
+		Ui.setAlpha(before);
+	}
+
+	private void drawSheetHeader(Ui ui, Feature sheet, int sheetTop, int mouseX, int mouseY) {
 		Palette palette = ui.palette;
 		int right = contentRight - previewRoom();
-		sheetDoneWidth = ui.width(SHEET_DONE);
-		sheetDoneX = right - sheetDoneWidth;
-		sheetDoneHover = ui.approach(sheetDoneHover, overSheetDone(mouseX, mouseY) ? 1f : 0f, Ui.HOVER_RATE);
-		int titleY = windowY + SHEET_TITLE_Y + sheetTop();
-		ui.textAtScaledTitle(ui.fit(subPage.nameText(), sheetDoneX - contentLeft - PAD), contentLeft, titleY, TextScale.TITLE, palette.text());
-		ui.textMiddle(SHEET_DONE, sheetDoneX, titleY + SHEET_DONE_HEIGHT / 2, Ui.mix(palette.textSecondary(), palette.text(), sheetDoneHover));
-		ui.textAtScaled(ui.fitScaled(subPage.descriptionText(), right - contentLeft, TextScale.SMALL), contentLeft, windowY + SHEET_LINE_Y + sheetTop(), TextScale.SMALL, palette.textSecondary());
+		int titleY = windowY + SHEET_TITLE_Y + sheetTop;
+		int middle = titleY + SHEET_DONE_HEIGHT / 2;
+		// the way back first, with where it goes, then the sheet's title, a step smaller where it would not fit
+		int chip = drawBackChip(ui, sheetParent(), contentLeft, middle, (right - contentLeft) / 2, sheet == subPage, mouseX, mouseY);
+		int titleX = contentLeft + chip + BACK_CHIP_TITLE_GAP;
+		int sheetRoom = right - titleX;
+		float sheetScale = titleScale(ui, sheet.nameText(), sheetRoom);
+		ui.textAtScaledTitle(ui.fit(sheet.nameText(), Math.round(sheetRoom / (sheetScale * BOLD_WIDER))), titleX, middle - sheetScale * TITLE_HALF, sheetScale, palette.text());
+		ui.textAtScaled(ui.fitScaled(sheet.descriptionText(), right - contentLeft, TextScale.SMALL), contentLeft, windowY + SHEET_LINE_Y + sheetTop, TextScale.SMALL, palette.textSecondary());
 	}
 
-	private boolean overSheetDone(double mouseX, double mouseY) {
-		int top = windowY + SHEET_TITLE_Y + sheetTop();
-		return showsSheet() && sheetDoneX >= 0 && mouseX >= sheetDoneX - 4 && mouseX < sheetDoneX + sheetDoneWidth + 4 && mouseY >= top && mouseY < top + SHEET_DONE_HEIGHT;
+	// the back button of a sheet, a sub-page and the settings pane: a small box with a chevron and the name of where it goes back to ("‹ Music");
+	// it is their only way out besides Esc and a click beside them, so they have no close button or Done
+	private static final int BACK_CHIP_HEIGHT = 16;
+	private static final int BACK_CHIP_PAD = 6;
+	private static final int BACK_CHIP_CHEVRON = 7;
+	private static final int BACK_CHIP_GAP = 4;
+	/** The gap between the back button and the title after it. */
+	private static final int BACK_CHIP_TITLE_GAP = 8;
+	/** Where the back button shown was drawn, for clicks; -1 while none is shown. */
+	private int backChipX = -1;
+	private int backChipY;
+	private int backChipWidth;
+	private float backChipHover;
+
+	/**
+	 * Draws a back button, its name shortened to the room it has.
+	 *
+	 * @param live whether it is the button shown, which takes clicks, rather than one fading out with its sheet
+	 * @return its width
+	 */
+	private int drawBackChip(Ui ui, String label, int x, int middle, int room, boolean live, int mouseX, int mouseY) {
+		Palette palette = ui.palette;
+		int inside = 2 * BACK_CHIP_PAD + BACK_CHIP_CHEVRON + BACK_CHIP_GAP;
+		String shown = ui.fitScaled(label, Math.max(12, room - inside), TextScale.SMALL);
+		int width = Math.round(ui.widthScaled(shown, TextScale.SMALL)) + inside;
+		int y = middle - BACK_CHIP_HEIGHT / 2;
+		float hover = 0f;
+		if (live) {
+			backChipX = x;
+			backChipY = y;
+			backChipWidth = width;
+			backChipHover = ui.approach(backChipHover, overBackChip(mouseX, mouseY) ? 1f : 0f, Ui.HOVER_RATE);
+			hover = backChipHover;
+		}
+		ui.rounded(x, y, width, BACK_CHIP_HEIGHT, Radius.SM, Ui.mix(palette.control(), palette.hover(), hover));
+		ui.ring(x, y, width, BACK_CHIP_HEIGHT, Radius.SM, 1, palette.cardBorder());
+		var pose = ui.graphics.pose();
+		pose.pushMatrix();
+		pose.translate(x + BACK_CHIP_PAD + BACK_CHIP_CHEVRON / 2f, middle);
+		// the chevron points down in its picture: a quarter turn makes it point back
+		pose.rotate((float) (Math.PI / 2.0));
+		ui.icon("chevron", -BACK_CHIP_CHEVRON / 2, -BACK_CHIP_CHEVRON / 2, BACK_CHIP_CHEVRON, Ui.mix(palette.textSecondary(), palette.text(), hover));
+		pose.popMatrix();
+		ui.textAtScaled(shown, x + BACK_CHIP_PAD + BACK_CHIP_CHEVRON + BACK_CHIP_GAP, middle - TextScale.SMALL * 4f, TextScale.SMALL,
+			Ui.mix(palette.textSecondary(), palette.text(), 0.4f + 0.6f * hover));
+		return width;
 	}
 
-	private float backHover;
+	/** @return whether the point is on the back button shown */
+	private boolean overBackChip(double mouseX, double mouseY) {
+		return backChipX >= 0 && mouseX >= backChipX && mouseX < backChipX + backChipWidth && mouseY >= backChipY && mouseY < backChipY + BACK_CHIP_HEIGHT;
+	}
+
+	/** @return the name of where a sheet shown goes back to: the feature it lies over, or the page */
+	private String sheetParent() {
+		if (underSheet != null) {
+			return underSheet.nameText();
+		}
+		return single != null ? single.nameText() : listedPage().nameText();
+	}
+
+	/**
+	 * Goes back one step from what is shown: from a sub-page or a sheet to its page, from the settings pane to the page beside it.
+	 *
+	 * @return whether there was a step to go back
+	 */
+	private boolean stepBack() {
+		if (closeSubPage()) {
+			return true;
+		}
+		if (owner != null) {
+			owner.closeEditor();
+			UiSounds.play(UiSounds.Cue.CLOSE);
+			return true;
+		}
+		return false;
+	}
+
 	/** Half the height of a title's letters at scale 1, to center it on the back button. */
 	private static final float TITLE_HALF = 4.5f;
-
-	/** @return whether the point is on a sub-page's back button or the page's name after it */
-	private boolean overBack(double mouseX, double mouseY) {
-		int top = windowY + HEADER_TILE_TOP + (HEADER_TILE - BACK_BUTTON) / 2;
-		return subPage != null && !searching() && backRight > 0 && mouseX >= pageLeft() && mouseX < backRight && mouseY >= top && mouseY < top + BACK_BUTTON;
-	}
 
 	private boolean opened;
 
@@ -1233,7 +1505,7 @@ public class MacScreen extends Screen {
 		// fixed logical window size: on small screens (large GUI scale) the whole window is scaled down instead of squeezed
 		windowWidth = wantedWidth();
 		fullHeight = wantedHeight();
-		windowHeight = fullHeight;
+		windowHeight = fullHeight - bar();
 		int guiScale = minecraft.getWindow().getGuiScale();
 		if (owner != null) {
 			owner.placePane();
@@ -1330,7 +1602,8 @@ public class MacScreen extends Screen {
 	/** Places the window around its shown center at its shown scale. */
 	private void placeWindow() {
 		windowX = Math.round(shownCenterX - windowWidth * zoom / 2f);
-		windowY = Math.round(shownCenterY - fullHeight * zoom / 2f);
+		frameY = Math.round(shownCenterY - fullHeight * zoom / 2f);
+		windowY = frameY + bar();
 	}
 
 	/**
@@ -1341,7 +1614,7 @@ public class MacScreen extends Screen {
 		if (owner == null && single == null) {
 			windowWidth = wantedWidth();
 			fullHeight = wantedHeight();
-			windowHeight = fullHeight;
+			windowHeight = fullHeight - bar();
 		}
 		// the size can change from the slider in the menu settings, while the window is open
 		float wanted = targetZoom();
@@ -1383,10 +1656,13 @@ public class MacScreen extends Screen {
 
 	/** @return whether a point lies where the window can be dragged: its top bar or the empty part of the page header */
 	private boolean inDragZone(double mouseX, double mouseY) {
-		if (owner != null || mouseX < windowX || mouseX >= windowX + windowWidth || mouseY < windowY) {
+		if (owner != null || mouseX < windowX || mouseX >= windowX + windowWidth || mouseY < frameY) {
 			return false;
 		}
-		return mouseY < windowY + TITLE_BAR || single == null && mouseX >= windowX + side() && mouseX < listRight() && mouseY < contentTop - 2;
+		if (bar() > 0 && mouseY < windowY) {
+			return !overSearch(mouseX, mouseY) && !overMenuClose(mouseX, mouseY);
+		}
+		return mouseY < windowY + TITLE_BAR && bar() == 0 || single == null && mouseX >= windowX + side() && mouseX < listRight() && mouseY < contentTop - 2;
 	}
 
 	/**
@@ -1491,8 +1767,13 @@ public class MacScreen extends Screen {
 		return windowX + (screenX - windowX) / zoom;
 	}
 
+	/** @return where a point of the window (in its own coordinates) is on screen, vertically */
+	private float screenY(double y) {
+		return (float) (frameY + (y - frameY) * zoom);
+	}
+
 	private double inWindowY(double screenY) {
-		return windowY + (screenY - windowY) / zoom;
+		return frameY + (screenY - frameY) / zoom;
 	}
 
 	private void buildPage() {
@@ -1510,6 +1791,7 @@ public class MacScreen extends Screen {
 		groups.clear();
 		if (!samePage) {
 			focused = null;
+			noteLights.clear();
 		}
 		dragged = null;
 		Feature page = page();
@@ -1518,7 +1800,6 @@ public class MacScreen extends Screen {
 
 		Map<String, Group> byTitle = new LinkedHashMap<>();
 		// a folder is a feature (or page group) that expands and collapses: its first setting is always shown, the rest when expanded
-		Map<String, Group> folderFirst = new HashMap<>();
 		Map<String, Integer> folderCount = new HashMap<>();
 		for (Entry entry : entries) {
 			Setting<?> setting = entry.setting();
@@ -1528,22 +1809,19 @@ public class MacScreen extends Screen {
 				boolean open = OPEN_GROUPS.contains(key);
 				int count = folderCount.merge(entry.folder(), 1, Integer::sum);
 				if (count == 1) {
-					folderFirst.put(entry.folder(), group);
-				} else if (count == 2) {
-					var toggle = new ButtonSetting("options_" + entry.folder(), Component.literal("Options"), Component.literal(open ? "Hide" : "Show"), false, () -> {
+					// one row stands for the folded group: "Fine-tune", with the names of what it holds, and Show or Hide
+					var toggle = new ButtonSetting("fold_" + entry.folder(), Component.literal(FOLD_LABEL), Component.literal(open ? "Hide" : "Show"), false, () -> {
 						if (!OPEN_GROUPS.remove(key)) {
 							OPEN_GROUPS.add(key);
 						}
 						rebuildRequested = true;
 					});
+					toggle.setDescription(foldedNames(entries, entry.folder()));
 					Control toggleControl = toggle.createControl(this::onSettingChanged);
 					controls.put(toggle, toggleControl);
-					folderFirst.get(entry.folder()).rows().add(new Row(toggle, toggleControl));
+					group.rows().add(new Row(toggle, toggleControl));
 				}
-				if (count >= 2 && !open) {
-					if (group.rows().isEmpty()) {
-						byTitle.remove(entry.title());
-					}
+				if (!open) {
 					continue;
 				}
 			}
@@ -1570,59 +1848,36 @@ public class MacScreen extends Screen {
 		groups.addAll(byTitle.values());
 		buildColorRows(samePage);
 		nestSubOptions();
-		animateGroupChanges(before);
+		// the same page with other rows (a choice that shows other options): the old rows fade out while the new ones fade in. Another tab
+		// or a sheet kept what was shown before it was built
+		if (samePage && !tabSwitching && !before.isEmpty() && !sameRows(before, groups)) {
+			tabDirection = 0;
+			keepOutgoing(before, true);
+		}
 		if (focused != null && !controls.containsValue(focused)) {
 			focused = null;
 		}
 		pageBuilt();
 	}
 
-	/** How long a group takes to grow in or shrink away when a change of the page shows or hides it. */
-	private static final float GROUP_CHANGE_SECONDS = 0.25f;
-
-	/**
-	 * After the same page was built again: a group that is new grows in, and a group that is gone stays where it was while it shrinks away, so the
-	 * groups below move smoothly. A group of the page that stays keeps how far it is shown.
-	 */
-	private void animateGroupChanges(List<Group> before) {
-		if (before.isEmpty() || ModFeatures.MENU == null || !ModFeatures.MENU.animations()) {
-			return;
+	/** @return whether two builds of a page show the same settings in the same groups, in the same order */
+	private static boolean sameRows(List<Group> before, List<Group> now) {
+		if (before.size() != now.size()) {
+			return false;
 		}
-		Map<String, Group> kept = new HashMap<>();
-		for (Group group : groups) {
-			kept.put(group.title(), group);
-		}
-		for (Group group : groups) {
-			Group old = findGroup(before, group.title());
-			group.shown = old == null ? 0f : old.shown;
-		}
-		for (int i = 0; i < before.size(); i++) {
-			Group old = before.get(i);
-			if (!kept.containsKey(old.title()) && old.shown > 0f) {
-				old.leaving = true;
-				groups.add(Math.min(i, groups.size()), old);
+		for (int g = 0; g < now.size(); g++) {
+			List<Row> old = before.get(g).rows();
+			List<Row> rows = now.get(g).rows();
+			if (!before.get(g).title().equals(now.get(g).title()) || old.size() != rows.size()) {
+				return false;
+			}
+			for (int i = 0; i < rows.size(); i++) {
+				if (old.get(i).setting() != rows.get(i).setting() || old.get(i).depth != rows.get(i).depth) {
+					return false;
+				}
 			}
 		}
-	}
-
-	private static Group findGroup(List<Group> groups, String title) {
-		for (Group group : groups) {
-			if (group.title().equals(title)) {
-				return group;
-			}
-		}
-		return null;
-	}
-
-	/** Moves the groups that appear or disappear on; a group that is gone is dropped once it shrank away. */
-	private void stepGroupChanges(Ui ui) {
-		for (int i = groups.size() - 1; i >= 0; i--) {
-			Group group = groups.get(i);
-			group.shown = ui.approach(group.shown, group.leaving ? 0f : 1f, 1f / GROUP_CHANGE_SECONDS);
-			if (group.leaving && group.shown <= 0f) {
-				groups.remove(i);
-			}
-		}
+		return true;
 	}
 
 	/** The chip of each color in a row of colors, kept while the page is rebuilt so an open color picker stays open. */
@@ -1732,17 +1987,15 @@ public class MacScreen extends Screen {
 
 	// ------------------------------------------------------------------------------------------------------- search
 
-	// the traffic lights: small dots as in macOS (12 px with 8 px between them in the mockup), 18 px from the window's top left there
-	private static final int TRAFFIC_SIZE = 8;
-	private static final int TRAFFIC_STEP = TRAFFIC_SIZE + 5;
-	private static final int TRAFFIC_LEFT = 11;
-	private static final int TRAFFIC_TOP = 11;
-
-	private static final int SEARCH_WIDTH = SIDEBAR - 2 * SIDE_INSET;
-	/** As tall as a sidebar row, as in the mockup (34 px there). */
-	private static final int SEARCH_HEIGHT = 22;
-	/** Top of the search field, 16 px (mockup) below the traffic lights. */
-	private static final int SEARCH_TOP = TRAFFIC_TOP + TRAFFIC_SIZE + 10;
+	// the menu's top bar: the Lumio mark, the name, the version on a small chip, the search in the middle and the round close button at the right
+	private static final int MARK = 14;
+	private static final int CLOSE_BUTTON = 16;
+	/** The search field: as wide as it wants in the middle of the bar (about 280 of 1380 px in the mockup), and the narrowest it gets. */
+	private static final int SEARCH_WANTED = 190;
+	private static final int SEARCH_LEAST = 70;
+	private static final int SEARCH_HEIGHT = 20;
+	/** Where the name and version on the left of the bar end, as last drawn; the search keeps clear of it. */
+	private int barLeftEnd = Integer.MIN_VALUE;
 	private static final int SEARCH_PAD = 8;
 	private static final int SEARCH_ICON = 9;
 
@@ -1790,27 +2043,28 @@ public class MacScreen extends Screen {
 			String featureName = feature.nameText();
 			int pageIndex = pageOf(feature);
 			Feature page = pageIndex >= 0 ? pages.get(pageIndex) : feature;
-			if (!(feature instanceof MenuFeature) && matchesWords(words, featureName)) {
+			if (!(feature instanceof MenuFeature) && matchesWords(words, featureName + " " + feature.searchWordsText())) {
 				final Feature opened = feature;
 				var hit = new SearchHitSetting("hit_" + number, Component.literal(featureName), "Feature  ·  " + pathOf(page), () -> jumpTo(opened, null),
 					opened.isSwitchable() ? opened::isEnabled : null, () -> {
 						opened.toggle();
 						FeatureManager.saveSoon();
 					});
-				number = addHit(featureHits, shown, hit.withIcon(page.iconName(), page.iconRgb()), number);
+				number = addHit(featureHits, shown, hit.withIcon(page.iconName(), page.iconRgb()).workInProgress(opened.isWorkInProgress()), number);
 			}
 			for (Setting<?> setting : feature.settings()) {
-				if (!setting.isVisible() || setting instanceof FeatureRowSetting || setting instanceof FeatureGroupSetting || setting.key().equals("enabled")) {
+				if (!setting.isVisible() || !setting.searchable() || setting instanceof FeatureRowSetting || setting instanceof FeatureGroupSetting || setting instanceof dev.tim1337.lumio.config.setting.FeatureCardsSetting || setting.key().equals("enabled")) {
 					continue;
 				}
 				String section = feature.sectionOf(setting) == null ? "" : feature.sectionOf(setting);
 				String explanation = setting.description() == null ? "" : setting.description();
-				if (!matchesWords(words, setting.labelText() + " " + section + " " + explanation)) {
+				if (!matchesWords(words, setting.labelText() + " " + section + " " + explanation + " " + setting.searchText())) {
 					continue;
 				}
 				final Feature owner = feature;
 				final Setting<?> target = setting;
-				String path = "Setting  ·  " + featureName + (section.isEmpty() ? "" : "  ›  " + section);
+				String where = pathOf(section);
+				String path = "Setting  ·  " + featureName + (where.isEmpty() ? "" : "  ›  " + where);
 				var hit = setting instanceof BooleanSetting flag
 					? new SearchHitSetting("hit_" + number, setting.label(), path, () -> jumpTo(owner, target), flag::get, () -> {
 						flag.set(!flag.get());
@@ -1947,7 +2201,7 @@ public class MacScreen extends Screen {
 		}
 		Feature page = index >= 0 ? pages.get(index) : null;
 		boolean onPage = page == feature || page instanceof FeatureListFeature list && list.holdsAll(feature)
-			|| setting != null && page != null && page.settings().contains(setting);
+			|| setting != null && page != null && (page.settings().contains(setting) || page.shownSettings().contains(setting));
 		if (onPage || !FeatureListControl.editable(feature)) {
 			closeEditor();
 			pendingSetting = setting != null ? setting : rowOf(page, feature);
@@ -1974,6 +2228,11 @@ public class MacScreen extends Screen {
 		return null;
 	}
 
+	/** @return whether the page's content is still changing over to other rows */
+	private boolean contentSwitching() {
+		return tabSwitch < 1f;
+	}
+
 	/** Reveals the pending target: opens its tab group and folder, scrolls the page to it and highlights it. */
 	private void resolvePending() {
 		Setting<?> wanted = pendingSetting;
@@ -1989,7 +2248,8 @@ public class MacScreen extends Screen {
 			return;
 		}
 		if (!subTitles.isEmpty() && !found.title().isEmpty()) {
-			int tab = subTitles.indexOf(found.title());
+			// by the tab part of the group's title: "Glass and glow · " is on the tab Glass and glow
+			int tab = subTitles.indexOf(tabOf(found.title()));
 			if (tab >= 0 && tab != subIndex) {
 				subIndex = tab;
 				subTitle = null;
@@ -1999,6 +2259,10 @@ public class MacScreen extends Screen {
 		}
 		if (found.collapsible() && OPEN_GROUPS.add(key() + ":" + found.folder())) {
 			rebuildRequested = true;
+			return;
+		}
+		// the highlight waits until the page has settled: no rows still fading out under the others
+		if (contentSwitching()) {
 			return;
 		}
 		for (Placed p : placed) {
@@ -2047,17 +2311,26 @@ public class MacScreen extends Screen {
 		}
 	}
 
-	// the search field sits in the sidebar, below the traffic lights
+	// the search field sits in the middle of the top bar
+	private MenuBar.Search searchPlace() {
+		int leftEnd = barLeftEnd == Integer.MIN_VALUE ? windowX + SIDEBAR : barLeftEnd;
+		return MenuBar.search(leftEnd, menuCloseX(), windowX + windowWidth / 2, SEARCH_WANTED, SEARCH_LEAST);
+	}
+
 	private int searchX() {
-		return windowX + SIDE_INSET;
+		return searchPlace().x();
+	}
+
+	private int searchWidth() {
+		return searchPlace().width();
 	}
 
 	private int searchY() {
-		return windowY + SEARCH_TOP;
+		return frameY + (TOP_BAR - SEARCH_HEIGHT) / 2;
 	}
 
 	private boolean overSearch(double mouseX, double mouseY) {
-		return mouseX >= searchX() && mouseX < searchX() + SEARCH_WIDTH && mouseY >= searchY() && mouseY < searchY() + SEARCH_HEIGHT;
+		return single == null && owner == null && searchWidth() > 0 && mouseX >= searchX() && mouseX < searchX() + searchWidth() && mouseY >= searchY() && mouseY < searchY() + SEARCH_HEIGHT;
 	}
 
 	private static final String SEARCH_HINT = "Search settings";
@@ -2066,14 +2339,17 @@ public class MacScreen extends Screen {
 
 	private void drawSearch(Ui ui, int mouseX, int mouseY) {
 		Palette palette = ui.palette;
+		if (searchWidth() == 0) {
+			return;
+		}
 		int x = searchX();
 		int y = searchY();
 		int middle = y + SEARCH_HEIGHT / 2;
 		boolean hover = overSearch(mouseX, mouseY);
 		// a slightly lighter fill without a border, as in the mockup; focused, a thin accent ring
-		ui.rounded(x, y, SEARCH_WIDTH, SEARCH_HEIGHT, Radius.SM, Ui.withOpacity(palette.hover(), hover || searchFocused ? 1f : 0.7f));
+		ui.rounded(x, y, searchWidth(), SEARCH_HEIGHT, Radius.SM, Ui.withOpacity(palette.hover(), hover || searchFocused ? 1f : 0.7f));
 		if (searchFocused) {
-			ui.ring(x, y, SEARCH_WIDTH, SEARCH_HEIGHT, Radius.SM, 1, ui.accent);
+			ui.ring(x, y, searchWidth(), SEARCH_HEIGHT, Radius.SM, 1, ui.accent);
 		}
 		int glass = palette.textSecondary();
 		ui.icon("search", x + SEARCH_PAD, middle - SEARCH_ICON / 2, SEARCH_ICON, searchFocused ? Ui.mix(glass, ui.accent, 0.75f) : glass);
@@ -2081,7 +2357,7 @@ public class MacScreen extends Screen {
 		if (query.isEmpty() && !searchFocused) {
 			// the shortcut as a small key at the end, and the hint, at the size of the descriptions, shortened to what fits before it
 			float keyWidth = ui.widthScaled(SEARCH_KEY, TextScale.SMALL) + 7f;
-			int keyX = Math.round(x + SEARCH_WIDTH - SEARCH_PAD + 2 - keyWidth);
+			int keyX = Math.round(x + searchWidth() - SEARCH_PAD + 2 - keyWidth);
 			ui.ring(keyX, middle - 6, Math.round(keyWidth), 12, Radius.XS, 1, Ui.withOpacity(palette.textSecondary(), 0.35f));
 			ui.textAtScaled(SEARCH_KEY, keyX + 3.5f, middle - 3.5f, TextScale.SMALL, glass);
 			int room = keyX - 4 - textX;
@@ -2089,7 +2365,7 @@ public class MacScreen extends Screen {
 			ui.textAtScaled(hint, textX, middle - 4f, TextScale.BODY, glass);
 			return;
 		}
-		int right = x + SEARCH_WIDTH - (query.isEmpty() ? SEARCH_PAD : 20);
+		int right = x + searchWidth() - (query.isEmpty() ? SEARCH_PAD : 20);
 		String shown = ui.fit(query, right - textX);
 		if (searchFocused) {
 			querySelection.draw(ui, textX, middle, ui.width(shown));
@@ -2099,7 +2375,7 @@ public class MacScreen extends Screen {
 			ui.fill(textX + ui.width(shown) + 1, y + 5, 1, SEARCH_HEIGHT - 10, palette.text());
 		}
 		if (!query.isEmpty()) {
-			ui.icon("close", x + SEARCH_WIDTH - 15, middle - 5, 10, glass);
+			ui.icon("close", x + searchWidth() - 15, middle - 5, 10, glass);
 		}
 	}
 
@@ -2166,16 +2442,27 @@ public class MacScreen extends Screen {
 		for (Entry entry : all) {
 			// the untitled group (holding the feature switch) is always shown and gets no tab; neither does Reset, which is an action rather than a
 			// settings group: it appears at the end of every tab
-			if (!entry.title().isEmpty() && !entry.title().equals("Reset") && !titles.contains(entry.title())) {
-				titles.add(entry.title());
+			if (!entry.title().isEmpty() && !entry.title().equals("Reset") && !titles.contains(tabOf(entry.title()))) {
+				titles.add(tabOf(entry.title()));
 			}
 		}
 		// Whether to use tabs is decided by all settings of the page, including hidden ones: a setting that hides others (a style with fewer
 		// options) must not make the tabs disappear and the whole page change under the mouse.
 		int size = list ? all.size() : settingCount(page());
-		if (!tabbed || searching() || (size < (list ? 8 : 16) && !page().alwaysTabbed()) || titles.size() < 2) {
+		if (!tabbed || page().neverTabbed() || searching() || (size < (list ? 8 : 16) && !page().alwaysTabbed()) || titles.size() < 2) {
 			subTitles = List.of();
 			return all;
+		}
+		if (tabFor != null) {
+			for (Entry entry : all) {
+				boolean listed = entry.setting() instanceof FeatureRowSetting row && row.feature() == tabFor
+					|| entry.setting() instanceof FeatureGroupSetting group && group.features().contains(tabFor);
+				if (listed && titles.contains(tabOf(entry.title()))) {
+					subTitle = tabOf(entry.title());
+					break;
+				}
+			}
+			tabFor = null;
 		}
 		// keep the open tab, by name, when tabs before it appear or disappear
 		if (subTitle != null && titles.contains(subTitle)) {
@@ -2185,7 +2472,29 @@ public class MacScreen extends Screen {
 		subIndex = Mth.clamp(subIndex, 0, titles.size() - 1);
 		String chosen = titles.get(subIndex);
 		subTitle = chosen;
-		return all.stream().filter(entry -> entry.title().isEmpty() || entry.title().equals("Reset") || entry.title().equals(chosen)).toList();
+		return all.stream().filter(entry -> entry.title().isEmpty() || entry.title().equals("Reset") || tabOf(entry.title()).equals(chosen)).toList();
+	}
+
+	/** Between a group's tab and its heading: "Look · Theme" is the group Theme on the tab Look. */
+	private static final String TAB_SEPARATOR = " · ";
+
+	/** @return the tab a group belongs to: the part of its title before " · ", or the whole title */
+	static String tabOf(String title) {
+		int at = title.indexOf(TAB_SEPARATOR);
+		return at < 0 ? title : title.substring(0, at);
+	}
+
+	/** @return where a group is, for a search result: "Glass and glow  ›  Glass", or only the tab for a group without a heading */
+	static String pathOf(String title) {
+		String tab = tabOf(title);
+		String heading = headingOf(title);
+		return tab.equals(title) ? title : heading.isBlank() ? tab : tab + "  ›  " + heading;
+	}
+
+	/** @return the heading a group shows: the part of its title after " · ", or the whole title */
+	static String headingOf(String title) {
+		int at = title.indexOf(TAB_SEPARATOR);
+		return at < 0 ? title : title.substring(at + TAB_SEPARATOR.length());
 	}
 	private static final int TAB_HEIGHT = 20;
 	/** Padding on each side of a tab's name; it shrinks down to the minimum when the tabs do not fit otherwise. */
@@ -2222,12 +2531,11 @@ public class MacScreen extends Screen {
 			openTab(index);
 		}
 	};
-	private final Spring tabSpring = Spring.bouncy(Spring.DEFAULT);
-	private boolean tabSpringSet;
 
 	/** @return top of the tab bar: below the header, or below the title bar in a settings window */
+	// a settings window with tabs has what the feature does above them, once, not in every tab
 	private int tabsY() {
-		return single != null ? windowY + TITLE_BAR + 8 : windowY + 62;
+		return single != null ? windowY + TITLE_BAR + 8 + introAbove : windowY + 62;
 	}
 
 	/** Draws the tabs as a segmented control: a track with a pill under the selected tab, which slides when another one is picked. */
@@ -2247,7 +2555,7 @@ public class MacScreen extends Screen {
 		int[] texts = new int[count];
 		int text = 0;
 		for (int i = 0; i < count; i++) {
-			texts[i] = (int) Math.ceil(ui.boldWidthScaled(subTitles.get(i), TextScale.BODY));
+			texts[i] = (int) Math.ceil(ui.boldWidthScaled(subTitles.get(i), TextScale.BODY)) + workTagRoom(ui, subTitles.get(i));
 			text += texts[i];
 		}
 		// tabs that do not fit even at the smallest padding become a dropdown: none may be left out, or its settings could not be reached
@@ -2268,11 +2576,10 @@ public class MacScreen extends Screen {
 		ui.rounded(x, y, trackWidth, TAB_HEIGHT, Radius.SM, palette.control());
 		ui.ring(x, y, trackWidth, TAB_HEIGHT, Radius.SM, 1, palette.controlBorder());
 		int selected = Math.min(subIndex, tabsShown - 1);
-		if (!tabSpringSet) {
-			tabSpring.snap(selected);
-			tabSpringSet = true;
-		}
-		float at = ui.animated ? Mth.clamp(tabSpring.follow(ui, selected), 0f, tabsShown - 1) : selected;
+		// the marker moves with the content: in the time of the tab switch, from where it was to the new tab
+		float marker = tabSwitch * tabSwitch * (3f - 2f * tabSwitch);
+		float at = ui.animated && tabSwitch < 1f ? Mth.clamp(Mth.lerp(marker, tabMarkerFrom, selected), 0f, tabsShown - 1) : selected;
+		tabMarkerAt = at;
 		int low = (int) Math.floor(at);
 		int high = Math.min(low + 1, tabsShown - 1);
 		float t = at - low;
@@ -2284,25 +2591,218 @@ public class MacScreen extends Screen {
 			boolean over = mouseX >= tabEdges[i] && mouseX < tabEdges[i + 1] && mouseY >= y && mouseY < y + TAB_HEIGHT;
 			int color = i == selected ? palette.onPill() : over ? palette.text() : palette.textSecondary();
 			int center = (tabEdges[i] + tabEdges[i + 1]) / 2;
+			String label = subTitles.get(i);
+			int tagRoom = workTagRoom(ui, label);
+			float nameWidth = i == selected ? ui.boldWidthScaled(label, 1f) : ui.width(label);
+			float nameX = center - (nameWidth + tagRoom) / 2f;
 			if (i == selected) {
 				// the selected tab in the semibold face, as in the mockups
-				String label = subTitles.get(i);
-				ui.textAtScaledBold(label, center - ui.boldWidthScaled(label, 1f) / 2f, y + TAB_HEIGHT / 2f - TEXT_HALF_HEIGHT, 1f, color);
+				ui.textAtScaledBold(label, nameX, y + TAB_HEIGHT / 2f - TEXT_HALF_HEIGHT, 1f, color);
 			} else {
-				ui.textCentered(subTitles.get(i), center, y + TAB_HEIGHT / 2, color);
+				ui.textAtScaled(label, nameX, y + TAB_HEIGHT / 2f - TEXT_HALF_HEIGHT, 1f, color);
+			}
+			if (tagRoom > 0) {
+				// a tab still being tested: a small tag after its name
+				int tagX = Math.round(nameX + nameWidth) + WORK_TAG_GAP;
+				int tagWidth = tagRoom - WORK_TAG_GAP;
+				ui.rounded(tagX, y + (TAB_HEIGHT - WORK_TAG_HEIGHT) / 2, tagWidth, WORK_TAG_HEIGHT, Radius.box(WORK_TAG_HEIGHT),
+					Ui.withOpacity(FeatureListControl.WORK_COLOR, 0.2f));
+				ui.textAtScaled(Feature.WORK_IN_PROGRESS_SHORT, tagX + WORK_TAG_PAD, y + TAB_HEIGHT / 2f - TEXT_HALF_HEIGHT * TextScale.SMALL, TextScale.SMALL,
+					Ui.mix(palette.text(), palette.coloredText(FeatureListControl.WORK_COLOR), 0.55f));
 			}
 		}
 	}
 
+	/** The tag after the name of a tab still being tested: the gap before it, its padding and its height. */
+	private static final int WORK_TAG_GAP = 5;
+	private static final int WORK_TAG_PAD = 4;
+	private static final int WORK_TAG_HEIGHT = 11;
+
+	/** @return the room the "work in progress" tag takes after a tab's name, with its gap; 0 for a tab without it */
+	private int workTagRoom(Ui ui, String tab) {
+		if (!(page() instanceof FeatureListFeature list) || !list.isWorkInProgress(tab)) {
+			return 0;
+		}
+		return WORK_TAG_GAP + 2 * WORK_TAG_PAD + (int) Math.ceil(ui.widthScaled(Feature.WORK_IN_PROGRESS_SHORT, TextScale.SMALL));
+	}
+
+	/**
+	 * A change of the page's content (another tab, a sheet opening or closing, a choice that shows other rows) is one cross-fade of this
+	 * length: what was shown fades out while the new content fades in. Tabs also move a few pixels, towards and from the side the new tab lies on.
+	 */
+	private static final float TAB_SWITCH_SECONDS = 0.18f;
+	private static final float TAB_SLIDE = 6f;
+	/** How far the switch is, from 0 to 1, which way the new tab lies (-1 left, 1 right, 0 no tab), and whether the page is being built for a switch of tabs. */
+	private float tabSwitch = 1f;
+	private int tabDirection;
+	private boolean tabSwitching;
+	/** Where the tab bar's marker was drawn last, and where it started from at the last switch, in tabs. */
+	private float tabMarkerAt;
+	private float tabMarkerFrom;
+
+	/**
+	 * Shows another tab of the page as one short transition: the page is not replayed from the top (no slide up, no cover), the old tab's
+	 * content fades out while the new tab's fades in. With animations off it switches at once; with reduced animations it only fades.
+	 */
 	private void openTab(int tab) {
 		UiSounds.play(UiSounds.Cue.TICK);
+		tabDirection = Integer.signum(tab - subIndex);
+		tabMarkerFrom = tabMarkerAt;
+		keepOutgoing(groups, false);
 		subIndex = tab;
 		subTitle = null;
 		scroll = 0;
 		scrollTarget = 0;
-		restartPage();
-		buildPage();
+		tabSwitch = ModFeatures.MENU != null && ModFeatures.MENU.animations() ? 0f : 1f;
+		tabSwitching = true;
+		try {
+			buildPage();
+		} finally {
+			tabSwitching = false;
+		}
 	}
+
+	/** What the page showed before its content changed, kept while it fades out under the new content. */
+	private static final class Outgoing {
+		final List<Group> groups;
+		final List<Placed> placed = new ArrayList<>();
+		final List<Placed> pool = new ArrayList<>();
+		final List<Control> controls;
+		final List<String> intro;
+		final int introY;
+		/**
+		 * Whether its rows have the controls of the new content (the same page with other rows). A control has one place, so such content is
+		 * laid out again in every frame of the switch, and what stands where it stood is drawn once, at its full light.
+		 */
+		final boolean shared;
+		/** The sheet it was, with where it started, or null. */
+		final Feature sheet;
+		final int sheetTop;
+
+		Outgoing(List<Group> groups, List<Control> controls, List<String> intro, int introY, boolean shared, Feature sheet, int sheetTop) {
+			this.groups = groups;
+			this.controls = controls;
+			this.intro = intro;
+			this.introY = introY;
+			this.shared = shared;
+			this.sheet = sheet;
+			this.sheetTop = sheetTop;
+		}
+	}
+
+	private Outgoing outgoing;
+
+	/**
+	 * Keeps what the page shows now, to fade out under the content built next, and starts the switch. Called before the page changes. With
+	 * animations off nothing is kept and the content changes at once.
+	 */
+	private void keepOutgoing(List<Group> shown, boolean shared) {
+		outgoing = null;
+		if (ModFeatures.MENU == null || !ModFeatures.MENU.animations() || searching()) {
+			tabSwitch = 1f;
+			return;
+		}
+		Outgoing kept = new Outgoing(new ArrayList<>(shown), shared ? List.of() : new ArrayList<>(controlList), introFixed ? List.of() : introLines, introY, shared,
+			showsSheet() ? subPage : null, sheetTop());
+		// its places leave the pool: the next layout must not write over them
+		kept.placed.addAll(placed);
+		kept.pool.addAll(placed);
+		placedPool.removeAll(placed);
+		placed.clear();
+		outgoing = kept;
+		tabSwitch = 0f;
+		tabMarkerFrom = tabMarkerAt;
+	}
+
+	private static float eased(float progress) {
+		return progress * progress * (3f - 2f * progress);
+	}
+
+	/**
+	 * Draws the content shown before the change, fading out, and gives the new content its light. Content of the same page is laid out
+	 * again first, with the controls it shares; the page's own layout follows, so every control ends the frame at its place.
+	 */
+	private void drawOutgoing(Ui ui, float eased, float slide) {
+		Outgoing old = outgoing;
+		float before = Ui.alpha();
+		if (old.shared) {
+			double scrollNow = scroll;
+			double targetNow = scrollTarget;
+			layout(ui, old.groups, old.pool, old.placed);
+			scroll = scrollNow;
+			scrollTarget = targetNow;
+			lightInPlace(old.placed, eased);
+		} else {
+			for (Placed p : old.placed) {
+				p.light(1f - eased);
+			}
+		}
+		if (slide != 0f) {
+			ui.graphics.pose().pushMatrix();
+			ui.graphics.pose().translate(-slide, 0f);
+		}
+		if (!old.shared && !old.intro.isEmpty()) {
+			Ui.setAlpha(before * (1f - eased));
+			drawIntro(ui, old.intro, old.introY);
+			Ui.setAlpha(before);
+		}
+		for (Placed p : old.placed) {
+			drawGroup(ui, p, -1, -1);
+		}
+		Ui.setAlpha(before * (1f - eased));
+		for (int c = 0; c < old.controls.size(); c++) {
+			old.controls.get(c).renderSticky(ui, -1, -1);
+		}
+		Ui.setAlpha(before);
+		if (slide != 0f) {
+			ui.graphics.pose().popMatrix();
+		}
+		if (old.shared) {
+			layout(ui);
+		}
+	}
+
+	/**
+	 * The lights of a page whose rows changed: a card or a row that stands where it stood is left out of the old content and keeps its full
+	 * light in the new, so nothing that stays flickers; everything else cross-fades.
+	 */
+	private void lightInPlace(List<Placed> old, float eased) {
+		for (Placed p : old) {
+			p.light(1f - eased);
+			Placed now = placedOf(p.group.title());
+			if (now == null) {
+				continue;
+			}
+			if (p.cardWhere(now)) {
+				p.cardLight = 0f;
+				now.cardLight = 1f;
+			}
+			if (p.cardX != now.cardX || p.cardWidth != now.cardWidth) {
+				continue;
+			}
+			for (int i = 0; i < p.rows; i++) {
+				Setting<?> setting = p.group.rows().get(i).setting();
+				for (int j = 0; j < now.rows; j++) {
+					if (now.group.rows().get(j).setting() == setting && now.rowTops[j] == p.rowTops[i] && now.rowHeights[j] == p.rowHeights[i]) {
+						p.rowLights[i] = 0f;
+						now.rowLights[j] = 1f;
+						break;
+					}
+				}
+			}
+		}
+	}
+
+	/** @return where the group with a title was laid out now, or null */
+	private Placed placedOf(String title) {
+		for (Placed p : placed) {
+			if (p.group.title().equals(title)) {
+				return p;
+			}
+		}
+		return null;
+	}
+
 
 	/** @return the tab under the mouse, or -1 */
 	private int tabAt(double mouseX, double mouseY) {
@@ -2434,6 +2934,13 @@ public class MacScreen extends Screen {
 
 	/** How far a sub-option's name is indented per level under the setting it belongs to. */
 	private static final int SUB_INDENT = 10;
+	/** Two columns of groups: the room between them, and how wide each must at least be, in menu pixels. */
+	private static final int COLUMN_GAP = 12;
+	private static final int COLUMN_MIN_WIDTH = 200;
+	/** The line beside a sub-option: its width, how far it keeps from the row's edges, and how strong its accent is. */
+	private static final int SUB_LINE_WIDTH = 2;
+	private static final int SUB_LINE_INSET = 3;
+	private static final float SUB_LINE_OPACITY = 0.85f;
 	private static final int FOOTER_HEIGHT = 30;
 	private static final int INTRO_LINE = 11;
 	private static final int INTRO_MAX_LINES = 4;
@@ -2445,11 +2952,21 @@ public class MacScreen extends Screen {
 
 	/** The introduction of a settings window: the feature's description, wrapped, and where it was laid out. */
 	private List<String> introLines = List.of();
+	/** Whether the introduction stands above the tabs, fixed, and how tall it is there; 0 when it scrolls with the settings. */
+	private boolean introFixed;
+	private int introAbove;
 	private int introY;
 	/** The master switch in a settings window's title bar. */
 	private final Spring headerSwitch = Spring.bouncy(Spring.DEFAULT);
 	private boolean headerSwitchSet;
-	private final ButtonControl footerReset = new ButtonControl(Component.literal("Reset"), false, this::resetPage).confirm();
+	private final ButtonControl pageReset = new ButtonControl(Component.literal("Reset"), false, this::resetPage).confirm();
+	private final ButtonControl tabReset = new ButtonControl(Component.literal("Reset this tab"), false, this::resetPage).confirm();
+
+	/** @return the footer's reset: of the open tab on a page that resets by tab, else of the whole page */
+	private ButtonControl footerReset() {
+		Feature feature = footerFeature();
+		return feature != null && feature.resetsByTab() && !subTitles.isEmpty() ? tabReset : pageReset;
+	}
 	/** Settings of the window's feature that differ from their defaults, counted when the page is built and when a setting changes. */
 	private int changedCount;
 	private String footerText = "";
@@ -2475,6 +2992,10 @@ public class MacScreen extends Screen {
 		if (featureWindow()) {
 			return single;
 		}
+		// a page in tabs that resets one tab at a time (Menu settings); not over search results, which are no tab
+		if (single == null && !pages.isEmpty() && page().resetsByTab() && !searching()) {
+			return page();
+		}
 		if (single == null && !pages.isEmpty() && page() instanceof FeatureListFeature list && list.headerSwitch() != null) {
 			Feature feature = list.headerSwitch();
 			for (Setting<?> setting : feature.settings()) {
@@ -2492,21 +3013,36 @@ public class MacScreen extends Screen {
 		if (feature == null) {
 			return;
 		}
-		feature.resetSettings();
+		if (resetsTab(feature)) {
+			feature.resetSettings(this::inOpenTab);
+		} else {
+			feature.resetSettings();
+		}
 		UiSounds.play(UiSounds.Cue.OFF);
 		onSettingChanged();
 		rebuildRequested = true;
 	}
 
+	/** @return whether the footer counts and resets only the open tab of this page */
+	private boolean resetsTab(Feature feature) {
+		return feature.resetsByTab() && !subTitles.isEmpty() && subTitle != null;
+	}
+
+	/** @return whether a setting of the page is on the open tab */
+	private boolean inOpenTab(Setting<?> setting) {
+		String section = page().sectionOf(setting);
+		return subTitle != null && section != null && subTitle.equals(tabOf(section));
+	}
+
 	private void countChanged() {
 		Feature feature = footerFeature();
-		changedCount = feature != null ? feature.changedSettings() : 0;
+		changedCount = feature == null ? 0 : resetsTab(feature) ? feature.changedSettings(this::inOpenTab) : feature.changedSettings();
 		footerText = changedCount == 0 ? "All at their defaults" : changedCount == 1 ? "1 changed from default" : changedCount + " changed from default";
 	}
 
 	private int headerSwitchX() {
-		// in the pane, the switch sits left of the close button
-		return windowX + windowWidth - PAD - SwitchControl.TRACK_WIDTH - (owner != null ? PANE_BUTTON + 8 : 0);
+			// the switch sits left of the close button of a window of its own; the pane has none, it goes back with its back button
+		return windowX + windowWidth - PAD - SwitchControl.TRACK_WIDTH - (owner == null ? PANE_BUTTON + 8 : 0);
 	}
 
 	private int headerSwitchY() {
@@ -2518,17 +3054,25 @@ public class MacScreen extends Screen {
 			&& mouseY >= headerSwitchY() - 4 && mouseY < headerSwitchY() + SwitchControl.TRACK_HEIGHT + 4;
 	}
 
-	/** Draws a settings window's title bar after the traffic lights: the feature's icon on its tile, its name and its master switch. */
+	/**
+	 * Draws a settings window's title bar: in the pane the back button with the page beside it, in a window of its own the feature's icon on its
+	 * tile; then its name, its master switch and, in a window of its own, the close button.
+	 */
 	private void drawTitleBar(Ui ui, int mouseX, int mouseY) {
 		Palette palette = ui.palette;
 		Feature page = page();
 		int middle = windowY + TITLE_BAR / 2;
-		// after the window buttons; in the pane, at its edge, or after the back arrow when it covers the page
-		int tileX = owner == null ? trafficX(2) + TRAFFIC_SIZE / 2 + 14 : windowX + PAD + (paneBack() ? PANE_BUTTON + 6 : 0);
-		ui.iconTile(page.iconName(), tileX, middle - TITLE_TILE / 2, TITLE_TILE, TITLE_ICON, Radius.SM, 0xFF000000 | page.iconRgb(), 0xFFFFFFFF);
-		int nameX = tileX + TITLE_TILE + 8;
+		int nameX;
+		if (owner != null) {
+			int chip = drawBackChip(ui, owner.page().nameText(), windowX + PAD, middle, (windowWidth - 2 * PAD) / 3, !showsSheet(), mouseX, mouseY);
+			nameX = windowX + PAD + chip + BACK_CHIP_TITLE_GAP;
+		} else {
+			int tileX = windowX + PAD;
+			ui.iconTile(page.iconName(), tileX, middle - TITLE_TILE / 2, TITLE_TILE, TITLE_ICON, Radius.SM, 0xFF000000 | page.iconRgb(), 0xFFFFFFFF);
+			nameX = tileX + TITLE_TILE + 8;
+		}
 		boolean switchable = featureWindow() && page.isSwitchable();
-		int nameRight = switchable ? headerSwitchX() - 10 : owner != null ? paneCloseX() - 8 : windowX + windowWidth - PAD;
+		int nameRight = switchable ? headerSwitchX() - 10 : paneCloseX() - 8;
 		int room = Math.round((nameRight - nameX) / TITLE_SCALE);
 		ui.textAtScaledBold(ui.fit(headerTitle, room), nameX, middle - 5.5f, TITLE_SCALE, palette.text());
 		if (switchable) {
@@ -2540,13 +3084,27 @@ public class MacScreen extends Screen {
 			SwitchControl.draw(ui, headerSwitchX(), headerSwitchY(), headerSwitch.follow(ui, on ? 1f : 0f), overHeaderSwitch(mouseX, mouseY) ? 1f : 0f, 0f);
 		}
 		ui.fill(windowX + 1, windowY + TITLE_BAR, windowWidth - 2, 1, palette.cardBorder());
+		if (owner == null && !showsSheet()) {
+			drawPaneButtons(ui, mouseX, mouseY);
+		}
+	}
+
+	/** Draws a settings window's own title bar while a sheet fades in over it: until the sheet covers it, it is still seen under the sheet. */
+	private void drawTitleBarUnderSheet(Ui ui) {
+		Feature sheet = subPage;
+		String title = headerTitle;
+		subPage = null;
+		headerTitle = page().nameText();
+		drawTitleBar(ui, -1, -1);
+		subPage = sheet;
+		headerTitle = title;
 	}
 
 	/** Draws the introduction above the settings; it scrolls with them. */
-	private void drawIntro(Ui ui) {
+	private void drawIntro(Ui ui, List<String> lines, int y) {
 		int color = Ui.mix(ui.palette.text(), ui.palette.textSecondary(), 0.45f);
-		for (int i = 0; i < introLines.size(); i++) {
-			ui.text(introLines.get(i), contentLeft + 2, introY + i * INTRO_LINE, color);
+		for (int i = 0; i < lines.size(); i++) {
+			ui.text(lines.get(i), contentLeft + 2, y + i * INTRO_LINE, color);
 		}
 	}
 
@@ -2557,18 +3115,31 @@ public class MacScreen extends Screen {
 		ui.fill(windowX + side() + 1, top, listRight() - windowX - side() - 2, 1, palette.cardBorder());
 		int middle = top + FOOTER_HEIGHT / 2;
 		ui.textMiddle(footerText, contentLeft + 2, middle, palette.textSecondary());
-		int buttonWidth = footerReset.inlineWidth(ui, 120);
-		footerReset.place(ui, contentRight - buttonWidth, middle - 10, buttonWidth);
-		footerReset.render(ui, mouseX, mouseY);
+		ButtonControl reset = footerReset();
+		int buttonWidth = reset.inlineWidth(ui, 120);
+		reset.place(ui, contentRight - buttonWidth, middle - 10, buttonWidth);
+		reset.render(ui, mouseX, mouseY);
 	}
 
 
 	// ----------------------------------------------------------------------------------------------------- layout
 
+	/** A named group of a page's feature list: the space after it (with the heading's own 4 px about 22 before the next name), and the thin line right of its name (its gap, its height below the name's top, its strength). */
+	private static final int PAGE_GROUP_GAP = 18;
+	private static final int PAGE_GROUP_LINE_GAP = 10;
+	private static final int PAGE_GROUP_LINE_DROP = 6;
+	private static final float PAGE_GROUP_LINE_OPACITY = 0.1f;
+
+	/** @return whether a group is a named group of a page's features (their rows in one box), not a group of settings */
+	private boolean pageGroup(Group group) {
+		return single == null && !searching() && page() instanceof FeatureListFeature && group.bare() && showsTitle(group) && !group.rows().isEmpty()
+			&& group.rows().get(0).setting() instanceof FeatureGroupSetting;
+	}
+
 	/** @return whether a group's title is drawn: not when it is empty, and not when it only repeats the name of the open tab */
 	private boolean showsTitle(Group group) {
 		// a title of spaces keeps a group apart from the others without a title over it
-		return !group.title().isBlank() && !(!subTitles.isEmpty() && group.title().equals(subTitle));
+		return !headingOf(group.title()).isBlank() && !(!subTitles.isEmpty() && group.title().equals(subTitle));
 	}
 
 	// a page that keeps everything in view as far as it can
@@ -2585,10 +3156,20 @@ public class MacScreen extends Screen {
 
 	/** Lays out every row of the page. Controls keep the position they are given for drawing and hit testing. */
 	private void layout(Ui ui) {
+		layout(ui, groups, placedPool, placed);
+	}
+
+	/** Lays out groups of rows as the page's content: usually the page's own; during a change of its content also the rows shown before. */
+	private void layout(Ui ui, List<Group> groups, List<Placed> placedPool, List<Placed> placed) {
 		placed.clear();
 		applyGeometry();
 		// a settings window starts below its title bar, a page below its header; both below the tabs if there are any
 		int top = single != null && !showsSheet() ? windowY + TITLE_BAR + 10 : windowY + 66 + sheetTop() - (compactPage() ? COMPACT_HEADER : 0);
+		// with tabs, a settings window's introduction stands above them, once; without, it scrolls with the settings
+		introFixed = hasIntro() && !subTitles.isEmpty() && single != null;
+		int introWidth = contentRight - contentLeft - previewRoom() - 4;
+		List<String> fixedIntro = introFixed ? ui.wrap(page().descriptionText(), introWidth, INTRO_MAX_LINES) : List.of();
+		introAbove = fixedIntro.isEmpty() ? 0 : fixedIntro.size() * INTRO_LINE + 6;
 		contentTop = subTitles.isEmpty() ? top : tabsY() + TAB_HEIGHT + 10;
 		contentBottom = windowY + windowHeight - 8 - (hasFooter() ? FOOTER_HEIGHT : 0);
 		// a page with a live preview leaves its right side to it
@@ -2597,13 +3178,28 @@ public class MacScreen extends Screen {
 		int slide = Math.round((1f - Mth.clamp(pageAnimation, 0f, 1f)) * 16f);
 		int y = contentTop - (int) scroll + slide;
 		// a settings window opens with what the feature does, scrolling with the settings
-		introLines = hasIntro() ? ui.wrap(page().descriptionText(), contentWidth - 4, INTRO_MAX_LINES) : List.of();
-		introY = y;
-		if (!introLines.isEmpty()) {
+		introLines = introFixed ? fixedIntro : hasIntro() ? ui.wrap(page().descriptionText(), contentWidth - 4, INTRO_MAX_LINES) : List.of();
+		introY = introFixed ? top - 2 : y;
+		if (!introLines.isEmpty() && !introFixed) {
 			y += introLines.size() * INTRO_LINE + 10;
 		}
 		boolean compact = compactPage();
 		int rowPad = compact ? COMPACT_ROW_PAD : ROW_PAD;
+		// a tab that asks for it gets two columns where both are wide enough: the first half of its groups on the left, the rest on the right
+		int columnWidth = (contentWidth - COLUMN_GAP) / 2;
+		boolean twoColumns = !searching() && !subTitles.isEmpty() && subTitle != null && page().twoColumns(subTitle) && columnWidth >= COLUMN_MIN_WIDTH;
+		int split = (groups.size() + 1) / 2;
+		int[] columnY = {y, y};
+		int pageWidth = contentWidth;
+		int pageLeft = contentLeft;
+		// one width for the page's segmented choices, dropdowns, key fields and sliders: the standard one, or the wider one where texts need it
+		int widestNeed = 0;
+		for (Group group : groups) {
+			for (Row row : group.rows()) {
+				widestNeed = Math.max(widestNeed, row.control().standardNeed(ui));
+			}
+		}
+		pageControlWidth = ControlWidths.forPage(widestNeed);
 		// switches sit at the right edge of every row; on pages where rows have a switch plus an Edit button, buttons without a switch align with
 		// the Edit buttons so they form one column (editColumn)
 		for (int g = 0; g < groups.size(); g++) {
@@ -2612,6 +3208,13 @@ public class MacScreen extends Screen {
 				placedPool.add(new Placed());
 			}
 			Placed p = placedPool.get(g);
+			int column = twoColumns && g >= split ? 1 : 0;
+			int groupLeft = pageLeft;
+			if (twoColumns) {
+				y = columnY[column];
+				contentWidth = columnWidth;
+				groupLeft = pageLeft + column * (columnWidth + COLUMN_GAP);
+			}
 			p.group = group;
 			p.rows = 0;
 			p.titleY = 0;
@@ -2621,7 +3224,7 @@ public class MacScreen extends Screen {
 				p.titleY = y + (compact ? COMPACT_TITLE_TOP : 4);
 				y += compact ? COMPACT_TITLE : 22;
 			}
-			p.cardX = contentLeft;
+			p.cardX = groupLeft;
 			p.cardY = y;
 			p.cardWidth = contentWidth;
 
@@ -2630,7 +3233,7 @@ public class MacScreen extends Screen {
 			boolean leading = !group.bare();
 			for (Row row : group.rows()) {
 				Control control = row.control();
-				int innerX = contentLeft + CARD_PAD;
+				int innerX = groupLeft + CARD_PAD;
 				int innerWidth = contentWidth - 2 * CARD_PAD;
 				// sub-options are indented under the setting they belong to
 				int indent = row.depth * SUB_INDENT;
@@ -2642,7 +3245,7 @@ public class MacScreen extends Screen {
 				boolean controlBelow = !control.bare() && !control.isBlock() && controlBelow(ui, row, innerWidth, indent);
 				if (control.bare()) {
 					// bare cards (a page's features): full page width, without a label above or a card around them
-					control.place(ui, contentLeft, rowY, contentWidth);
+					control.place(ui, groupLeft, rowY, contentWidth);
 					rowHeight = control.height() + (row == group.rows().get(group.rows().size() - 1) ? 0 : leading ? CARD_GAP : 10);
 					if (leading) {
 						p.cardY = rowY + rowHeight;
@@ -2656,25 +3259,29 @@ public class MacScreen extends Screen {
 					control.place(ui, innerX + indent, rowY + rowPad + 16 + descriptionLines * DESCRIPTION_LINE, innerWidth - indent);
 					rowHeight = rowPad * 2 + 16 + descriptionLines * DESCRIPTION_LINE + control.height();
 				} else if (controlBelow) {
-					int natural = control.inlineWidth(ui, innerWidth - indent);
+					int natural = naturalWidth(ui, control, innerWidth - indent);
 					descriptionLines = descriptionLines(ui, row, innerWidth - indent);
 					int textHeight = 12 + descriptionLines * DESCRIPTION_LINE;
 					int controlX = control.leftOnOwnLine() ? innerX + indent : innerX + innerWidth - natural;
 					control.place(ui, controlX, rowY + rowPad + textHeight + CONTROL_BELOW_GAP, natural);
 					rowHeight = rowPad * 2 + textHeight + CONTROL_BELOW_GAP + control.height();
 				} else {
-					int labelWidth = ui.width(row.setting().labelText()) + iconRoom(row.setting()) + indent;
+					int labelWidth = ui.width(row.setting().labelText()) + iconRoom(row.setting()) + tipRoom(row.setting()) + indent;
 					// the control gets the width its content needs, up to half the row, and the label is truncated with an ellipsis if it does not fit
 					// the rest: a long label must not leave a button too narrow for its text
 					int roomLeft = Math.max(60, innerWidth - labelWidth - 16);
-					int natural = control.inlineWidth(ui, innerWidth);
-					int inline = natural <= roomLeft ? natural : Math.min(natural, Math.max(roomLeft, innerWidth / 2));
+					int natural = naturalWidth(ui, control, innerWidth);
+					// the name stays whole: the control gives up room down to the least a control needs, not only to half the row
+					int inline = natural <= roomLeft ? natural : Math.min(natural, Math.max(roomLeft, Math.min(innerWidth / 2, LEAST_INLINE_CONTROL)));
 					int right = innerX + innerWidth - (editColumn && control.isLoneButton() ? Control.SWITCH_COLUMN : 0);
 					// an inline control's height does not depend on its position, so place it at the top first
 					control.place(ui, right - inline, rowY, inline);
 					int beside = right - innerX - inline - iconRoom(row.setting()) - indent - 12;
 					// a description squeezed into a narrow column beside a wide control (a text field) goes under the row at its full width instead
-					below = row.setting().description() != null && beside < DESCRIPTION_MIN_ROOM;
+					// and so does one that would wrap beside the control but is one line at the full width
+					String help = row.setting().description();
+					below = help != null && (beside < DESCRIPTION_MIN_ROOM
+						|| ui.widthScaled(help, DESCRIPTION_SCALE) > beside && ui.widthScaled(help, DESCRIPTION_SCALE) <= innerWidth - indent);
 					descriptionLines = descriptionLines(ui, row, below ? innerWidth - indent : beside);
 					int lineHeight = Math.max(control.height(), 20);
 					if (below) {
@@ -2683,7 +3290,9 @@ public class MacScreen extends Screen {
 					} else {
 						int textHeight = 12 + descriptionLines * DESCRIPTION_LINE;
 						rowHeight = Math.max(lineHeight, textHeight) + rowPad * 2;
-						control.place(ui, right - inline, rowY + (rowHeight - control.height()) / 2, inline);
+						// on the row's middle; with a description of two lines or more, on the title's line, the same in both fonts
+						int controlY = descriptionLines >= 2 ? rowY + rowPad + (TITLE_LINE - control.height()) / 2 : rowY + (rowHeight - control.height()) / 2;
+						control.place(ui, right - inline, Math.max(rowY + 2, controlY), inline);
 					}
 				}
 				if (!control.bare()) {
@@ -2694,16 +3303,15 @@ public class MacScreen extends Screen {
 			}
 			p.cardHeight = rowY - p.cardY;
 			placed.add(p);
-			int full = rowY + (compact ? COMPACT_GROUP_GAP : 14) - p.top;
-			if (group.shown < 1f) {
-				// appearing or disappearing: the space it takes grows or shrinks smoothly, and it shows only within it
-				float eased = group.shown * group.shown * (3f - 2f * group.shown);
-				p.clipHeight = Math.round(full * eased);
-			} else {
-				p.clipHeight = -1;
+			y = rowY + (compact ? COMPACT_GROUP_GAP : pageGroup(group) ? PAGE_GROUP_GAP : 14);
+			if (twoColumns) {
+				columnY[column] = y;
 			}
-			y = p.top + (p.clipHeight < 0 ? full : p.clipHeight);
 		}
+		if (twoColumns) {
+			y = Math.max(columnY[0], columnY[1]);
+		}
+		contentWidth = pageWidth;
 		contentHeight = y + (int) scroll - contentTop;
 		scrollTarget = Mth.clamp(scrollTarget, 0, maxScroll());
 		scroll = Mth.clamp(scroll, 0, maxScroll());
@@ -2740,6 +3348,9 @@ public class MacScreen extends Screen {
 		}
 		refreshContent();
 		super.extractRenderState(graphics, mouseX, mouseY, partialTick);
+		if (owner == null && single == null) {
+			trackHistory();
+		}
 		Ui ui = createUi(graphics);
 		endLostDrag();
 		// the window's scale and position animate to their targets instead of jumping
@@ -2775,31 +3386,35 @@ public class MacScreen extends Screen {
 		float grow = 0.9f + 0.1f * open;
 		// grow from the window's own center rather than the screen's, so it does not drift
 		float middleX = windowX + windowWidth * zoom / 2f;
-		float middleY = windowY + windowHeight * zoom / 2f;
+		float middleY = frameY + fullHeight * zoom / 2f;
 		pose.translate(middleX, middleY);
 		pose.scale(grow, grow);
 		pose.translate(-middleX, -middleY);
-		pose.translate(windowX, windowY);
+		pose.translate(windowX, frameY);
 		pose.scale(zoom, zoom);
-		pose.translate(-windowX, -windowY);
+		pose.translate(-windowX, -frameY);
 
 		// lifted while dragged: a stronger shadow under the window
 		if (windowLift > 0.01f) {
-			ui.shadow(windowX, windowY, windowWidth, windowHeight, Radius.XXL, LIFT_SHADOW, LIFT_OPACITY * windowLift * fade);
+			ui.shadow(windowX, frameY, windowWidth, fullHeightShown(), Radius.XXL, LIFT_SHADOW, LIFT_OPACITY * windowLift * fade);
 		}
-		boolean solidPane = frameBody(ui, windowX, windowY, windowWidth, windowHeight, fade);
+		boolean solidPane = frameBody(ui, windowX, frameY, windowWidth, fullHeightShown(), fade);
 		if (single == null) {
-			ui.roundedLeft(windowX, windowY, SIDEBAR, windowHeight, Radius.XXL, Ui.withOpacity(palette.sidebar(), fade));
-			ui.fill(windowX + SIDEBAR, windowY + 1, 1, windowHeight - 2, palette.cardBorder());
+			// the sidebar starts under the top bar: its own corner at the bottom only, the window's at the top belong to the bar
+			ui.graphics.enableScissor(windowX, windowY, windowX + SIDEBAR, windowY + windowHeight);
+			ui.roundedLeft(windowX, frameY, SIDEBAR, fullHeightShown(), Radius.XXL, Ui.withOpacity(palette.sidebar(), fade));
+			ui.graphics.disableScissor();
+			ui.fill(windowX + SIDEBAR, windowY, 1, windowHeight - 1, palette.cardBorder());
+			ui.fill(windowX + 1, windowY - 1, windowWidth - 2, 1, palette.cardBorder());
 		}
 		drawColoredLight(ui, fade);
 		// the edge light goes over the sidebar, which would otherwise cover it on the left
-		frameEdges(ui, windowX, windowY, windowWidth, windowHeight, fade, solidPane);
+		frameEdges(ui, windowX, frameY, windowWidth, fullHeightShown(), fade, solidPane);
 
 		// from here on everything fades with the window: text, controls and icons, not only the glass
 		Ui.setAlpha(fade);
-		drawTrafficLights(ui, mouseX, mouseY);
 		if (single == null) {
+			drawMenuHeader(ui, mouseX, mouseY);
 			drawSidebar(ui, mouseX, mouseY);
 			drawSearch(ui, mouseX, mouseY);
 		}
@@ -2899,7 +3514,6 @@ public class MacScreen extends Screen {
 			scroll = scrollTarget;
 		}
 		tooltip = null;
-		stepGroupChanges(ui);
 		layout(ui);
 		if (pendingSetting != null && !rebuildRequested) {
 			resolvePending();
@@ -2925,28 +3539,37 @@ public class MacScreen extends Screen {
 		Ui ui = createUi(graphics);
 		layoutFrame(ui);
 		// the divider to the page, while docked
-		if (!paneBack() && !owner.paneDetached()) {
+		if (!paneCoversPage() && !owner.paneDetached()) {
 			ui.fill(windowX, windowY + 1, 1, windowHeight - 2, ui.palette.cardBorder());
 		}
 		drawPage(ui, graphics, mouseX, mouseY);
-		if (!showsSheet()) {
-			drawPaneButtons(ui, mouseX, mouseY);
-		}
 		drawOverlays(ui, mouseX, mouseY);
 	}
 
 	/** Draws the page: its header or title bar, tabs, settings, preview and footer, but not the popups on top. */
 	private void drawPage(Ui ui, GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
 		Palette palette = ui.palette;
-		if (showsSheet()) {
+		// the back button shown is found anew each frame, by whatever header draws it
+		backChipX = -1;
+		boolean sheet = showsSheet();
+		if (single != null && !sheet) {
+			drawTitleBar(ui, mouseX, mouseY);
+		} else if (single != null && sheetLight() < 1f) {
+			drawTitleBarUnderSheet(ui);
+		}
+		if (sheet) {
 			drawSheetSurface(ui);
 		}
-		if (single != null && showsSheet()) {
-			drawSheetHeader(ui, mouseX, mouseY);
-		} else if (single != null) {
-			drawTitleBar(ui, mouseX, mouseY);
-		} else {
+		if (single == null) {
 			drawHeader(ui, mouseX, mouseY);
+		} else if (sheet) {
+			drawSheetHeader(ui, mouseX, mouseY);
+		}
+		if (outgoing != null && outgoing.sheet != null && !sheet) {
+			drawOutgoingSheet(ui);
+		}
+		if (introFixed && !introLines.isEmpty()) {
+			drawIntro(ui, introLines, introY);
 		}
 		drawSubTabs(ui, mouseX, mouseY);
 
@@ -2955,15 +3578,45 @@ public class MacScreen extends Screen {
 		boolean overlayOpen = openOverlay() != null;
 		int pointerX = overlayOpen ? -1 : mouseX;
 		int pointerY = overlayOpen ? -1 : mouseY;
-		if (!introLines.isEmpty()) {
-			drawIntro(ui);
+		// a change of the content: what was shown fades out while the new content fades in; tabs also move a few pixels across
+		if (tabSwitch < 1f) {
+			tabSwitch = ui.approach(tabSwitch, 1f, 1f / TAB_SWITCH_SECONDS);
+		}
+		boolean switching = tabSwitch < 1f;
+		if (!switching) {
+			outgoing = null;
+		}
+		float light = switching ? eased(tabSwitch) : 1f;
+		float slide = switching && !ModFeatures.MENU.reducedAnimations() ? tabDirection * TAB_SLIDE : 0f;
+		for (Placed p : placed) {
+			p.light(light);
+		}
+		// the introduction of the same page stays as it is
+		float introLight = outgoing != null && outgoing.shared ? 1f : light;
+		if (outgoing != null) {
+			drawOutgoing(ui, light, slide * light);
+		}
+		float alphaBefore = Ui.alpha();
+		if (slide != 0f) {
+			graphics.pose().pushMatrix();
+			graphics.pose().translate(slide * (1f - light), 0f);
+		}
+		if (!introLines.isEmpty() && !introFixed) {
+			Ui.setAlpha(alphaBefore * introLight);
+			drawIntro(ui, introLines, introY);
+			Ui.setAlpha(alphaBefore);
 		}
 		for (Placed p : placed) {
 			drawGroup(ui, p, pointerX, pointerY);
 		}
+		Ui.setAlpha(alphaBefore * (outgoing != null && outgoing.shared ? 1f : light));
 		for (int c = 0; c < controlList.size(); c++) {
 			Control control = controlList.get(c);
 			control.renderSticky(ui, pointerX, pointerY);
+		}
+		Ui.setAlpha(alphaBefore);
+		if (slide != 0f) {
+			graphics.pose().popMatrix();
 		}
 		if (searching() && placed.isEmpty()) {
 			ui.textCentered("Nothing found for \"" + ui.fit(query.strip(), 200) + "\"", (contentLeft + contentRight) / 2, contentTop + 48, palette.textSecondary());
@@ -3004,69 +3657,59 @@ public class MacScreen extends Screen {
 		drawTooltip(ui, mouseX, mouseY);
 	}
 
-	private float lightsHover;
+	private float closeHover;
 
-	// the symbols on the traffic lights, shown on hover
-	private static final int TRAFFIC_GLYPH = 6;
-	private static final int[] TRAFFIC_COLORS = {0xFFFF5F57, 0xFFFEBC2E, 0xFF28C840};
-	private static final int[] TRAFFIC_GLYPH_COLORS = {0xFF4D0000, 0xFF5A3A00, 0xFF0A4A12};
-	private static final String[] TRAFFIC_GLYPHS = {"close", "minus", "plus"};
-
-	/** @return the center of a traffic light */
-	private int trafficX(int index) {
-		return windowX + TRAFFIC_LEFT + TRAFFIC_SIZE / 2 + index * TRAFFIC_STEP;
+	private int menuCloseX() {
+		return windowX + windowWidth - SIDE_INSET - 2 - CLOSE_BUTTON;
 	}
 
-	/** @return the middle of the traffic lights: on their own row in the sidebar, or centered in a settings window's title bar */
-	private int trafficY() {
-		return single != null ? windowY + TITLE_BAR / 2 : windowY + TRAFFIC_TOP + TRAFFIC_SIZE / 2;
+	private int menuCloseY() {
+		return frameY + (TOP_BAR - CLOSE_BUTTON) / 2;
 	}
 
-	/** @return the traffic light under the mouse, or -1 */
-	private int trafficLightAt(double mouseX, double mouseY) {
-		for (int light = 0; light < 3; light++) {
-			if (Math.hypot(mouseX - trafficX(light), mouseY - trafficY()) <= TRAFFIC_SIZE / 2f + 2f) {
-				return light;
-			}
+	/** @return whether the mouse is over the close button of the menu's header row */
+	private boolean overMenuClose(double mouseX, double mouseY) {
+		return single == null && mouseX >= menuCloseX() - 2 && mouseX < menuCloseX() + CLOSE_BUTTON + 2 && mouseY >= menuCloseY() - 2
+			&& mouseY < menuCloseY() + CLOSE_BUTTON + 2;
+	}
+
+	/** Draws the menu's top bar: the Lumio mark, "Lumio" and the version on a chip at the left, and the round close button at the right; the search is drawn on its own. */
+	private void drawMenuHeader(Ui ui, int mouseX, int mouseY) {
+		Palette palette = ui.palette;
+		int x = windowX + SIDE_INSET + 4;
+		int middle = frameY + TOP_BAR / 2;
+		ui.rounded(x, middle - MARK / 2, MARK, MARK, TILE_RADIUS, ui.accent);
+		ui.textCenteredBold(MARK_LETTER, x + MARK / 2f, middle, 0xFFFFFFFF);
+		int nameX = x + MARK + 6;
+		ui.textAtScaledBold(MENU_NAME, nameX, middle - 4.5f, 1f, palette.text());
+		int versionX = Math.round(nameX + ui.boldWidthScaled(MENU_NAME, 1f) + 6f);
+		// the version whole, or its number alone where that does not fit beside the narrowest search, or nothing: never cut
+		int room = menuCloseX() - 2 * MenuBar.GAP - SEARCH_LEAST - versionX;
+		String version = ModVersion.shortDisplay();
+		if (ui.chipWidth(version) > room) {
+			String number = version.split(" ")[0];
+			version = ui.chipWidth(number) <= room ? number : "";
 		}
-		return -1;
+		barLeftEnd = version.isEmpty() ? versionX - 6 : versionX + ui.chip(version, versionX, middle);
+		closeHover = ui.approach(closeHover, overMenuClose(mouseX, mouseY) ? 1f : 0f, Ui.HOVER_RATE);
+		ui.rounded(menuCloseX(), menuCloseY(), CLOSE_BUTTON, CLOSE_BUTTON, Radius.pill(CLOSE_BUTTON), Ui.withOpacity(palette.hover(), 0.7f + 0.3f * closeHover));
+		ui.icon("close", menuCloseX() + 4, menuCloseY() + 4, CLOSE_BUTTON - 8, Ui.mix(palette.textSecondary(), palette.text(), closeHover));
 	}
 
-	private void drawTrafficLights(Ui ui, int mouseX, int mouseY) {
-		int cy = trafficY();
-		int half = TRAFFIC_SIZE / 2;
-		boolean hovering = mouseX >= trafficX(0) - half - 3 && mouseX < trafficX(2) + half + 3 && Math.abs(mouseY - cy) < half + 3;
-		lightsHover = ui.approach(lightsHover, hovering ? 1f : 0f, Ui.HOVER_RATE);
-		for (int i = 0; i < 3; i++) {
-			int cx = trafficX(i);
-			ui.circle(cx, cy, half, TRAFFIC_COLORS[i]);
-			ui.ring(cx - half, cy - half, TRAFFIC_SIZE, TRAFFIC_SIZE, Radius.pill(TRAFFIC_SIZE), 1, 0x26000000);
-			if (lightsHover > 0f) {
-				// glyphs appear on hover, as in macOS, centered in the dot
-				ui.icon(TRAFFIC_GLYPHS[i], cx - TRAFFIC_GLYPH / 2, cy - TRAFFIC_GLYPH / 2, TRAFFIC_GLYPH, Ui.withOpacity(TRAFFIC_GLYPH_COLORS[i], lightsHover));
-			}
-		}
-	}
+	private static final String MENU_NAME = "Lumio";
+	private static final String MARK_LETTER = "L";
 
-	/**
-	 * Traffic light buttons: red closes the menu, yellow makes the window a step smaller and green a step larger, as the window size in the
-	 * menu settings does, around the window's middle.
-	 */
-	private void trafficLight(int index) {
-		if (index == 0) {
-			onClose();
-			return;
-		}
-		UiSounds.play(UiSounds.Cue.CLICK);
-		resizeBy(index == 1 ? -1 : 1, shownCenterX, shownCenterY);
-	}
 	// ------------------------------------------------------------------------------------------------------ sidebar
 
-	/** Top of the first page item, below the search field. */
-	private static final int ITEMS_TOP = SEARCH_TOP + SEARCH_HEIGHT + 8;
-	// rows as in the mockup: 36 px tall, 3 px apart, 24 px icon tiles
-	private static final int ITEM_HEIGHT = 23;
-	private static final int ITEM_GAP = 2;
+	/** Top of the first page item, under the top bar. */
+	private static final int ITEMS_TOP = 8;
+	// one spacing rule, as in the mockup: every row 38 px tall there with 24 px icon tiles, rows of a group 2 px apart, groups 18 px
+	private static final int ITEM_HEIGHT = 24;
+	private static final int ITEM_GAP = 1;
+	/** The small uppercase label over a group, and the room it takes with the space under it. */
+	private static final float GROUP_LABEL_SCALE = TextScale.SMALL;
+	private static final int GROUP_LABEL_ROW = 12;
+	private static final int GROUP_LABEL_LEFT = 6;
 	/** Size of the colored tile behind a page icon, and its corner radius. */
 	private static final int TILE = 16;
 	private static final int TILE_ICON = 9;
@@ -3075,27 +3718,31 @@ public class MacScreen extends Screen {
 	/** Space below the last item of the bottom section (Edit HUD layout, Menu settings). */
 	private static final int BOTTOM_PAD = 8;
 
-	/** Height of a category item, which sits indented under its page (30 px in the mockup). */
-	private static final int SUB_ITEM_HEIGHT = 19;
-	private static final int SUB_ITEM_GAP = 1;
+	/** A category item sits indented under its page, as tall and as far apart as every row. */
+	private static final int SUB_ITEM_HEIGHT = ITEM_HEIGHT;
 	/** Indent of the category items, and where the guide line in front of them runs. */
 	private static final int SUB_ITEM_INDENT = 20;
 	private static final int SUB_GUIDE_X = 13;
-	/** Space below the last category item, before the next page. */
-	private static final int SUB_ITEMS_AFTER = 3;
-	private static final int HERE_DOT = 3;
+	/** The counts on the right of the rows: small, in the secondary color; a detail and no notification. */
+	private static final float COUNT_SCALE = TextScale.SMALL;
+	/** The tag a developer's page shows instead of a count. */
+	private static final String DEV_TAG = "DEV";
+	private static final float DEV_TAG_SCALE = 0.62f;
+	/** Folded out further than this, categories are drawn. */
+	private static final float SUBS_SHOWN = 0.02f;
 
 	/** What a page item shows on its right: the number of features, or null; built once, the pages do not change while the menu is open. */
 	private String[] sidebarCounts;
 	private float hudItemHover;
 	/** Tops of the page items relative to the window, laid out every frame since the categories fold in and out. */
 	private int[] sidebarTops = new int[0];
-	/** How far the categories under the SkyBlock page are folded out, from 0 to 1. */
-	private float sidebarExpand = -1f;
-	private final Spring expandSpring = Spring.smooth(Spring.DEFAULT);
-	private boolean highlightSnapped;
-	private final Spring highlightHeight = Spring.bouncy(Spring.DEFAULT);
-	private final Spring highlightIndent = Spring.bouncy(Spring.DEFAULT);
+	/** Per page item: how far the categories under that page are folded out, from 0 to 1 (SkyBlock, Extras); 0 for the others. */
+	private float[] sidebarExpand = new float[0];
+	private Spring[] expandSprings = new Spring[0];
+	/** Per page item: the index of the page it is a category of, or -1. */
+	private int[] sidebarParents = new int[0];
+	/** The sidebar highlight: in the list's content coordinates, gliding only when the selection changes. */
+	private final SelectionGlide highlight = new SelectionGlide();
 
 	/** @return whether the page is a category of another page, listed indented under it */
 	private boolean isSubPage(int index) {
@@ -3106,35 +3753,63 @@ public class MacScreen extends Screen {
 		return isSubPage(index) ? SUB_ITEM_HEIGHT : ITEM_HEIGHT;
 	}
 
-	/** @return whether the categories are folded out: while their page or one of them is shown */
-	private boolean categoriesOpen() {
-		Feature page = pages.get(Mth.clamp(selectedIndex, 0, pages.size() - 1));
-		return page instanceof FeatureListFeature list && (list.hasSubPages() || list.parentPage() != null);
+	/** @return the page item whose categories are folded out: the shown page when it has categories, the page of the shown category, or -1 */
+	private int openParent() {
+		int selected = Mth.clamp(selectedIndex, 0, pages.size() - 1);
+		if (pages.get(selected) instanceof FeatureListFeature list && list.hasSubPages()) {
+			return selected;
+		}
+		return sidebarParents.length == pages.size() ? sidebarParents[selected] : -1;
 	}
 
-	/** Lays out the page items: the regular pages from the top with gaps between their groups, the menu settings at the bottom. */
+	/** @return how far the category item is folded out, from 0 to 1; 1 for a page item */
+	private float expandOfSub(int index) {
+		int parent = sidebarParents[index];
+		return parent < 0 ? 1f : sidebarExpand[parent];
+	}
+
+	/**
+	 * Lays out the page items: Home, then the groups under their labels with a gap before each, and fixed at the bottom the tools (Configs, the
+	 * HUD editor, the menu settings) under theirs. The part in between scrolls when the window is too small for it.
+	 */
 	private void layoutSidebar(Ui ui) {
-		if (sidebarTops.length != pages.size()) {
+		boolean first = sidebarTops.length != pages.size();
+		if (first) {
 			sidebarTops = new int[pages.size()];
+			sidebarExpand = new float[pages.size()];
+			expandSprings = new Spring[pages.size()];
+			sidebarParents = new int[pages.size()];
+			for (int i = 0; i < pages.size(); i++) {
+				sidebarParents[i] = isSubPage(i) ? pages.indexOf(((FeatureListFeature) pages.get(i)).parentPage()) : -1;
+				if (pages.get(i) instanceof FeatureListFeature list && list.hasSubPages()) {
+					expandSprings[i] = Spring.smooth(Spring.DEFAULT);
+				}
+			}
 		}
-		float target = categoriesOpen() ? 1f : 0f;
-		// the categories fold on the same spring as the highlight moving between items, so both arrive together
-		sidebarExpand = sidebarExpand < 0f ? expandSpring.snap(target) : Mth.clamp(expandSpring.follow(ui, target), 0f, 1f);
+		int open = openParent();
+		for (int i = 0; i < pages.size(); i++) {
+			if (expandSprings[i] != null) {
+				float target = i == open ? 1f : 0f;
+				// the categories fold on the same spring as the highlight moving between items, so both arrive together; each page's on its own,
+				// so one folds in while the other folds out
+				sidebarExpand[i] = first ? expandSprings[i].snap(target) : Mth.clamp(expandSprings[i].follow(ui, target), 0f, 1f);
+			}
+		}
 		float y = ITEMS_TOP;
 		int regular = regularCount();
+		java.util.Arrays.fill(groupLabelTops, NO_LABEL);
 		for (int i = 0; i < regular; i++) {
 			if (gapBefore(i)) {
 				y += GROUP_GAP;
+				groupLabelTops[groupOf(i).ordinal()] = Math.round(y);
+				y += GROUP_LABEL_ROW;
 			}
 			sidebarTops[i] = Math.round(y);
-			if (isSubPage(i)) {
-				y += (SUB_ITEM_HEIGHT + SUB_ITEM_GAP + (i + 1 < regular && !isSubPage(i + 1) ? SUB_ITEMS_AFTER : 0)) * sidebarExpand;
-			} else {
-				y += ITEM_HEIGHT + ITEM_GAP;
-			}
+			y += (ITEM_HEIGHT + ITEM_GAP) * expandOfSub(i);
 		}
 		// what does not fit scrolls, above the fixed part at the bottom and never over it
-		sidebarListEnd = hudItemY() - windowY - SIDEBAR_BOTTOM_ROOM;
+		int toolsTop = toolsTop();
+		sidebarListEnd = toolsTop - GROUP_LABEL_ROW - SIDEBAR_BOTTOM_ROOM;
 		sidebarMostScroll = Math.max(0f, y - sidebarListEnd);
 		keepSelectedInSidebar(regular);
 		sidebarScroll = Mth.clamp(sidebarScroll, 0f, sidebarMostScroll);
@@ -3142,9 +3817,30 @@ public class MacScreen extends Screen {
 		for (int i = 0; i < regular; i++) {
 			sidebarTops[i] -= moved;
 		}
-		if (menu != null) {
-			sidebarTops[pages.size() - 1] = windowHeight - BOTTOM_PAD - ITEM_HEIGHT;
+		for (int group = 0; group < groupLabelTops.length; group++) {
+			groupLabelTops[group] -= groupLabelTops[group] == NO_LABEL ? 0 : moved;
 		}
+		// the tools: the HUD editor first, then the pages of that group (Configs), the menu settings last
+		groupLabelTops[SidebarOrder.Group.TOOLS.ordinal()] = toolsTop - GROUP_LABEL_ROW;
+		int row = 1;
+		for (int i = regular; i < pages.size(); i++) {
+			sidebarTops[i] = toolsTop + row * (ITEM_HEIGHT + ITEM_GAP);
+			row++;
+		}
+	}
+
+	/** Where the label over each group is, from the window's top, or {@link #NO_LABEL}; laid out with the items. */
+	private final int[] groupLabelTops = new int[SidebarOrder.Group.values().length];
+	private static final int NO_LABEL = Integer.MIN_VALUE;
+
+	/** @return how many rows the fixed part at the bottom has: its pages and the HUD editor */
+	private int toolRows() {
+		return pages.size() - regularCount() + 1;
+	}
+
+	/** @return the top of the first row of the tools at the bottom, from the window's top */
+	private int toolsTop() {
+		return windowHeight - BOTTOM_PAD - toolRows() * ITEM_HEIGHT - (toolRows() - 1) * ITEM_GAP;
 	}
 
 	/** Where the sidebar's list ends, from the window's top, how far it can scroll, and how far it has. */
@@ -3180,7 +3876,7 @@ public class MacScreen extends Screen {
 			return -1;
 		}
 		for (int i = 0; i < pages.size(); i++) {
-			if (isSubPage(i) && sidebarExpand < 0.9f) {
+			if (isSubPage(i) && expandOfSub(i) < 0.9f) {
 				continue;
 			}
 			if (i < regularCount() && !inSidebarList(mouseY)) {
@@ -3203,7 +3899,9 @@ public class MacScreen extends Screen {
 			sidebarCounts = new String[pages.size()];
 			for (int i = 0; i < pages.size(); i++) {
 				// a page with categories has a chevron instead, and a page with a single feature (music) needs no number; categories always show it
-				if (pages.get(i) instanceof FeatureListFeature list && !list.hasSubPages() && (list.featureCount() > 1 || list.parentPage() != null)) {
+				if (SidebarOrder.devPage(pages.get(i).id())) {
+					sidebarCounts[i] = DEV_TAG;
+				} else if (pages.get(i) instanceof FeatureListFeature list && !list.hasSubPages() && (list.featureCount() > 1 || list.isGroupPage())) {
 					sidebarCounts[i] = String.valueOf(list.featureCount());
 				}
 			}
@@ -3212,62 +3910,37 @@ public class MacScreen extends Screen {
 			itemHover = new float[pages.size()];
 		}
 		int selected = Mth.clamp(selectedIndex, 0, pages.size() - 1);
-		float targetY = sidebarTops[selected];
-		float targetIndent = isSubPage(selected) ? SUB_ITEM_INDENT : 0f;
-		if (!highlightSnapped) {
-			highlightSpring.snap(targetY);
-			highlightHeight.snap(itemHeightOf(selected));
-			highlightIndent.snap(targetIndent);
-			highlightSnapped = true;
-		}
-		// the highlight springs to the selected item, in position, height and indent, and keeps its velocity when another one is clicked mid-flight
-		int highlightY = windowY + Math.round(ui.animated ? highlightSpring.follow(ui, targetY) : targetY);
-		int highlightH = Math.round(ui.animated ? highlightHeight.follow(ui, itemHeightOf(selected)) : itemHeightOf(selected));
-		int indent = Math.round(ui.animated ? highlightIndent.follow(ui, targetIndent) : targetIndent);
+		boolean bottomSelected = selected >= regularCount();
+		// the highlight lives in the list's content coordinates: the scroll is added back here and taken off again when drawn, so it moves with
+		// its row exactly while the list scrolls; only a change of the selection glides (the fixed rows at the bottom do not scroll)
+		int scrolled = bottomSelected ? 0 : Math.round(sidebarScroll);
+		highlight.follow(selected, sidebarTops[selected] + scrolled, itemHeightOf(selected), isSubPage(selected) ? SUB_ITEM_INDENT : 0f,
+				ui.deltaSeconds(), ui.animated);
+		int highlightY = windowY + Math.round(highlight.y()) - scrolled;
+		int highlightH = Math.round(highlight.height());
+		int indent = Math.round(highlight.indent());
 
-		boolean bottomSelected = menu != null && selected == pages.size() - 1;
 		ui.graphics.enableScissor(windowX, windowY + ITEMS_TOP - 1, windowX + SIDEBAR, windowY + sidebarListEnd);
-		// the page whose category is shown keeps a light highlight of its own
-		if (isSubPage(selected)) {
-			int parent = pages.indexOf(((FeatureListFeature) pages.get(selected)).parentPage());
-			if (parent >= 0) {
-				ui.rounded(itemX, windowY + sidebarTops[parent], itemWidth, ITEM_HEIGHT, Radius.SM, palette.hover());
+		for (SidebarOrder.Group group : SidebarOrder.Group.values()) {
+			if (group != SidebarOrder.Group.TOOLS) {
+				drawGroupLabel(ui, group);
 			}
 		}
 		int hovered = sidebarItemAt(mouseX, mouseY);
-		boolean subsShown = sidebarExpand > 0.02f;
-		int subsTop = -1;
-		int subsBottom = -1;
 		for (int i = 0; i < pages.size(); i++) {
-			if (isSubPage(i)) {
-				if (subsShown) {
-					subsTop = subsTop < 0 ? windowY + sidebarTops[i] : subsTop;
-					subsBottom = windowY + sidebarTops[i] + Math.round(SUB_ITEM_HEIGHT * sidebarExpand);
-				}
-				continue;
+			if (!isSubPage(i)) {
+				itemHover[i] = ui.approach(itemHover[i], hovered == i && i != selected ? 1f : 0f, Ui.HOVER_RATE);
 			}
-			itemHover[i] = ui.approach(itemHover[i], hovered == i && i != selected ? 1f : 0f, Ui.HOVER_RATE);
 		}
 		// the highlight is drawn before the categories are clipped: moving to or from a category while they fold, it must not be cut off by
 		// their shrinking area (it vanished and popped into place when leaving a SkyBlock category)
-		if (!bottomSelected && (!isSubPage(selected) || subsShown)) {
+		if (!bottomSelected && (!isSubPage(selected) || expandOfSub(selected) > SUBS_SHOWN)) {
 			ui.rounded(itemX + indent, highlightY, itemWidth - indent, highlightH, Radius.SM, ui.accent);
 		}
-		if (subsShown && subsTop >= 0) {
-			// the categories fold out of their page: clipped to the space they have taken so far
-			ui.graphics.enableScissor(itemX, subsTop, itemX + itemWidth, subsBottom);
-			ui.fill(itemX + SUB_GUIDE_X, subsTop + 2, 1, subsBottom - subsTop - 4, palette.cardBorder());
-		}
-		for (int i = 0; i < pages.size(); i++) {
-			if (isSubPage(i)) {
-				if (subsShown) {
-					itemHover[i] = ui.approach(itemHover[i], hovered == i && i != selected ? 1f : 0f, Ui.HOVER_RATE);
-					drawSubItem(ui, i, i == selected);
-				}
+		for (int parent = 0; parent < pages.size(); parent++) {
+			if (sidebarExpand[parent] > SUBS_SHOWN) {
+				drawSubItems(ui, parent, hovered, selected);
 			}
-		}
-		if (subsShown && subsTop >= 0) {
-			ui.graphics.disableScissor();
 		}
 		int regular = regularCount();
 		for (int i = 0; i < regular; i++) {
@@ -3285,22 +3958,66 @@ public class MacScreen extends Screen {
 			}
 		}
 
-		// the bottom section: the HUD editor, which is an action rather than a page, above the menu settings, under a separator
+		// the tools at the bottom, under their label: the HUD editor, which is an action rather than a page, is the first of them
+		drawGroupLabel(ui, SidebarOrder.Group.TOOLS);
 		int hudY = hudItemY();
 		boolean overHud = overHudItem(mouseX, mouseY);
 		hudItemHover = ui.approach(hudItemHover, overHud ? 1f : 0f, Ui.HOVER_RATE);
-		ui.fill(itemX + 4, hudY - 5, itemWidth - 8, 1, palette.cardBorder());
 		// a neutral tile in the theme's control colors, so it reads in the light theme too
-		drawSidebarItem(ui, hudY, hudItemHover, false, palette.trackOff(), "layout", palette.text(), "Edit HUD layout", null, false);
+		drawSidebarItem(ui, hudY, hudItemHover, false, palette.trackOff(), "layout", palette.text(), "Edit HUD layout", null, -1f);
+	}
+
+	/** Draws the small uppercase label over a group, where the group has one and is shown. */
+	private void drawGroupLabel(Ui ui, SidebarOrder.Group group) {
+		int top = groupLabelTops[group.ordinal()];
+		if (group.label() == null || top == NO_LABEL) {
+			return;
+		}
+		ui.textAtScaledBold(group.label(), windowX + SIDE_INSET + GROUP_LABEL_LEFT, windowY + top + 1.5f, GROUP_LABEL_SCALE,
+			ui.palette.textSecondary());
+	}
+
+	/** Draws the categories of one page, folding out of it: clipped to the space they have taken so far, along a guide line. */
+	private void drawSubItems(Ui ui, int parent, int hovered, int selected) {
+		int itemX = windowX + SIDE_INSET;
+		int itemWidth = SIDEBAR - 2 * SIDE_INSET;
+		// whether there are categories at all is its own flag: scrolled above the screen's top their place is negative, and taking a negative
+		// place for "none" (the mistake that blanked the Keybinds page) would skip the first of them or all
+		boolean any = false;
+		int top = 0;
+		int bottom = 0;
+		for (int i = 0; i < pages.size(); i++) {
+			if (sidebarParents[i] == parent) {
+				top = any ? top : windowY + sidebarTops[i];
+				any = true;
+				bottom = windowY + sidebarTops[i] + Math.round(SUB_ITEM_HEIGHT * sidebarExpand[parent]);
+			}
+		}
+		if (!any) {
+			return;
+		}
+		ui.graphics.enableScissor(itemX, top, itemX + itemWidth, bottom);
+		ui.fill(itemX + SUB_GUIDE_X, top + 2, 1, bottom - top - 4, ui.palette.cardBorder());
+		for (int i = 0; i < pages.size(); i++) {
+			if (sidebarParents[i] == parent) {
+				itemHover[i] = ui.approach(itemHover[i], hovered == i && i != selected ? 1f : 0f, Ui.HOVER_RATE);
+				drawSubItem(ui, i, i == selected);
+			}
+		}
+		ui.graphics.disableScissor();
 	}
 
 	private void drawPageItem(Ui ui, int index, int selected) {
 		Feature feature = pages.get(index);
 		drawSidebarItem(ui, windowY + sidebarTops[index], itemHover[index], index == selected, 0xFF000000 | feature.iconRgb(), feature.iconName(), 0xFFFFFFFF,
-			feature.nameText(), sidebarCounts[index], feature instanceof FeatureListFeature list && list.hasSubPages());
+			feature.nameText(), sidebarCounts[index], feature instanceof FeatureListFeature list && list.hasSubPages() ? sidebarExpand[index] : -1f);
+		if (feature == ModFeatures.HOME && WhatsNewScreen.unseen()) {
+			// something new waits in What is new: a quiet dot at the end of Home's row, never a window of its own
+			ui.circle(windowX + SIDEBAR - SIDE_INSET - 10, windowY + sidebarTops[index] + ITEM_HEIGHT / 2, NEW_DOT, SystemColors.GREEN);
+		}
 	}
 
-	/** Draws a category item: its name indented under its page, a dot where the player is, and the number of its features. */
+	/** Draws a category item: its name indented under its page, and the number of its features. */
 	private void drawSubItem(Ui ui, int index, boolean selected) {
 		Palette palette = ui.palette;
 		FeatureListFeature page = (FeatureListFeature) pages.get(index);
@@ -3312,22 +4029,39 @@ public class MacScreen extends Screen {
 			ui.rounded(itemX, top, itemWidth, SUB_ITEM_HEIGHT, Radius.SM, Ui.withOpacity(palette.hover(), itemHover[index]));
 		}
 		int right = itemX + itemWidth - 6;
-		String count = sidebarCounts[index];
-		if (count != null) {
-			ui.textRight(count, right, middle, selected ? 0xCCFFFFFF : Ui.withOpacity(palette.textSecondary(), 0.85f));
-		}
+		int trailing = drawCount(ui, sidebarCounts[index], right, middle, selected);
 		int textX = itemX + 7;
-		int room = right - (count != null ? ui.width(count) + 6 : 0) - textX - 2 * HERE_DOT - 6;
-		String name = ui.fit(page.nameText(), room);
+		String name = ui.fit(page.nameText(), right - trailing - textX);
 		ui.textMiddle(name, textX, middle, selected ? 0xFFFFFFFF : Ui.mix(palette.text(), palette.textSecondary(), 0.25f));
-		if (page.isHere()) {
-			ui.circle(textX + ui.width(name) + 6 + HERE_DOT, middle, HERE_DOT, SystemColors.GREEN);
+	}
+
+	/**
+	 * Draws what a row shows at its right end: the number of its features, small and dim, or the "DEV" tag of a developer's page.
+	 *
+	 * @return the room it takes, with the gap before it; 0 without one
+	 */
+	private int drawCount(Ui ui, String count, int right, int middle, boolean selected) {
+		if (count == null) {
+			return 0;
 		}
+		Palette palette = ui.palette;
+		if (count.equals(DEV_TAG)) {
+			int height = 9;
+			int tagColor = selected ? 0xFFFFFFFF : palette.textSecondary();
+			int width = Math.round(ui.boldDrawnWidthScaled(DEV_TAG, DEV_TAG_SCALE, Ui.withOpacity(tagColor, 0.8f))) + 7;
+			ui.rounded(right - width, middle - height / 2, width, height, Radius.box(height), Ui.withOpacity(tagColor, 0.14f));
+			ui.textAtScaledBold(DEV_TAG, right - width + 3.5f, middle - 2.5f, DEV_TAG_SCALE, Ui.withOpacity(tagColor, 0.8f));
+			return width + 6;
+		}
+		float width = ui.widthScaled(count, COUNT_SCALE);
+		ui.textAtScaled(count, right - width, middle - 3f, COUNT_SCALE, selected ? 0xF2FFFFFF : palette.textSecondary());
+		return Math.round(width) + 6;
 	}
 
 	/** Draws one sidebar item: the icon on its colored tile, the name, and on the right a count or a chevron. */
 	private void drawSidebarItem(Ui ui, int itemY, float hover, boolean selected, int tile, String icon, int iconColor, String name, String count,
-		boolean chevron) {
+		float chevronOpen) {
+		boolean chevron = chevronOpen >= 0f;
 		Palette palette = ui.palette;
 		int itemX = windowX + SIDE_INSET;
 		int itemWidth = SIDEBAR - 2 * SIDE_INSET;
@@ -3344,21 +4078,20 @@ public class MacScreen extends Screen {
 			var pose = ui.graphics.pose();
 			pose.pushMatrix();
 			pose.translate(right - 4f, middle);
-			pose.rotate((float) (-Math.PI / 2.0 * (1f - Mth.clamp(sidebarExpand, 0f, 1f))));
+			pose.rotate((float) (-Math.PI / 2.0 * (1f - Mth.clamp(chevronOpen, 0f, 1f))));
 			ui.icon("chevron", -4, -4, 8, selected ? 0xCCFFFFFF : Ui.withOpacity(palette.textSecondary(), 0.8f));
 			pose.popMatrix();
 			trailing = 12;
-		} else if (count != null) {
-			ui.textRight(count, right, middle, selected ? 0xCCFFFFFF : Ui.withOpacity(palette.textSecondary(), 0.85f));
-			trailing = ui.width(count) + 6;
+		} else {
+			trailing = drawCount(ui, count, right, middle, selected);
 		}
 		int textX = tileX + TILE + 6;
 		ui.textMiddle(ui.fit(name, right - trailing - textX), textX, middle, selected ? 0xFFFFFFFF : palette.text());
 	}
 
-	/** @return top of the HUD editor item, just above the menu settings at the bottom */
+	/** @return top of the HUD editor item, the first of the tools at the bottom */
 	private int hudItemY() {
-		return windowY + windowHeight - BOTTOM_PAD - 2 * ITEM_HEIGHT - ITEM_GAP;
+		return windowY + toolsTop();
 	}
 
 	private boolean overHudItem(double mouseX, double mouseY) {
@@ -3366,23 +4099,24 @@ public class MacScreen extends Screen {
 		return single == null && mouseX >= itemX && mouseX < itemX + SIDEBAR - 2 * SIDE_INSET && mouseY >= hudItemY() && mouseY < hudItemY() + ITEM_HEIGHT;
 	}
 
-	/** @return the sidebar group of a page; groups are separated by a gap */
-	private int groupOf(int index) {
+	/** @return the sidebar group of a page; a category belongs to the group of its page */
+	private SidebarOrder.Group groupOf(int index) {
 		if (isSubPage(index)) {
-			return 1; // the categories belong to the group of their page
+			return groupOf(pages.indexOf(((FeatureListFeature) pages.get(index)).parentPage()));
 		}
-		return switch (pages.get(index).id()) {
-			// the feature pages form one group, the configs another
-			case "world", "interface", "skyblock", "music_page", "misc" -> 1;
-			case "configs" -> 2;
-			default -> index == 0 ? 0 : 3;
-		};
+		return pages.get(index) == menu ? SidebarOrder.Group.TOOLS : SidebarOrder.group(pages.get(index).id());
 	}
 
+	/** @return how many pages are in the part that scrolls: all but the tools, which are the last ones and fixed at the bottom */
 	private int regularCount() {
-		return pages.size() - (menu != null ? 1 : 0);
+		int regular = pages.size();
+		while (regular > 0 && groupOf(regular - 1) == SidebarOrder.Group.TOOLS) {
+			regular--;
+		}
+		return regular;
 	}
 
+	/** @return whether a group starts at a page: its label goes over it, after the gap between groups */
 	private boolean gapBefore(int index) {
 		return index > 0 && index < regularCount() && groupOf(index) != groupOf(index - 1);
 	}
@@ -3408,7 +4142,7 @@ public class MacScreen extends Screen {
 	private String headerParent;
 	private String hereText = "";
 
-	/** Checks once where the player is, for the dots in the sidebar and the chip in the header of a category. */
+	/** Checks once where the player is, for the chip in the header of a category. */
 	private void refreshHere() {
 		for (Feature page : pages) {
 			if (page instanceof FeatureListFeature list) {
@@ -3432,8 +4166,7 @@ public class MacScreen extends Screen {
 			return;
 		}
 		if (showsSheet()) {
-			backRight = -1;
-			pageSwitchX = -1;
+				pageSwitchX = -1;
 			drawSheetHeader(ui, mouseX, mouseY);
 			return;
 		}
@@ -3442,7 +4175,6 @@ public class MacScreen extends Screen {
 			pageSwitchX = -1;
 			return;
 		}
-		backRight = -1;
 		if (headerParent != null) {
 			// a category names its page above its title
 			ui.textAtScaled(headerParent, left, windowY + 8, TextScale.SMALL, ui.palette.textSecondary());
@@ -3460,8 +4192,10 @@ public class MacScreen extends Screen {
 		}
 		right = drawHeaderButtons(ui, page, right, mouseX, mouseY);
 		// page titles in the bold face, as the largest step of the menu's text sizes
-		String title = ui.fit(headerTitle, Math.round((right - left) / (TextScale.TITLE * BOLD_WIDER)));
-		ui.textAtScaledTitle(title, left, windowY + 18, TextScale.TITLE, ui.palette.text());
+		// a title that does not fit beside the header's buttons is set a step smaller before it is cut
+		float titleScale = titleScale(ui, headerTitle, right - left);
+		String title = ui.fit(headerTitle, Math.round((right - left) / (titleScale * BOLD_WIDER)));
+		ui.textAtScaledTitle(title, left, windowY + 18 + (TextScale.TITLE - titleScale) * TITLE_HALF, titleScale, ui.palette.text());
 		String chip = searching() ? null : page.headerChip();
 		if (chip != null) {
 			// a chip after the title, such as the version on the home page, centered on the title's letters
@@ -3563,7 +4297,7 @@ public class MacScreen extends Screen {
 			return;
 		}
 		int left = windowX + side() + 1;
-		int top = single != null ? windowY + TITLE_BAR : windowY + 1;
+		int top = single != null ? windowY + TITLE_BAR : windowY + (bar() > 0 ? 0 : 1);
 		// up to the window's edge, which is drawn over it: the same box and radius as the window, so their corners are the same curve
 		int right = windowX + windowWidth;
 		int bottom = windowY + windowHeight;
@@ -3581,7 +4315,7 @@ public class MacScreen extends Screen {
 		int first = Ui.withOpacity(ui.accent | 0xFF000000, strength);
 		int second = Ui.withOpacity(0xFF000000 | menu.secondGlowRgb(), strength * SECOND_LIGHT);
 		// cut to the window's own curve, in one piece: a scissor is square, and one per row of the corners rounded apart in a window of any other size, each seam a thin line
-		float[] rows = RoundedRows.edges(left, top, right, bottom, windowX, windowY, right, bottom, Radius.XXL);
+		float[] rows = RoundedRows.edges(left, top, right, bottom, windowX, frameY, right, bottom, Radius.XXL);
 		ui.washInRows(firstX, firstY, radiusX, radiusY, first, rows);
 		ui.washInRows(secondX, secondY, radiusX, radiusY, second, rows);
 	}
@@ -3596,7 +4330,8 @@ public class MacScreen extends Screen {
 
 	/** @return the live preview of the page chosen in the sidebar, also on its sub-pages, or null; the settings of a feature have none */
 	private PagePreview pagePreview() {
-		return single == null && editor == null && !searching() ? listedPage().preview() : null;
+		PagePreview preview = single == null && editor == null && !searching() ? listedPage().preview() : null;
+		return preview != null && (subTitles.isEmpty() || subTitle == null || preview.shownOn(subTitle)) ? preview : null;
 	}
 
 	/** @return the width the preview takes from the page */
@@ -3683,6 +4418,10 @@ public class MacScreen extends Screen {
 				ui.ring(x, y, width, HEADER_BUTTON_HEIGHT, Radius.SM, 1, Ui.mix(Ui.withOpacity(palette.text(), 0.16f), ui.accent, 0.6f * hover));
 				ui.textAtScaled(button.text(), x + (width - textWidth) / 2f, y + HEADER_BUTTON_HEIGHT / 2f - 4f, TextScale.BODY, palette.text());
 			}
+			if (button.dot().getAsBoolean()) {
+				// a quiet mark that something waits behind the button (what is new after an update): a small dot at its top right corner
+				ui.circle(x + width - 3, y + 3, NEW_DOT, SystemColors.GREEN);
+			}
 			headerButtonX[i] = x;
 			headerButtonWidth[i] = width;
 			headerButtonCount = Math.max(headerButtonCount, i + 1);
@@ -3705,17 +4444,29 @@ public class MacScreen extends Screen {
 		return -1;
 	}
 
+	private static final int HERE_DOT = 3;
+	/** The dot on Home and its What is new button while something new waits there. */
+	private static final int NEW_DOT = 3;
+
 	/** Draws the chip saying where the player is, ending at the right edge; @return its left edge */
 	private int drawHereChip(Ui ui, int right) {
 		int height = 16;
 		int width = ui.width(hereText) + 2 * HERE_DOT + 16;
 		int x = right - width;
 		int y = windowY + 20;
-		ui.rounded(x, y, width, height, Radius.pill(height), Ui.withOpacity(SystemColors.GREEN, 0.16f));
-		ui.ring(x, y, width, height, Radius.pill(height), 1, Ui.withOpacity(SystemColors.GREEN, 0.35f));
+		ui.rounded(x, y, width, height, Radius.box(height), Ui.withOpacity(SystemColors.GREEN, 0.16f));
+		ui.ring(x, y, width, height, Radius.box(height), 1, Ui.withOpacity(SystemColors.GREEN, 0.35f));
 		ui.circle(x + 6 + HERE_DOT, y + height / 2, HERE_DOT, SystemColors.GREEN);
 		ui.textMiddle(hereText, x + 10 + 2 * HERE_DOT, y + height / 2, Ui.mix(ui.palette.text(), SystemColors.GREEN, 0.35f));
 		return x - 8;
+	}
+
+	/** The one width of the page's choices, dropdowns, key fields and sliders this layout (see {@link ControlWidths}). */
+	private int pageControlWidth = ControlWidths.STANDARD;
+
+	/** @return the width a control wants beside its name: the page's one width for the controls that share it, else its own */
+	private int naturalWidth(Ui ui, Control control, int available) {
+		return control.standardNeed(ui) >= 0 ? Math.min(available, pageControlWidth) : control.inlineWidth(ui, available);
 	}
 
 	/** The gap between a row's name (with its description) and its control on the line under it. */
@@ -3727,42 +4478,55 @@ public class MacScreen extends Screen {
 			return false;
 		}
 		int labelWidth = ui.width(row.setting().labelText()) + iconRoom(row.setting()) + indent;
-		int natural = row.control().inlineWidth(ui, innerWidth - indent);
+		int natural = naturalWidth(ui, row.control(), innerWidth - indent);
 		return natural > Math.max(60, innerWidth - labelWidth - 16) && natural <= innerWidth - indent;
 	}
 
 	private void drawGroup(Ui ui, Placed p, int mouseX, int mouseY) {
-		if (p.cardY + p.cardHeight < contentTop - 30 || p.top > contentBottom + 30 || p.clipHeight == 0) {
+		if (p.cardY + p.cardHeight < contentTop - 30 || p.top > contentBottom + 30) {
 			// off screen, from its title or leading cards down; the controls still keep their position for keyboard navigation
 			return;
 		}
-		if (p.clipHeight < 0) {
-			drawGroupContent(ui, p, mouseX, mouseY);
-			return;
+		// each part with its own share of light: 1, except while the page's content changes
+		float alphaBefore = Ui.alpha();
+		if (p.cardLight > 0f) {
+			Ui.setAlpha(alphaBefore * p.cardLight);
+			drawGroupCard(ui, p);
 		}
-		// growing in or shrinking away: only the part within the space it takes now
-		ui.graphics.enableScissor(p.cardX - GROUP_CLIP_MARGIN, p.top, p.cardX + p.cardWidth + GROUP_CLIP_MARGIN, p.top + p.clipHeight);
-		drawGroupContent(ui, p, mouseX, mouseY);
-		ui.graphics.disableScissor();
+		drawGroupRows(ui, p, mouseX, mouseY, alphaBefore);
+		Ui.setAlpha(alphaBefore);
 	}
 
-	/** Room beside a clipped group for its rings and shadows. */
-	private static final int GROUP_CLIP_MARGIN = 4;
-
-	private void drawGroupContent(Ui ui, Placed p, int mouseX, int mouseY) {
+	private void drawGroupCard(Ui ui, Placed p) {
 		Palette palette = ui.palette;
-		int rowPad = compactPage() ? COMPACT_ROW_PAD : ROW_PAD;
 		if (p.titled) {
 			ui.sectionLabel(p.group.upperTitle, p.cardX + 4, p.titleY + 1, palette.textSecondary());
+			if (pageGroup(p.group)) {
+				// a named group of a page's features: a thin line from its name to the page's edge
+				float lineX = p.cardX + 4 + ui.sectionLabelWidth(p.group.upperTitle) + PAGE_GROUP_LINE_GAP;
+				float lineEnd = p.cardX + p.cardWidth - 2;
+				if (lineEnd > lineX) {
+					ui.fill(Math.round(lineX), p.titleY + PAGE_GROUP_LINE_DROP, Math.round(lineEnd - lineX), 1, Ui.withOpacity(palette.text(), PAGE_GROUP_LINE_OPACITY));
+				}
+			}
 		}
 		// a group of bare cards (a page's features) gets no card of its own
 		if (!p.group.bare()) {
 			ui.rounded(p.cardX, p.cardY, p.cardWidth, p.cardHeight, Radius.LG, palette.card());
 			ui.ring(p.cardX, p.cardY, p.cardWidth, p.cardHeight, Radius.LG, 1, palette.cardBorder());
 		}
+	}
 
+	private void drawGroupRows(Ui ui, Placed p, int mouseX, int mouseY, float alpha) {
+		Palette palette = ui.palette;
+		int rowPad = compactPage() ? COMPACT_ROW_PAD : ROW_PAD;
 		for (int i = 0; i < p.group.rows().size(); i++) {
 			Row row = p.group.rows().get(i);
+			float share = i < p.rows ? p.rowLights[i] : 1f;
+			if (share <= 0f) {
+				continue;
+			}
+			Ui.setAlpha(alpha * share);
 			int top = p.rowTops[i];
 			int rowHeight = p.rowHeights[i];
 			if (row.control().bare()) {
@@ -3771,6 +4535,10 @@ public class MacScreen extends Screen {
 			}
 			// the name starts after the icon; a sub-option has no icon of its own and is indented under the setting it belongs to
 			int textX = p.cardX + CARD_PAD + iconRoom(row.setting()) + row.depth * SUB_INDENT;
+			if (row.depth > 0) {
+				// rows that belong to the setting above them carry a line in the accent at their left
+				ui.fill(textX - SUB_INDENT + SUB_LINE_INSET, top + SUB_LINE_INSET, SUB_LINE_WIDTH, rowHeight - 2 * SUB_LINE_INSET, Ui.withOpacity(ui.accent(), SUB_LINE_OPACITY));
+			}
 			if (top > p.cardY) {
 				// subtle separator between settings, starting under the name rather than the icon, like phone lists
 				ui.fill(textX - 2, top, p.cardX + p.cardWidth - CARD_PAD - textX + 2, 1, Ui.withOpacity(palette.text(), palette == MacTheme.COLORED.palette() ? MacTheme.COLORED.lineOpacity(GLASS_DIVIDER_OPACITY) : palette.glass() ? GLASS_DIVIDER_OPACITY : DIVIDER_OPACITY));
@@ -3827,16 +4595,27 @@ public class MacScreen extends Screen {
 			} else if (row.setting() instanceof SearchHitSetting hit && hit.icon() != null) {
 				ui.iconTile(hit.icon(), p.cardX + CARD_PAD - 1, labelMiddle - 8, 16, 11, Radius.XS, 0xFF000000 | hit.iconRgb(), 0xFFFFFFFF);
 			}
-			String shownLabel = row.control().isBlock() && !row.control().hasLabel() ? label : ui.fit(label, Math.max(40, labelRoom));
+			// a row with a longer explanation has a small mark after its name; the explanation shows while the pointer rests on either
+			String tip = row.setting().tooltip();
+			int tipRoom = tip != null ? TIP_MARK + TIP_GAP : 0;
+			String shownLabel = row.control().isBlock() && !row.control().hasLabel() ? label : ui.fit(label, Math.max(40, labelRoom - tipRoom));
 			if (!row.control().isBlock() || row.control().hasLabel()) {
 				ui.textMiddle(shownLabel, textX, labelMiddle, labelColor);
+				if (tip != null) {
+					int markX = textX + ui.width(shownLabel) + TIP_GAP;
+					ui.inlineIcon("info", markX, labelMiddle, Ui.TEXT_HEIGHT, Ui.withOpacity(palette.textSecondary(), 0.8f));
+					if (mouseX >= textX && mouseX < markX + TIP_MARK && Math.abs(mouseY - labelMiddle) <= 6) {
+						tooltip = tip;
+					}
+				}
 			}
 			// a name too long for its room is shown in full on hover
 			if (shownLabel.length() != label.length() && mouseX >= textX && mouseX < textX + Math.max(40, labelRoom) && Math.abs(mouseY - labelMiddle) <= 6) {
 				tooltip = label;
 			}
 			if (lines > 0) {
-				List<String> explanation = descriptionLines.get(row.setting());
+				DescriptionWrap wrapped = descriptionLines.get(row.setting());
+				List<String> explanation = wrapped == null ? null : wrapped.lines();
 				if (explanation != null) {
 					for (int k = 0; k < explanation.size(); k++) {
 						ui.textAtScaled(explanation.get(k), textX, descriptionTop + 7 + k * DESCRIPTION_LINE, DESCRIPTION_SCALE,
@@ -3844,15 +4623,36 @@ public class MacScreen extends Screen {
 					}
 				}
 			}
-			row.control().renderSafely(ui, mouseX, mouseY);
-			if (row.setting().isDisabled()) {
-				drawDisabled(ui, p, row, mouseX, mouseY);
+			boolean disabled = row.setting().isDisabled();
+			// a row that can do nothing here and says why shows only that: its control steps aside for the note, the two in one cross-fade
+			float note = row.setting().disabledNote() == null ? 0f : noteLight(ui, row.setting(), disabled);
+			if (note < 1f) {
+				Ui.setAlpha(alpha * share * (1f - note));
+				row.control().renderSafely(ui, note > 0f ? -1 : mouseX, note > 0f ? -1 : mouseY);
+			}
+			if (disabled || note > 0f) {
+				Ui.setAlpha(alpha * share * (note > 0f ? note : 1f));
+				drawDisabled(ui, p, row, disabled ? mouseX : -1, disabled ? mouseY : -1);
 			}
 		}
 	}
 
+	/** How far each setting with a note of its own shows the note in place of its control, from 0 to 1; of the page shown. */
+	private final Reference2FloatOpenHashMap<Setting<?>> noteLights = new Reference2FloatOpenHashMap<>();
+
+	/** @return how much of its light a row's note has, the rest being its control's: it changes over in the time of a change of the content */
+	private float noteLight(Ui ui, Setting<?> setting, boolean disabled) {
+		float target = disabled ? 1f : 0f;
+		float light = ui.animated && noteLights.containsKey(setting) ? ui.approach(noteLights.getFloat(setting), target, 1f / TAB_SWITCH_SECONDS) : target;
+		noteLights.put(setting, light);
+		return eased(light);
+	}
+
 	/** What a smaller note needs beside its text: the lock and a margin. */
 	private static final int DISABLED_NOTE_ROOM = 28;
+	/** The lock before a disabled row's own note, and how strong the note is. */
+	private static final int DISABLED_LOCK = 10;
+	private static final float DISABLED_NOTE_OPACITY = 0.85f;
 
 	private void drawDisabled(Ui ui, Placed p, Row row, int mouseX, int mouseY) {
 		Palette palette = ui.palette;
@@ -3866,10 +4666,24 @@ public class MacScreen extends Screen {
 		int height = control.height() + 2 * spread;
 		boolean light = palette.light();
 		String own = row.setting().disabledNote();
-		// a note of its own stands over the control, so that has to stay behind it
-		ui.rounded(left, top, right - left, height, Radius.MD, light ? (own != null ? 0xF2F4F4F6 : 0xB8F4F4F6) : own != null ? 0xE6101014 : 0x70101014);
-		ui.ring(left, top, right - left, height, Radius.MD, 1, Ui.withOpacity(palette.textSecondary(), 0.18f));
 		int middle = top + height / 2;
+		if (own != null) {
+			// the control is not drawn: the lock and the note stand quietly at its right end, where its value was
+			int quiet = Ui.withOpacity(palette.textSecondary(), DISABLED_NOTE_OPACITY);
+			int noteRight = right - 5;
+			int noteWidth = Math.round(ui.widthScaled(own, TextScale.SMALL));
+			int noteX = Math.max(left + 5 + DISABLED_LOCK + 6, noteRight - noteWidth);
+			String fitted = ui.fitScaled(own, noteRight - noteX, TextScale.SMALL);
+			ui.icon("lock", noteX - DISABLED_LOCK - 6, middle - DISABLED_LOCK / 2, DISABLED_LOCK, quiet);
+			ui.textAtScaled(fitted, noteX, middle - TextScale.SMALL * 4f, TextScale.SMALL, quiet);
+			if (mouseX >= left && mouseX < right && mouseY >= top && mouseY < top + height) {
+				tooltip = own;
+			}
+			return;
+		}
+		// the menu's color: the control stays visible under a light veil
+		ui.rounded(left, top, right - left, height, Radius.MD, light ? 0xB8F4F4F6 : 0x70101014);
+		ui.ring(left, top, right - left, height, Radius.MD, 1, Ui.withOpacity(palette.textSecondary(), 0.18f));
 		String note = own != null ? own : "Menu color";
 		int noteWidth = ui.width(note);
 		int smallWidth = Math.round(ui.widthScaled(note, TextScale.SMALL));
@@ -3888,6 +4702,9 @@ public class MacScreen extends Screen {
 			tooltip = own != null ? own : "Disabled because this feature uses the color of the menu.";
 		}
 	}
+	/** The mark after a name that has a longer explanation on hover: its size and the room before it. */
+	private static final int TIP_MARK = 9;
+	private static final int TIP_GAP = 4;
 	/** The widest a tooltip gets before its text wraps, and its line height. */
 	private static final int TOOLTIP_WIDTH = 300;
 	private static final int TOOLTIP_LINE = 11;
@@ -3917,6 +4734,16 @@ public class MacScreen extends Screen {
 	}
 
 	/** Room in front of a row's name: a feature in a list and a search result show an icon there; settings have none. */
+	/** @return the room the mark of a longer explanation takes after a name, or 0 */
+	/** @return the size of a page title in a room: the title size, or a step smaller where it would not fit whole */
+	private static float titleScale(Ui ui, String title, int room) {
+		return ui.width(title) * TextScale.TITLE * BOLD_WIDER <= room ? TextScale.TITLE : TextScale.HEADING;
+	}
+
+	private static int tipRoom(Setting<?> setting) {
+		return setting.tooltip() != null ? TIP_MARK + TIP_GAP : 0;
+	}
+
 	private static int iconRoom(Setting<?> setting) {
 		return setting instanceof FeatureRowSetting || setting instanceof SearchHitSetting hit && hit.icon() != null ? LABEL_ICON : 0;
 	}
@@ -3964,6 +4791,12 @@ public class MacScreen extends Screen {
 
 	private boolean handleMouseClicked(MouseButtonEvent event, boolean doubleClick) {
 		if (closing) {
+			return true;
+		}
+		// the mouse's back and forward buttons go through the menu's history, as in a browser
+		int pressed = ScreenInput.button(event);
+		if (owner == null && single == null && (pressed == ScreenInput.BACK || pressed == ScreenInput.FORWARD)) {
+			travel(pressed == ScreenInput.FORWARD);
 			return true;
 		}
 		// a popup of the page gets the click first, also where it lies over the pane: otherwise its lower part could not be clicked
@@ -4025,15 +4858,18 @@ public class MacScreen extends Screen {
 				}
 				searchFocused = true;
 				// the clear button at the end of the field empties it
-				if (!query.isEmpty() && mouseX >= searchX() + SEARCH_WIDTH - 26) {
+				if (!query.isEmpty() && mouseX >= searchX() + searchWidth() - 26) {
 					clearQuery();
 				}
 				return true;
 			}
 			searchFocused = false;
-			if (overPaneClose(mouseX, mouseY) || overPaneBack(mouseX, mouseY)) {
-				owner.closeEditor();
-				UiSounds.play(UiSounds.Cue.CLOSE);
+			if (owner == null && overPaneClose(mouseX, mouseY)) {
+				onClose();
+				return true;
+			}
+			if (overBackChip(mouseX, mouseY)) {
+				stepBack();
 				return true;
 			}
 			int tab = tabAt(mouseX, mouseY);
@@ -4044,10 +4880,6 @@ public class MacScreen extends Screen {
 				return true;
 			}
 			if (tabsCollapsed && !searching() && !subTitles.isEmpty() && tabDropdown.mouseClicked(mouseX, mouseY, button)) {
-				return true;
-			}
-			if (overBack(mouseX, mouseY) || overSheetDone(mouseX, mouseY)) {
-				closeSubPage();
 				return true;
 			}
 			if (overHeaderSwitch(mouseX, mouseY)) {
@@ -4074,13 +4906,12 @@ public class MacScreen extends Screen {
 				onSettingChanged();
 				return true;
 			}
-			if (hasFooter() && footerReset.contains(mouseX, mouseY) && footerReset.mouseClicked(mouseX, mouseY, button)) {
-				dragged = footerReset;
+			if (hasFooter() && footerReset().contains(mouseX, mouseY) && footerReset().mouseClicked(mouseX, mouseY, button)) {
+				dragged = footerReset();
 				return true;
 			}
-			int light = owner == null ? trafficLightAt(mouseX, mouseY) : -1;
-			if (light >= 0) {
-				trafficLight(light);
+			if (owner == null && overMenuClose(mouseX, mouseY)) {
+				onClose();
 				return true;
 			}
 			int item = sidebarItemAt(mouseX, mouseY);
@@ -4134,6 +4965,10 @@ public class MacScreen extends Screen {
 					return true;
 				}
 			}
+		}
+		// a click beside a sheet or the pane, where nothing took it, goes back one step
+		if (button == ScreenInput.LEFT) {
+			clickBesideGoesBack(mouseX, mouseY);
 		}
 		return true;
 	}
@@ -4206,9 +5041,13 @@ public class MacScreen extends Screen {
 
 	@Override
 	public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+		// a key combination being recorded takes the wheel as its trigger
+		if (scrollY != 0 && dev.tim1337.lumio.ui.controls.ComboRecorder.turnWheel(scrollY > 0)) {
+			return true;
+		}
 		// Ctrl + wheel over the window changes its size around the mouse
-		if (owner == null && single == null && minecraft.hasControlDown() && mouseX >= windowX && mouseX < windowX + windowWidth * zoom && mouseY >= windowY
-			&& mouseY < windowY + windowHeight * zoom) {
+		if (owner == null && single == null && minecraft.hasControlDown() && mouseX >= windowX && mouseX < windowX + windowWidth * zoom && mouseY >= frameY
+			&& mouseY < frameY + fullHeightShown() * zoom) {
 			resizeBy(scrollY > 0 ? 1 : -1, mouseX, mouseY);
 			return true;
 		}
@@ -4253,7 +5092,11 @@ public class MacScreen extends Screen {
 			cancelDrags();
 			return true;
 		}
-		// Escape on a sub-page goes back to its page; with the settings pane open it closes the menu as before
+		if (owner == null && single == null && !typing() && (historyKey(event, false) || historyKey(event, true))) {
+			travel(historyKey(event, true));
+			return true;
+		}
+		// Escape goes back one step: the pane's sheet, the pane, the page's sub-page or sheet, then it closes the menu
 		if (event.key() == InputConstants.KEY_ESCAPE && subPage != null && editor == null && !typing() && openOverlay() == null && !searching()) {
 			closeSubPage();
 			return true;
@@ -4264,8 +5107,13 @@ public class MacScreen extends Screen {
 				return true;
 			}
 			if (event.key() == InputConstants.KEY_ESCAPE && !editor.typing() && editor.openOverlay() == null) {
-				// Escape closes the whole menu, also with the pane open; the pane comes back with the menu, where it was
-				onClose();
+				// the pane closes; opened right on it from another screen, the menu closes back to that screen, as it came
+				if (openedOn != null && editor.single == openedOn) {
+					onClose();
+				} else {
+					closeEditor();
+					UiSounds.play(UiSounds.Cue.CLOSE);
+				}
 				return true;
 			}
 			return editor.keyPressed(event);
@@ -4297,7 +5145,7 @@ public class MacScreen extends Screen {
 				return true;
 			}
 		}
-		if (single == null && control && ScreenInput.letter(event.key(), 'F') && focused == null) {
+		if (single == null && control && ScreenInput.letter(event.key(), 'F') && (focused == null || !focused.takesText())) {
 			// Ctrl+F focuses the search field, as in other programs
 			if (focused != null) {
 				focused.loseFocus();
@@ -4391,7 +5239,32 @@ public class MacScreen extends Screen {
 			graphics.fill(0, 0, width, height, 0x28000000);
 			return;
 		}
+		if (glassBlurredBackground(graphics)) {
+			return;
+		}
+		// the game's own blur: Auto times it as it times the glass, so a card that struggles with it gets the cheaper blur of a lower level
+		GlassPanes.timeGameBlur();
 		super.extractBackground(graphics, mouseX, mouseY, partialTick);
+	}
+
+	/** The game's blur radius at which the glass blurs all it can; a smaller radius blurs less, in step. At the game's default of 5 the two look alike. */
+	private static final float GAME_BLUR_AT_FULL = 7f;
+
+	/**
+	 * Below the High glass quality, in a world, the blur behind the menu is the glass's blur, at a small part of the cost of the game's own (on an
+	 * integrated card about 0.5 ms instead of 6); the game's darkening lies over it as before. High keeps the game's own blur.
+	 *
+	 * @return whether it was drawn so
+	 */
+	private boolean glassBlurredBackground(GuiGraphicsExtractor graphics) {
+		int radius = minecraft.options.getMenuBackgroundBlurriness();
+		if (isInGameUi() || minecraft.level == null || radius < 1 || !GlassPanes.active() || GlassPanes.level() == GlassPanes.Level.HIGH) {
+			return false;
+		}
+		GlassPanes.backdrop(new Ui(graphics, font, MacTheme.DARK.palette(), 0, 0f, false), width, height, Math.min(1f, radius / GAME_BLUR_AT_FULL));
+		extractMenuBackground(graphics);
+		minecraft.gui.hud.extractDeferredSubtitles();
+		return true;
 	}
 
 	/** Reaches a little past the screen, so the backdrop's edge line is out of sight. */

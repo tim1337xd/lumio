@@ -1,5 +1,9 @@
 package dev.tim1337.lumio.ui.controls;
 
+import dev.tim1337.lumio.features.misc.keybinds.KeyCombo;
+
+import dev.tim1337.lumio.features.misc.keybinds.KeyCapture;
+
 import dev.tim1337.lumio.api.experimental.util.ScreenInput;
 import dev.tim1337.lumio.ModFeatures;
 import dev.tim1337.lumio.api.Place;
@@ -8,6 +12,7 @@ import dev.tim1337.lumio.api.experimental.draw.SystemColors;
 import dev.tim1337.lumio.api.experimental.draw.TextScale;
 import dev.tim1337.lumio.api.experimental.draw.TextSelection;
 import dev.tim1337.lumio.api.experimental.motion.Spring;
+import dev.tim1337.lumio.config.setting.KeySetting;
 import dev.tim1337.lumio.config.setting.CommandBindsSetting;
 import dev.tim1337.lumio.features.misc.keybinds.CommandBind;
 import dev.tim1337.lumio.features.misc.keybinds.CommandBinds;
@@ -35,7 +40,7 @@ import java.util.Map;
  * screen; and Duplicate and Delete. Conflicts are explained in plain words: another keybind of the player's for the same key in the same place,
  * or a key the game also uses. Deleting a keybind or an island of the player's own can be undone from its notice.
  */
-public class CommandBindsControl extends Control {
+public final class CommandBindsControl extends Control {
 	private static final int ROW = 28;
 	private static final int ROW_GAP = 2;
 	private static final int LIST_PAD = 6;
@@ -85,7 +90,8 @@ public class CommandBindsControl extends Control {
 	private final TextSelection islandSelection = new TextSelection();
 	private final Map<CommandBind, Spring> knobs = new IdentityHashMap<>();
 	private CommandBind selected;
-	private boolean recording;
+	/** Records the selected keybind's keys while it listens. */
+	private final ComboRecorder recorder = new ComboRecorder();
 	private boolean commandFocused;
 	/** Whether the field for a new island is open, and what is typed in it. */
 	private boolean addingIsland;
@@ -265,7 +271,7 @@ public class CommandBindsControl extends Control {
 			: ui.wrap("Your keybind for " + other.command + " uses this key in the same place. Pick another key or other islands.", inner - 14, 3);
 		String use = selected.enabled ? CommandKeybindsFeature.otherUseOf(selected.key) : null;
 		gameConflict = use == null ? List.of()
-			: ui.wrap(String.join(" + ", CommandKeybindsFeature.keyParts(selected.key, selected.modifiers)) + " is also \"" + use
+			: ui.wrap(String.join(" + ", CommandKeybindsFeature.keyParts(selected)) + " is also \"" + use
 			+ "\" in the game. While this keybind works, it takes the key.", inner - 14, 3);
 		y += (ownConflict.size() + gameConflict.size()) * LINE + (ownConflict.isEmpty() && gameConflict.isEmpty() ? 0 : 6);
 		commandY = y + CAPTION;
@@ -336,7 +342,7 @@ public class CommandBindsControl extends Control {
 
 	private int capsWidth(Ui ui, CommandBind bind) {
 		int width = 0;
-		for (String part : CommandKeybindsFeature.keyParts(bind.key, bind.modifiers)) {
+		for (String part : CommandKeybindsFeature.keyParts(bind)) {
 			width += capWidth(ui, part) + (width > 0 ? 10 : 0);
 		}
 		return width;
@@ -419,7 +425,7 @@ public class CommandBindsControl extends Control {
 		// the key as key caps, "Ctrl" + "1"
 		int capX = rowX + CAPS_INSET;
 		int capY = rowY + (ROW - CAP_HEIGHT) / 2;
-		List<String> parts = CommandKeybindsFeature.keyParts(bind.key, bind.modifiers);
+		List<String> parts = CommandKeybindsFeature.keyParts(bind);
 		for (int i = 0; i < parts.size(); i++) {
 			if (i > 0) {
 				ui.textMiddle("+", capX + 2, rowY + ROW / 2, palette.textSecondary());
@@ -529,7 +535,7 @@ public class CommandBindsControl extends Control {
 		int inner = editorWidth - 2 * PAD;
 		if (selected == null) {
 			ui.textAtScaledBold("Edit keybind", left, ey + PAD, TextScale.BODY, palette.text());
-			ui.text(ui.fit("Select a keybind to edit it, or add a new one.", inner), left, ey + PAD + LINE + 4, palette.textSecondary());
+			ui.text(ui.fit("Pick a keybind, or add one.", inner), left, ey + PAD + LINE + 4, palette.textSecondary());
 			return;
 		}
 		CommandBind bind = selected;
@@ -627,21 +633,25 @@ public class CommandBindsControl extends Control {
 		caption(ui, "KEY", left, ry - CAPTION);
 		boolean overRecorder = mouseX >= left && mouseX < left + inner && mouseY >= ry && mouseY < ry + RECORDER_HEIGHT;
 		ui.rounded(left, ry, inner, RECORDER_HEIGHT, Radius.MD, palette.control());
-		if (recording) {
+		if (recorder.recording()) {
+			finishRecording(recorder.poll());
+		}
+		if (recorder.recording()) {
 			float pulse = 0.55f + 0.45f * (float) Math.sin(System.nanoTime() / 1_000_000_000.0 * Math.PI * 2.0 * PULSE_RATE);
 			ui.rounded(left, ry, inner, RECORDER_HEIGHT, Radius.MD, Ui.withOpacity(ui.accent, 0.15f));
 			ui.ring(left, ry, inner, RECORDER_HEIGHT, Radius.MD, 1, Ui.withOpacity(ui.accent, pulse));
-			ui.textAtScaledBold("Press a key…", left + 10, ry + RECORDER_HEIGHT / 2f - 4f, TextScale.BODY, palette.text());
-			String hint = "Esc cancels · Backspace clears";
-			ui.textAtScaled(hint, left + inner - 10 - ui.widthScaled(hint, TextScale.SMALL), ry + RECORDER_HEIGHT / 2f - 3.5f, TextScale.SMALL,
-				palette.textSecondary());
+			String soFar = recorder.soFar();
+			ui.textAtScaledBold(soFar.isEmpty() ? KeyControl.LISTENING : soFar, left + 10, ry + RECORDER_HEIGHT / 2f - 4f, TextScale.BODY, palette.text());
+			// what else the field does while it waits stands outside the field: small and grey on its caption's line, where there is always room
+			String hint = KeySetting.LISTENING_HINT;
+			ui.textAtScaled(hint, left + inner - ui.widthScaled(hint, TextScale.SMALL), ry - CAPTION + 2, TextScale.SMALL, palette.textSecondary());
 			return;
 		}
 		ui.ring(left, ry, inner, RECORDER_HEIGHT, Radius.MD, 1, Ui.mix(palette.controlBorder(), ui.accent, overRecorder ? 0.6f : 0f));
 		int capX = left + 6;
 		int capY = ry + (RECORDER_HEIGHT - CAP_HEIGHT) / 2;
 		if (bind.hasKey()) {
-			List<String> parts = CommandKeybindsFeature.keyParts(bind.key, bind.modifiers);
+			List<String> parts = CommandKeybindsFeature.keyParts(bind);
 			for (int i = 0; i < parts.size(); i++) {
 				if (i > 0) {
 					ui.textMiddle("+", capX + 2, ry + RECORDER_HEIGHT / 2, palette.textSecondary());
@@ -777,14 +787,27 @@ public class CommandBindsControl extends Control {
 		if (menuFor != null) {
 			return clickMenu(mouseX, mouseY);
 		}
-		if (recording) {
-			// any click ends the recording without a change
-			recording = false;
+		// a right-click on the key recorder removes the keybind's key, listening or not
+		if (button == ScreenInput.RIGHT && selected != null && inRecorder(mouseX, mouseY)) {
+			if (!recorder.recording()) {
+				recorder.start(this::finishRecording);
+			}
+			finishRecording(KeyCapture.Result.CLEARED);
+			return true;
+		}
+		if (recorder.recording() && button != ScreenInput.LEFT && selected != null) {
+			// a mouse button other than the left one is a key of the combination
+			finishRecording(recorder.button(button));
+			return true;
+		}
+		if (recorder.recording()) {
+			// a left click ends the recording without a change
+			recorder.stop();
 			if (inRecorder(mouseX, mouseY)) {
 				return true;
 			}
 		}
-		boolean inField = selected != null && inBox(mouseX, mouseY, x + editorX + PAD, y + editorY + commandY, editorWidth - 2 * PAD, FIELD_HEIGHT);
+		boolean inField = selected != null && Ui.over(mouseX, mouseY, x + editorX + PAD, y + editorY + commandY, editorWidth - 2 * PAD, FIELD_HEIGHT);
 		if (commandFocused && !inField) {
 			commandFocused = false;
 		}
@@ -823,12 +846,12 @@ public class CommandBindsControl extends Control {
 			return true;
 		}
 		// New keybind: added, selected and listening for its key
-		if (inBox(mouseX, mouseY, x, y + buttonY, buttonWidth, BUTTON_HEIGHT)) {
+		if (Ui.over(mouseX, mouseY, x, y + buttonY, buttonWidth, BUTTON_HEIGHT)) {
 			CommandBind bind = new CommandBind();
 			changing();
 			if (setting.add(bind, null)) {
 				select(bind);
-				recording = true;
+				recorder.start(this::finishRecording);
 				UiSounds.click();
 				changed();
 			}
@@ -840,18 +863,14 @@ public class CommandBindsControl extends Control {
 		return true;
 	}
 
-	private static boolean inBox(double mouseX, double mouseY, int bx, int by, int width, int height) {
-		return mouseX >= bx && mouseX < bx + width && mouseY >= by && mouseY < by + height;
-	}
-
 	private boolean inRecorder(double mouseX, double mouseY) {
-		return selected != null && inBox(mouseX, mouseY, x + editorX + PAD, y + editorY + keyY, editorWidth - 2 * PAD, RECORDER_HEIGHT);
+		return selected != null && Ui.over(mouseX, mouseY, x + editorX + PAD, y + editorY + keyY, editorWidth - 2 * PAD, RECORDER_HEIGHT);
 	}
 
 	private void select(CommandBind bind) {
 		if (selected != bind) {
 			selected = bind;
-			recording = false;
+			recorder.stop();
 			commandFocused = false;
 			commandSelection.clear();
 			closeIslandField();
@@ -874,12 +893,12 @@ public class CommandBindsControl extends Control {
 		if (addingIsland && clickIslandField(bind, mouseX, mouseY, left, ey)) {
 			return;
 		}
-		if (inBox(mouseX, mouseY, ex + editorWidth - PAD - SwitchControl.TRACK_WIDTH, ey + PAD - 2, SwitchControl.TRACK_WIDTH, SwitchControl.TRACK_HEIGHT)) {
+		if (Ui.over(mouseX, mouseY, ex + editorWidth - PAD - SwitchControl.TRACK_WIDTH, ey + PAD - 2, SwitchControl.TRACK_WIDTH, SwitchControl.TRACK_HEIGHT)) {
 			toggle(bind);
 			return;
 		}
 		if (inRecorder(mouseX, mouseY)) {
-			recording = true;
+			recorder.start(this::finishRecording);
 			commandFocused = false;
 			closeIslandField();
 			UiSounds.click();
@@ -893,7 +912,7 @@ public class CommandBindsControl extends Control {
 		}
 		for (CommandBind.Where where : wheres()) {
 			int[] box = segmentBoxes[where.ordinal()];
-			if (inBox(mouseX, mouseY, left + SEGMENT_INSET + box[0], ey + whereY, box[2], SEGMENT_HEIGHT)) {
+			if (Ui.over(mouseX, mouseY, left + SEGMENT_INSET + box[0], ey + whereY, box[2], SEGMENT_HEIGHT)) {
 				if (bind.where != where) {
 					changing();
 					bind.where = where;
@@ -907,7 +926,7 @@ public class CommandBindsControl extends Control {
 		if (bind.where == CommandBind.Where.ISLANDS && clickIslandChip(bind, mouseX, mouseY, left, ey)) {
 			return;
 		}
-		if (inBox(mouseX, mouseY, left + inner - SwitchControl.TRACK_WIDTH, ey + screenY + 2, SwitchControl.TRACK_WIDTH, SwitchControl.TRACK_HEIGHT)) {
+		if (Ui.over(mouseX, mouseY, left + inner - SwitchControl.TRACK_WIDTH, ey + screenY + 2, SwitchControl.TRACK_WIDTH, SwitchControl.TRACK_HEIGHT)) {
 			changing();
 			bind.onlyWithoutScreen = !bind.onlyWithoutScreen;
 			UiSounds.toggle(bind.onlyWithoutScreen);
@@ -916,9 +935,9 @@ public class CommandBindsControl extends Control {
 		}
 		int actionTop = ey + actionsY;
 		int deleteX = left + inner - deleteWidth;
-		if (inBox(mouseX, mouseY, deleteX - CHIP_GAP - duplicateWidth, actionTop, duplicateWidth, SMALL_BUTTON_HEIGHT)) {
+		if (Ui.over(mouseX, mouseY, deleteX - CHIP_GAP - duplicateWidth, actionTop, duplicateWidth, SMALL_BUTTON_HEIGHT)) {
 			duplicate(bind);
-		} else if (inBox(mouseX, mouseY, deleteX, actionTop, deleteWidth, SMALL_BUTTON_HEIGHT)) {
+		} else if (Ui.over(mouseX, mouseY, deleteX, actionTop, deleteWidth, SMALL_BUTTON_HEIGHT)) {
 			delete(bind);
 		}
 	}
@@ -930,7 +949,7 @@ public class CommandBindsControl extends Control {
 			int[] box = islandBoxes[i];
 			int cx = left + box[0];
 			int cy = ey + box[1];
-			if (!inBox(mouseX, mouseY, cx, cy, box[2], CHIP_HEIGHT)) {
+			if (!Ui.over(mouseX, mouseY, cx, cy, box[2], CHIP_HEIGHT)) {
 				continue;
 			}
 			if (i < builtIn.size()) {
@@ -971,11 +990,11 @@ public class CommandBindsControl extends Control {
 	/** A click while the field for a new island is open: in the field it stays, on "Use current" that island is added. */
 	private boolean clickIslandField(CommandBind bind, double mouseX, double mouseY, int left, int ey) {
 		int fy = ey + islandFieldY;
-		if (inBox(mouseX, mouseY, left, fy, islandFieldWidth, FIELD_HEIGHT)) {
+		if (Ui.over(mouseX, mouseY, left, fy, islandFieldWidth, FIELD_HEIGHT)) {
 			islandSelection.clear();
 			return true;
 		}
-		if (currentLabel != null && inBox(mouseX, mouseY, left + islandFieldWidth + CHIP_GAP, fy, editorWidth - 2 * PAD - islandFieldWidth - CHIP_GAP,
+		if (currentLabel != null && Ui.over(mouseX, mouseY, left + islandFieldWidth + CHIP_GAP, fy, editorWidth - 2 * PAD - islandFieldWidth - CHIP_GAP,
 			FIELD_HEIGHT)) {
 			addIsland(bind, currentIsland);
 			return true;
@@ -1075,7 +1094,7 @@ public class CommandBindsControl extends Control {
 		menuFor = null;
 		for (int i = 0; i < MENU.length; i++) {
 			int rowY = menuY + 3 + i * MENU_ROW;
-			if (inBox(mouseX, mouseY, menuX, rowY, MENU_WIDTH, MENU_ROW)) {
+			if (Ui.over(mouseX, mouseY, menuX, rowY, MENU_WIDTH, MENU_ROW)) {
 				if (i == 0) {
 					duplicate(bind);
 				} else {
@@ -1089,12 +1108,12 @@ public class CommandBindsControl extends Control {
 
 	@Override
 	public boolean wantsKeyboard() {
-		return recording || commandFocused || addingIsland;
+		return recorder.recording() || commandFocused || addingIsland;
 	}
 
 	@Override
 	public boolean keyPressed(int key, int modifiers) {
-		if (recording && selected != null) {
+		if (recorder.recording() && selected != null) {
 			return record(key, modifiers);
 		}
 		if (addingIsland && selected != null) {
@@ -1143,41 +1162,33 @@ public class CommandBindsControl extends Control {
 		return true;
 	}
 
-	/** A key while the recorder listens: Esc cancels, Backspace clears, a modifier alone waits for the key it modifies. */
+	/** A key while the recorder listens: one more key of the combination; Esc, Backspace or Delete first clears. */
 	private boolean record(int key, int modifiers) {
-		CommandBind bind = selected;
-		if (key == InputConstants.KEY_ESCAPE) {
-			recording = false;
-			return true;
-		}
-		if (isModifier(key)) {
-			return true;
-		}
-		changing();
-		if (key == InputConstants.KEY_BACKSPACE) {
-			bind.key = CommandBind.NO_KEY;
-			bind.modifiers = 0;
-			UiSounds.play(UiSounds.Cue.OFF);
-		} else if (CommandBind.validKey(key)) {
-			bind.key = key;
-			bind.modifiers = modifiers & CommandBind.MODIFIERS;
-			UiSounds.play(UiSounds.Cue.ON);
-		}
-		recording = false;
-		changed();
+		finishRecording(recorder.key(key));
 		return true;
 	}
 
-	private static boolean isModifier(int key) {
-		return key == InputConstants.KEY_LSHIFT || key == InputConstants.KEY_RSHIFT || key == InputConstants.KEY_LCONTROL
-			|| key == InputConstants.KEY_RCONTROL || key == InputConstants.KEY_LALT || key == InputConstants.KEY_RALT
-			|| key == InputConstants.KEY_LSUPER || key == InputConstants.KEY_RSUPER;
+	/** @return whether the recording ended: the keys are set, cleared, or nothing changed after Esc */
+	private boolean finishRecording(KeyCapture.Result result) {
+		CommandBind bind = selected;
+		if (result == KeyCapture.Result.PENDING || bind == null) {
+			return false;
+		}
+		recorder.stop();
+		if (result == KeyCapture.Result.CANCELLED) {
+			return true;
+		}
+		changing();
+		bind.setCombo(result == KeyCapture.Result.DONE ? recorder.combo() : KeyCombo.NONE);
+		UiSounds.play(result == KeyCapture.Result.DONE ? UiSounds.Cue.ON : UiSounds.Cue.OFF);
+		changed();
+		return true;
 	}
 
 	@Override
 	public boolean charTyped(int codepoint) {
 		if (selected == null || codepoint < ' ') {
-			return recording || commandFocused || addingIsland;
+			return recorder.recording() || commandFocused || addingIsland;
 		}
 		String letters = new String(Character.toChars(codepoint));
 		if (addingIsland) {
@@ -1188,7 +1199,7 @@ public class CommandBindsControl extends Control {
 			return true;
 		}
 		if (!commandFocused) {
-			return recording;
+			return recorder.recording();
 		}
 		CommandBind bind = selected;
 		String next = commandSelection.typed(bind.command, letters);
@@ -1202,7 +1213,7 @@ public class CommandBindsControl extends Control {
 
 	@Override
 	public void loseFocus() {
-		recording = false;
+		recorder.stop();
 		commandFocused = false;
 		closeIslandField();
 		menuFor = null;

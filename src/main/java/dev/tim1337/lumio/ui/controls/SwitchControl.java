@@ -10,7 +10,7 @@ import dev.tim1337.lumio.ui.UiSounds;
 import net.minecraft.util.Mth;
 
 /** An on/off switch whose knob springs to the other end, overshoots slightly and settles, and stretches while pressed. */
-public class SwitchControl extends Control {
+public final class SwitchControl extends Control {
 	public static final int TRACK_WIDTH = 34;
 	public static final int TRACK_HEIGHT = 20;
 	private static final int KNOB = 16;

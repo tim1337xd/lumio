@@ -16,6 +16,8 @@ import net.minecraft.util.Mth;
 final class ChatScrolling {
 	/** How wide the scroll bar answers to the mouse from the panel's right edge, though it is drawn thinner. */
 	private static final int BAR_GRAB_WIDTH = 6;
+	/** How far over the rows the chat may draw, in its own pixels: the margin of the closed chat's backing. */
+	static final int ROWS_MARGIN = 2;
 
 	private final ChatFeature chat;
 	private final ChatScroll scroll = new ChatScroll();
@@ -129,20 +131,22 @@ final class ChatScrolling {
 	}
 
 	/**
-	 * Cuts what is drawn at the rows while the lines stand between them.
+	 * Cuts what is drawn at the panel's sides and at the rows, always: a row is wrapped to end inside the panel, and should one ever be wider, it is cut
+	 * there rather than drawn over what lies beside the chat; and nothing of a row reaches the bar above the rows. While the lines stand between the
+	 * rows, they are cut exactly at them.
 	 *
 	 * @return whether it was cut, to be ended with {@code disableScissor}
 	 */
 	boolean clip(GuiGraphicsExtractor graphics) {
-		if (shift == 0f) {
-			return false;
-		}
 		ChatComponent component = component();
 		var access = (ChatComponentAccessor) component;
 		float scale = chat.scale();
+		int left = chat.panelLeft();
 		int bottom = Mth.floor(chat.baseBottom(graphics.guiHeight()) / scale);
 		int rows = component.getLinesPerPage() * Math.max(1, access.lumio$lineHeight());
-		graphics.enableScissor(0, Math.round((bottom - rows) * scale + chat.moveY()), graphics.guiWidth(), Math.round(bottom * scale + chat.moveY()));
+		// the closed chat's backing reaches a little over its rows
+		int around = shift == 0f ? Mth.ceil(ROWS_MARGIN * scale) : 0;
+		graphics.enableScissor(left, Math.round((bottom - rows) * scale + chat.rowsY()) - around, left + chat.panelWidth(), Math.round(bottom * scale + chat.rowsY()) + around);
 		return true;
 	}
 
@@ -190,6 +194,6 @@ final class ChatScrolling {
 	/** @return how far the mouse is above the lowest row, in the chat's pixels */
 	private float fromBottom(double mouseY, int screenHeight) {
 		float scale = chat.scale();
-		return (float) (Mth.floor(chat.baseBottom(screenHeight) / scale) - (mouseY - chat.moveY()) / scale);
+		return (float) (Mth.floor(chat.baseBottom(screenHeight) / scale) - (mouseY - chat.rowsY()) / scale);
 	}
 }

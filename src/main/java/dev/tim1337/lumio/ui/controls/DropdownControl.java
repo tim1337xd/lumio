@@ -6,7 +6,7 @@ import dev.tim1337.lumio.ui.UiSounds;
 import java.util.List;
 
 /** The choices of a setting as a dropdown. */
-public class DropdownControl<E extends Enum<E>> extends ListDropdownControl {
+public final class DropdownControl<E extends Enum<E>> extends ListDropdownControl {
 	private static final int HEIGHT = 22;
 
 	private final EnumSetting<E> setting;

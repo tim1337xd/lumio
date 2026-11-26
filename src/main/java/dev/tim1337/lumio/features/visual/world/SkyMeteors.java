@@ -4,7 +4,8 @@ import java.util.Random;
 
 /**
  * Shooting stars with real paths: each one flies in a straight line through the air at a distance of its own, near ones over the player, far ones down behind the hills, in fixed arrays. They are
- * kept relative to the place the sky is seen from, and shifted as it moves, so walking shows their depth and a warp does not move them. Plain, so its rules are unit tested.
+ * kept relative to the place the sky is seen from, and shifted as it moves, so walking shows their depth and a warp does not move them. All fly the same way, as the stars of one shower do: one
+ * diagonal through the world ({@link #HEADING}, {@link #DESCENT}), each a few degrees off it so they do not look copied. Plain, so its rules are unit tested.
  */
 public final class SkyMeteors {
 	/** The most at once. */
@@ -26,6 +27,17 @@ public final class SkyMeteors {
 	private static final float CLOSE_TO = 150f;
 	private static final float CLOSE_TRAIL = 1.8f;
 	private static final float FADE_SECONDS = 0.25f;
+	/** The way they all fly: this heading across the world (radians from +x toward +z), going down this much for each block across. */
+	static final float HEADING = 0.62f;
+	static final float DESCENT = 0.36f;
+	/** How far one may be off that way: across, in radians (about 4 degrees), and in its descent. */
+	static final float HEADING_SPREAD = 0.07f;
+	static final float DESCENT_SPREAD = 0.04f;
+	/**
+	 * Their pace against the speed they flew at before (2026-11-15: 60 %). They live longer by as much, so each still crosses the same stretch of sky,
+	 * and the drawing keeps the streak as long as before ({@link #streakSeconds}).
+	 */
+	public static final float PACE = 0.6f;
 
 	public final float[] x = new float[CAP];
 	public final float[] y = new float[CAP];
@@ -111,42 +123,57 @@ public final class SkyMeteors {
 	/** A near one passes over the player, on the way across the sky. */
 	private void near(float speedFactor) {
 		float height = NEAR_FROM + random.nextFloat() * (NEAR_TO - NEAR_FROM);
-		float angle = random.nextFloat() * (float) Math.PI * 2f;
-		float heading = angle + (float) Math.PI + (random.nextFloat() - 0.5f) * 1.4f;
-		float distance = 120f + random.nextFloat() * 260f;
-		start((float) Math.cos(angle) * distance, height, (float) Math.sin(angle) * distance, (float) Math.cos(heading), -0.28f, (float) Math.sin(heading), speedFactor * (0.9f + random.nextFloat() * 0.5f),
+		along(80f + random.nextFloat() * 180f, (random.nextFloat() * 2f - 1f) * 260f, height, speedFactor * (0.9f + random.nextFloat() * 0.5f),
 			1.4f + random.nextFloat() * 1.2f, 2.4f + random.nextFloat() * 1.8f, 0.8f + random.nextFloat() * 0.3f);
 	}
 
 	/** A close one: lower and nearer than the others, so it looks bigger and brighter, with a longer trail. */
 	private void close(float speedFactor) {
 		float height = CLOSE_FROM + random.nextFloat() * (CLOSE_TO - CLOSE_FROM);
-		float angle = random.nextFloat() * (float) Math.PI * 2f;
-		float heading = angle + (float) Math.PI + (random.nextFloat() - 0.5f) * 1.2f;
-		float distance = 60f + random.nextFloat() * 110f;
-		if (start((float) Math.cos(angle) * distance, height, (float) Math.sin(angle) * distance, (float) Math.cos(heading), -0.22f, (float) Math.sin(heading), speedFactor * (0.9f + random.nextFloat() * 0.3f),
+		if (along(40f + random.nextFloat() * 90f, (random.nextFloat() * 2f - 1f) * 130f, height, speedFactor * (0.9f + random.nextFloat() * 0.3f),
 			1.2f + random.nextFloat() * 0.8f, 4.5f + random.nextFloat() * 2f, 1f)) {
 			trail[count - 1] = CLOSE_TRAIL;
 		}
 	}
 
-	/** A far one comes down steeply, and ends behind what stands on the horizon. */
+	/** A far one crosses low over the horizon, and ends behind what stands there. */
 	private void far(float speedFactor) {
 		float distance = FAR_FROM + random.nextFloat() * (FAR_TO - FAR_FROM);
 		float angle = random.nextFloat() * (float) Math.PI * 2f;
-		float heading = angle + (float) Math.PI * 0.5f * (random.nextBoolean() ? 1f : -1f) + (random.nextFloat() - 0.5f);
-		start((float) Math.cos(angle) * distance, 130f + random.nextFloat() * 170f, (float) Math.sin(angle) * distance, (float) Math.cos(heading), -0.75f, (float) Math.sin(heading), speedFactor * (0.7f + random.nextFloat() * 0.4f),
-			1.6f + random.nextFloat() * 1.0f, 3f + random.nextFloat() * 2f, 0.55f + random.nextFloat() * 0.3f);
+		float[] way = way();
+		start((float) Math.cos(angle) * distance, 130f + random.nextFloat() * 170f, (float) Math.sin(angle) * distance, way[0], way[1], way[2],
+			speedFactor * (0.7f + random.nextFloat() * 0.4f), 1.6f + random.nextFloat() * 1.0f, 3f + random.nextFloat() * 2f, 0.55f + random.nextFloat() * 0.3f);
 	}
 
 	/** A close one: low, right over the player, bright and large. */
 	private void flyBy(float speedFactor) {
-		float angle = random.nextFloat() * (float) Math.PI * 2f;
+		float[] way = way();
 		float along = FLY_BY_LENGTH * 0.5f;
-		float sideX = -(float) Math.sin(angle) * FLY_BY_SIDE;
-		float sideZ = (float) Math.cos(angle) * FLY_BY_SIDE;
-		start(-(float) Math.cos(angle) * along + sideX, FLY_BY_HEIGHT + 30f, -(float) Math.sin(angle) * along + sideZ, (float) Math.cos(angle), -0.1f, (float) Math.sin(angle), speedFactor,
+		float side = (random.nextFloat() * 2f - 1f) * FLY_BY_SIDE;
+		start(-way[0] * along - way[2] * side, FLY_BY_HEIGHT + 30f + way[1] * -along * 0.3f, -way[2] * along + way[0] * side, way[0], way[1] * 0.3f, way[2], speedFactor,
 			FLY_BY_LENGTH / SPEED_BLOCKS_PER_SECOND / Math.max(0.2f, speedFactor), 0.9f, 1f);
+	}
+
+	/**
+	 * Starts one that crosses the sky on the shared way: from a point this far back along it and this far to its side of the player, at a height.
+	 *
+	 * @return whether it was started
+	 */
+	private boolean along(float back, float side, float height, float speedFactor, float seconds, float sizeBlocks, float brightness) {
+		float[] way = way();
+		return start(-way[0] * back - way[2] * side, height, -way[2] * back + way[0] * side, way[0], way[1], way[2], speedFactor, seconds, sizeBlocks, brightness);
+	}
+
+	/** @return the shared way, a few degrees off for this one: across x, down, across z (not yet of length 1) */
+	private float[] way() {
+		float heading = HEADING + (random.nextFloat() * 2f - 1f) * HEADING_SPREAD;
+		float descent = DESCENT + (random.nextFloat() * 2f - 1f) * DESCENT_SPREAD;
+		return new float[] {(float) Math.cos(heading), -descent, (float) Math.sin(heading)};
+	}
+
+	/** @return how many seconds of its flight a streak shows: as long a streak as before they were slowed ({@link #PACE}) */
+	public static float streakSeconds(float tailSeconds) {
+		return tailSeconds / PACE;
 	}
 
 	/** @return whether it was started: not when there are as many as there may be */
@@ -162,9 +189,9 @@ public final class SkyMeteors {
 		dx[i] = hx / length;
 		dy[i] = hy / length;
 		dz[i] = hz / length;
-		speed[i] = SPEED_BLOCKS_PER_SECOND * speedFactor;
+		speed[i] = SPEED_BLOCKS_PER_SECOND * speedFactor * PACE;
 		age[i] = 0f;
-		life[i] = seconds;
+		life[i] = seconds / PACE;
 		size[i] = sizeBlocks;
 		light[i] = brightness;
 		trail[i] = 1f;

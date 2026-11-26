@@ -174,6 +174,8 @@ public class SetupScreen extends Screen {
 		Screen screen = client.gui.screen();
 		if (screen instanceof TitleScreen || screen instanceof MacTitleScreen) {
 			opened = true;
+			// a first start: nothing is new yet
+			dev.tim1337.lumio.ui.WhatsNewScreen.firstStart();
 			client.setScreenAndShow(new SetupScreen(screen, false));
 		}
 	}

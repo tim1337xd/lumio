@@ -2,8 +2,6 @@ package dev.tim1337.lumio.api.spi;
 
 import dev.tim1337.lumio.api.draw.Canvas;
 import dev.tim1337.lumio.api.feature.AddonPanel;
-import dev.tim1337.lumio.api.feature.PanelPicture;
-import dev.tim1337.lumio.api.feature.SettingGroup;
 import dev.tim1337.lumio.api.setting.Choice;
 import dev.tim1337.lumio.api.setting.Toggle;
 
@@ -11,9 +9,6 @@ import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.world.item.ItemStack;
-
-import java.util.List;
-import java.util.function.Supplier;
 
 /** The main mod's side of an {@link AddonPanel}: the panel as the HUD and its editor know it. */
 public interface PanelHandle extends FeatureHandle {

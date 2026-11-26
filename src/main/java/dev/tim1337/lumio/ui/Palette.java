@@ -31,7 +31,7 @@ public record Palette(int window, int windowBorder, int sidebar, int card, int c
 
 	/** @return the fill of the selected choice of a segmented control: a white knob on light windows, a light overlay on dark ones and glass */
 	public int pill() {
-		return glass ? 0x55FFFFFF : light() ? knob : 0x29FFFFFF;
+		return glass ? 0x33FFFFFF : light() ? knob : 0x29FFFFFF;
 	}
 
 	/**
@@ -45,6 +45,30 @@ public record Palette(int window, int windowBorder, int sidebar, int card, int c
 	/** @return the outline of popups */
 	public int popupBorder() {
 		return glass ? windowBorder : cardBorder;
+	}
+
+	/** How far a colored text (red of a danger button, orange of a key in use elsewhere, a chip's own color) moves toward the text color on light windows. */
+	private static final float LIGHT_COLORED_TEXT = 0.45f;
+
+	/**
+	 * @return a bright system color as text: as it is on dark windows; darker on light ones, where red, orange or yellow on near white would read
+	 *         at less than 3:1; on glass the theme's own text color, since over a bright day behind the glass only white text keeps 3:1 (there the
+	 *         color shows in what goes with the text: a button's border, a chip's square, a tag's fill)
+	 */
+	public int coloredText(int argb) {
+		if (glass) {
+			return text;
+		}
+		if (!light()) {
+			return argb >>> 24 == 0 ? 0xFF000000 | argb : argb;
+		}
+		// a color given without its alpha (0xRRGGBB) is opaque text
+		int a = argb >>> 24 == 0 ? 0xFF : argb >>> 24;
+		float t = LIGHT_COLORED_TEXT;
+		int r = Math.round((argb >> 16 & 0xFF) * (1 - t) + (text >> 16 & 0xFF) * t);
+		int g = Math.round((argb >> 8 & 0xFF) * (1 - t) + (text >> 8 & 0xFF) * t);
+		int b = Math.round((argb & 0xFF) * (1 - t) + (text & 0xFF) * t);
+		return a << 24 | r << 16 | g << 8 | b;
 	}
 
 	/** @return the text color on that fill */

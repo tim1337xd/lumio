@@ -1,11 +1,13 @@
 package dev.tim1337.lumio.render;
 
-import dev.tim1337.lumio.api.experimental.util.Logs;
+import dev.tim1337.lumio.api.experimental.debug.DebugCategory;
+import dev.tim1337.lumio.api.experimental.debug.DebugHooks;
+import dev.tim1337.lumio.api.experimental.debug.DebugLevel;
 
 import java.util.Locale;
 
 /**
- * Once per second, behind a switch of the Debug log: how far the Colored theme's field moved and what moved it. It adds to its counts per frame and writes only with the switch on, so without it nothing happens here.
+ * Once per second, while a debug tool asks for it ("Log the Colored colors"): how far the Colored theme's field moved and what moved it. It adds to its counts per frame and writes only with the switch on, so without it nothing happens here.
  */
 final class ColoredFlowLog {
 	private static final long SECOND_NANOS = 1_000_000_000L;
@@ -42,7 +44,10 @@ final class ColoredFlowLog {
 			return;
 		}
 		double seconds = (now - since) / NANOS;
-		Logs.info(line(seconds, flowSeconds, flowSeconds - flowAtStart, rate, frames, drawn, hudPanes, screenPanes, screen, followsSong, songColors, shown));
+		if (DebugHooks.ACTIVE) {
+			DebugHooks.log(DebugCategory.COLORED, DebugLevel.INFO, line(seconds, flowSeconds, flowSeconds - flowAtStart, rate, frames, drawn, hudPanes, screenPanes, screen, followsSong,
+				songColors, shown));
+		}
 		since = now;
 		flowAtStart = flowSeconds;
 		frames = 0;

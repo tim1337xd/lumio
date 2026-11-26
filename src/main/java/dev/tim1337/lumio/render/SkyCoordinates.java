@@ -4,8 +4,8 @@ package dev.tim1337.lumio.render;
  * World coordinates for the sky shader, which reads its parameters as bytes. A coordinate is kept whole: a signed 32-bit block number in one texel
  * (red is the lowest byte) and its fraction in 1/256 of a block in a byte of another. Nothing wraps inside the world (its border is far below
  * 2^31), so walking across x = 0 or z = 0 is an ordinary step: an earlier form kept coordinates wrapped at 65536 blocks, which turned -0.1 into
- * 65535.9, a place with other clouds and another aurora. The shader adds the bytes in the order of {@link #decodeLikeShader}, which is exact in
- * 32-bit floats for every coordinate within 2^24 blocks of the origin.
+ * 65535.9, a place with other clouds and another aurora. The shader puts the bytes together as {@link #decodeLikeShader} does, which is exact for
+ * every coordinate within 2^24 blocks of the origin.
  */
 public final class SkyCoordinates {
 	/** Fractions of a block per step of the fraction byte. */
@@ -33,12 +33,11 @@ public final class SkyCoordinates {
 	}
 
 	/**
-	 * The coordinate as the shader rebuilds it from the bytes, in 32-bit floats and in its order: the highest byte with the sign offset first (a
-	 * whole multiple of 2^24, exact), then the lower bytes, then the fraction.
+	 * The coordinate as the shader rebuilds it from the bytes: the block in whole numbers, which no driver can round by reordering a sum of floats,
+	 * then the fraction.
 	 */
 	public static float decodeLikeShader(int byte0, int byte1, int byte2, int byte3, int fraction) {
-		float high = (float) byte3 * 16777216f - 2147483648f;
-		float block = high + ((float) byte2 * 65536f + (float) byte1 * 256f + (float) byte0);
-		return block + (float) fraction / FRACTION_STEPS;
+		int block = (byte3 - 128) * 16777216 + byte2 * 65536 + byte1 * 256 + byte0;
+		return (float) block + (float) fraction / FRACTION_STEPS;
 	}
 }

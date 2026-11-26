@@ -27,8 +27,6 @@ public final class EchoLines {
 	/** Lines are pushed this much away from the camera, so that the item covers them where it is in front: only what is outside it shows. */
 	private static final float PUSH = 1.004f;
 	private static final float REFERENCE_LINES = 1080f;
-	/** The field of view of the first person hand, which the game draws with its own, fixed one. */
-	public static final float HAND_FOV_DEGREES = 70f;
 	private static RenderType type;
 
 	private EchoLines() {

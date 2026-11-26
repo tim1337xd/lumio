@@ -1,5 +1,6 @@
 package dev.tim1337.lumio.features.music;
 
+import dev.tim1337.lumio.hud.PanelSizes;
 import dev.tim1337.lumio.Lumio;
 import dev.tim1337.lumio.ModFeatures;
 import dev.tim1337.lumio.api.experimental.draw.Radius;
@@ -38,6 +39,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.textures.FilterMode;
+import com.google.gson.JsonObject;
 
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.KeyMapping;
@@ -68,10 +70,10 @@ public class MusicFeature extends Feature implements EditableHud {
 	private static final String BAR_LYRICS_KEY = "bar_lyrics";
 	/** The keys of the world lyrics' placement (Auto or Manual) and its manual place. */
 	public static final String WORLD_PLACEMENT_KEY = "world_placement";
-	public static final String WORLD_PLACE_KEY = "world_place";
+
 
 	public enum Display {
-		INFO_BAR("In the info bar"),
+		INFO_BAR("Info bar"),
 		MINI("Small player"),
 		WINDOW("Window");
 
@@ -116,10 +118,11 @@ public class MusicFeature extends Feature implements EditableHud {
 		}
 	}
 
-	/** How the world lyrics find their spot: a good open one picked for every line, or the place chosen below. */
+	/** Where the lyrics in the world stand: in the sky when a calm piece of it is in view and around the player otherwise, always around the player, or only in the sky. */
 	public enum WorldPlacement {
-		AUTO("Auto"),
-		MANUAL("Manual");
+		AROUND("Around"),
+		SKY("Sky"),
+		AUTO("Auto");
 
 		private final Component displayName;
 
@@ -134,48 +137,19 @@ public class MusicFeature extends Feature implements EditableHud {
 
 	/** How long an older world lyric line stays after the next one started, dimming, before it fades out. */
 	public enum WorldLinger {
-		SHORT("Short", 0.8f),
-		NORMAL("Normal", 1.5f),
-		LONG("Long", 2.5f);
+		SHORT("Short", 1f, 0.4f),
+		NORMAL("Normal", 3f, 0.6f),
+		LONG("Long", 6f, 0.8f);
 
 		private final Component displayName;
+		/** How long an older line stays after the next one starts, before it fades, and how long its fade takes, in seconds. */
 		final float seconds;
+		final float fadeSeconds;
 
-		WorldLinger(String displayName, float seconds) {
+		WorldLinger(String displayName, float seconds, float fadeSeconds) {
 			this.displayName = Component.literal(displayName);
 			this.seconds = seconds;
-		}
-
-		public Component displayName() {
-			return displayName;
-		}
-	}
-
-	/** Where the world lyrics stand: around the player near eye height, or large in the sky. */
-	public enum WorldPlace {
-		NEAR("Around you"),
-		SKY("In the sky");
-
-		private final Component displayName;
-
-		WorldPlace(String displayName) {
-			this.displayName = Component.literal(displayName);
-		}
-
-		public Component displayName() {
-			return displayName;
-		}
-	}
-
-	/** The look of the world lyrics: the soft glow, the classic glow of before, or a box behind the sung word. */
-	public enum WorldEffect {
-		GLOW("Soft"),
-		CLASSIC("Classic");
-
-		private final Component displayName;
-
-		WorldEffect(String displayName) {
-			this.displayName = Component.literal(displayName);
+			this.fadeSeconds = fadeSeconds;
 		}
 
 		public Component displayName() {
@@ -254,11 +228,28 @@ public class MusicFeature extends Feature implements EditableHud {
 		}
 	}
 
+	/** What glows of the lyrics in the world: the word being sung (as before), or every word shown, the sung one a little stronger. */
+	public enum WorldGlow {
+		OFF("Off"),
+		SUNG_WORD("Sung word"),
+		WHOLE_TEXT("Whole text");
+
+		private final String title;
+
+		WorldGlow(String title) {
+			this.title = title;
+		}
+
+		public Component displayName() {
+			return Component.literal(title);
+		}
+	}
+
 	public enum Player {
-		AUTO("Automatic", MusicService.Source.AUTO),
 		CIDER("Cider", MusicService.Source.CIDER),
 		WINDOWS("Windows media", MusicService.Source.WINDOWS),
-		SPOTIFY("Spotify", MusicService.Source.SPOTIFY);
+		SPOTIFY("Spotify", MusicService.Source.SPOTIFY),
+		AUTO("Automatic", MusicService.Source.AUTO);
 
 		private final Component displayName;
 		private final MusicService.Source source;
@@ -281,7 +272,7 @@ public class MusicFeature extends Feature implements EditableHud {
 	// the states a source card can show: constants, since the menu asks for them every frame
 	private static final EnumSetting.OptionState PLAYING = new EnumSetting.OptionState("Playing", SystemColors.GREEN_RGB);
 	private static final EnumSetting.OptionState WORKING = new EnumSetting.OptionState("Working", SystemColors.GREEN_RGB);
-	private static final EnumSetting.OptionState PICKS = new EnumSetting.OptionState("Picks what plays", -1);
+	private static final EnumSetting.OptionState PICKS = new EnumSetting.OptionState("Any source", -1);
 	private static final EnumSetting.OptionState NEEDS_TOKEN = new EnumSetting.OptionState("Needs a token", SystemColors.ORANGE_RGB);
 	private static final EnumSetting.OptionState READY = new EnumSetting.OptionState("Ready", -1);
 	private static final EnumSetting.OptionState SIGNED_IN = new EnumSetting.OptionState("Signed in", SystemColors.GREEN_RGB);
@@ -298,13 +289,13 @@ public class MusicFeature extends Feature implements EditableHud {
 		if (sourceCards == null) {
 			sourceCards = new EnumMap<>(Player.class);
 			sourceCards.put(Player.AUTO, new EnumSetting.OptionCard("sparkle", SystemColors.INDIGO_RGB,
-				"Cider or Spotify when they answer, otherwise the Windows media controls.", () -> MusicService.track() != null ? PLAYING : PICKS));
-			sourceCards.put(Player.CIDER, new EnumSetting.OptionCard("note", CIDER_RGB, "Apple Music through Cider. Needs an API token from Cider.",
+				"Cider or Spotify, else Windows media.", () -> MusicService.track() != null ? PLAYING : PICKS));
+			sourceCards.put(Player.CIDER, new EnumSetting.OptionCard("note", CIDER_RGB, "Apple Music via Cider. Needs its token.",
 				() -> MusicService.playsFrom(MusicService.Source.CIDER) ? WORKING : ciderToken.get().isEmpty() ? NEEDS_TOKEN : READY));
 			sourceCards.put(Player.WINDOWS, new EnumSetting.OptionCard("window", SystemColors.BLUE_RGB,
-				"Any player in the Windows media controls, such as Apple Music or Spotify. No setup needed.",
+				"Any player Windows shows. No setup.",
 				() -> !ON_WINDOWS ? WINDOWS_ONLY : MusicService.playsFrom(MusicService.Source.WINDOWS) ? WORKING : NO_SETUP));
-			sourceCards.put(Player.SPOTIFY, new EnumSetting.OptionCard("play", SPOTIFY_RGB, "Spotify Web API. A short guide walks you through the sign-in.",
+			sourceCards.put(Player.SPOTIFY, new EnumSetting.OptionCard("play", SPOTIFY_RGB, "Spotify Web API, with a sign-in guide.",
 				() -> MusicService.playsFrom(MusicService.Source.SPOTIFY) ? WORKING : SpotifyClient.connected() ? SIGNED_IN : NOT_SIGNED_IN));
 		}
 		return sourceCards.get(choice);
@@ -347,7 +338,7 @@ public class MusicFeature extends Feature implements EditableHud {
 	}), "Source");
 	private final ButtonSetting spotifyOff = add(new ButtonSetting("spotify_disconnect", Component.literal("Spotify account"), Component.literal("Disconnect"), true, MusicService::disconnectSpotify), "Source");
 	private final InfoSetting spotifyStatus = add(new InfoSetting("spotify_status", Component.literal("Spotify status"), MusicService::spotifyMessage), "Source");
-	private final ButtonSetting spotifyGuide = add(new ButtonSetting("spotify_guide", Component.literal("Connecting Spotify, step by step"), Component.literal("Open guide"), false, () -> {
+	private final ButtonSetting spotifyGuide = add(new ButtonSetting("spotify_guide", Component.literal("Set up Spotify"), Component.literal("Open guide"), false, () -> {
 		var client = Minecraft.getInstance();
 		client.setScreenAndShow(SourceSetupScreen.spotify(client.gui.screen()));
 	}), "Source");
@@ -387,15 +378,15 @@ public class MusicFeature extends Feature implements EditableHud {
 		FeatureManager.saveSoon();
 	}
 	private final BooleanSetting onlineCovers = add(new BooleanSetting("online_covers", Component.literal("Online covers"), true), "Source", "When the player gives none");
-	private final EnumSetting<Display> display = add(new EnumSetting<>("display", Component.literal("Where the song shows"), Display.INFO_BAR, Display::displayName,
-		EnumSetting.Style.SEGMENTED).withOptionCards(MusicFeature::displayCard), "Where the song shows");
+	private final EnumSetting<Display> display = add(new EnumSetting<>("display", Component.literal("Where songs show"), Display.INFO_BAR, Display::displayName,
+		EnumSetting.Style.SEGMENTED).withOptionCards(MusicFeature::displayCard), "Where songs show");
 	private final BooleanSetting showCover = new BooleanSetting("show_cover", Component.literal("Cover"), true, BooleanSetting.Style.CHECKBOX);
 	private final BooleanSetting showProgress = new BooleanSetting("show_progress", Component.literal("Progress"), true, BooleanSetting.Style.CHECKBOX);
-	private final BooleanSetting showBars = new BooleanSetting("show_bars", Component.literal("Dancing bars"), true, BooleanSetting.Style.CHECKBOX);
+	private final BooleanSetting showBars = new BooleanSetting("show_bars", Component.literal("Bars"), true, BooleanSetting.Style.CHECKBOX);
 	private final MultiSelectSetting show = add(new MultiSelectSetting("show", Component.literal("Show"), List.of(showCover, showProgress, showBars)), "Appearance");
 	private final ColorSetting accent = add(new ColorSetting("accent", Component.literal("Accent color"), 0xFA586A).followsMenu(), "Appearance");
 	private final FloatSetting textWidth = add(new FloatSetting("text_width", Component.literal("Text width"), 150f, 70f, 280f, 0), "Appearance");
-	private final FloatSetting windowScale = add(new FloatSetting("scale", Component.literal("Window size"), 1f, 0.3f, 3f, 2), "Appearance");
+	private final FloatSetting windowScale = add(new FloatSetting("scale", Component.literal("Window size"), 1f, PanelSizes.LEAST, PanelSizes.MOST, 2).percent(), "Appearance");
 	private final BooleanSetting panelBackground = add(new BooleanSetting("background", Component.literal("Background"), true), "Appearance");
 	private final BooleanSetting glow = add(new BooleanSetting("glow", Component.literal("Glow"), false), "Appearance");
 	/** Window corner radius when it was last drawn, in its own pixels. */
@@ -417,50 +408,76 @@ public class MusicFeature extends Feature implements EditableHud {
 	}
 
 	// lyrics settings span two tabs: content and timing, then the world lyrics appearance
-	final BooleanSetting lyrics = add(new BooleanSetting("lyrics", Component.literal("Live lyrics"), true), "Lyrics", "From lrclib.net, or from Apple Music through Cider");
+	final BooleanSetting lyrics = add(new BooleanSetting("lyrics", Component.literal("Live lyrics"), true), "Lyrics", "lrclib.net, or Apple Music via Cider");
 	/** The highlight box behind the sung word: in the info bar and the players. */
 	final BooleanSetting highlightBox = add(new BooleanSetting("highlight_box", Component.literal("Highlight box"), true) {
 		@Override
 		public Control createControl(Runnable onChanged) {
 			return new BoxSwitchControl(this, onChanged, MusicFeature.this::lyricsArgb);
 		}
-	}, "Lyrics", "A colored box moves along behind the sung word");
+	}, "Lyrics", "A box behind the sung word");
 	/** The color of the lyrics in the info bar and the players. */
 	final ColorDotsSetting<LyricColor> lyricsColor = add(new ColorDotsSetting<>("lyrics_color", Component.literal("Color"), LyricColor.ACCENT,
 		LyricColor::displayName, this::lyricColorOf, LyricColor.CUSTOM), "Lyrics");
 	private final ColorSetting lyricsCustom = add(new ColorSetting("lyrics_color_custom", Component.literal("Custom color"), DEFAULT_LYRICS_CUSTOM), "Lyrics");
 	private final BooleanSetting adlibs = add(new BooleanSetting("adlibs", Component.literal("Adlibs"), true), "Lyrics", "Background vocals, smaller below the line");
-	private final BooleanSetting bracketAdlibs = add(new BooleanSetting("adlib_brackets", Component.literal("Detect adlibs in brackets"), true), "Lyrics",
-		"Such as (oh, yeah), in lyrics that do not mark them");
+	private final EnumSetting<BarAdlibs.Mode> barAdlibs = add(new EnumSetting<>("adlibs_info_bar", Component.literal("Bar ad-libs"), BarAdlibs.Mode.HIDE,
+		mode -> Component.literal(mode.label()), EnumSetting.Style.DROPDOWN), "Lyrics", "Ad-libs in the one-line bar");
+	private final BooleanSetting bracketAdlibs = add(new BooleanSetting("adlib_brackets", Component.literal("Adlibs in brackets"), true), "Lyrics",
+		"Such as (oh, yeah)");
 	private final BooleanSetting safeLyrics = add(new BooleanSetting("safe_lyrics", Component.literal("Censor slurs"), false), "Lyrics", "Shown as ***");
 	private final EnumSetting<TimingMode> timingMode = add(new EnumSetting<>("lyric_timing_mode", Component.literal("Timing"), TimingMode.SMART, TimingMode::displayName, EnumSetting.Style.SEGMENTED), "Lyrics",
 		"Smart finds the delay itself");
-	private final FloatSetting lyricTiming = add(new FloatSetting("lyric_timing", Component.literal("Timing offset"), 0f, -3f, 3f, 1), "Lyrics", "In seconds. Below 0 is earlier");
+	private final FloatSetting lyricTiming = add(new FloatSetting("lyric_timing", Component.literal("Timing offset"), 0f, -3f, 3f, 1).unit(" s"), "Lyrics", "Below 0 is earlier");
 
 	// the lyrics in the info bar and the players
 	/** The lyrics in the info bar's song segment (the sung line replaces the song there) and in the small player and the window. */
-	private final BooleanSetting barLyrics = add(new BooleanSetting(BAR_LYRICS_KEY, Component.literal("Lyrics in the info bar & players"), true), "Lyrics");
+	private final BooleanSetting barLyrics = add(new BooleanSetting(BAR_LYRICS_KEY, Component.literal("Bar lyrics"), true), "Lyrics");
 
-	private final BooleanSetting worldLyrics = add(new BooleanSetting("world_lyrics", Component.literal("Lyrics in the world"), false), "Lyrics in the world");
-	final EnumSetting<WorldFont> worldFont = add(new EnumSetting<>("world_font", Component.literal("Font"), WorldFont.CLEAN, WorldFont::displayName, EnumSetting.Style.SEGMENTED), "Lyrics in the world");
-	final FloatSetting worldSize = add(new FloatSetting("world_size", Component.literal("Size"), 1f, 0.6f, 2f, 2), "Lyrics in the world");
+	private final BooleanSetting worldLyrics = add(new BooleanSetting("world_lyrics", Component.literal("World lyrics"), false), "World lyrics");
+	final EnumSetting<WorldFont> worldFont = add(new EnumSetting<>("world_font", Component.literal("Font"), WorldFont.CLEAN, WorldFont::displayName, EnumSetting.Style.SEGMENTED), "World lyrics");
+	final EnumSetting<LyricReach.Size> worldSize = add(new EnumSetting<>(LyricReach.SIZE_KEY, Component.literal("Size"), LyricReach.Size.AUTO, LyricReach.Size::displayName,
+		EnumSetting.Style.SEGMENTED), "World lyrics");
+	private final BooleanSetting sizeAutoOffered = add(new BooleanSetting(LyricReach.AUTO_OFFERED_KEY, Component.literal("Auto size offered"), true), "World lyrics");
 	final EnumSetting<WorldPlacement> worldPlacement = add(new EnumSetting<>(WORLD_PLACEMENT_KEY, Component.literal("Placement"), WorldPlacement.AUTO,
-		WorldPlacement::displayName, EnumSetting.Style.SEGMENTED), "Lyrics in the world", "Picks a good open spot for every line, in the sky or around you");
-	final EnumSetting<WorldPlace> worldPlace = add(new EnumSetting<>(WORLD_PLACE_KEY, Component.literal("Place"), WorldPlace.NEAR, WorldPlace::displayName,
-		EnumSetting.Style.SEGMENTED), "Lyrics in the world");
-	final EnumSetting<WorldEffect> worldEffect = add(new EnumSetting<>("world_effect", Component.literal("Glow"), WorldEffect.GLOW, WorldEffect::displayName,
-		EnumSetting.Style.SEGMENTED), "Lyrics in the world");
+		WorldPlacement::displayName, EnumSetting.Style.SEGMENTED), "World lyrics", null);
+	final EnumSetting<WorldGlow> worldGlow = add(new EnumSetting<>("world_glow", Component.literal("Glow"), WorldGlow.SUNG_WORD, WorldGlow::displayName,
+		EnumSetting.Style.SEGMENTED), "World lyrics");
 	final EnumSetting<TextColor> worldTextColor = add(new EnumSetting<>("world_text_color", Component.literal("Text color"), TextColor.WHITE,
-		TextColor::displayName, EnumSetting.Style.DROPDOWN), "Lyrics in the world");
-	private final ColorSetting worldTextCustom = add(new ColorSetting("world_text_custom", Component.literal("Custom text color"), 0xFFF4E6), "Lyrics in the world");
-	final EnumSetting<GlowColor> worldGlowColor = add(new ColorDotsSetting<>("world_glow_color", Component.literal("Color"), GlowColor.ACCENT,
-		GlowColor::displayName, this::glowColorOf, GlowColor.CUSTOM), "Lyrics in the world");
-	private final ColorSetting worldGlowCustom = add(new ColorSetting("world_glow_custom", Component.literal("Custom glow color"), 0xFFB347), "Lyrics in the world");
-	final FloatSetting worldReach = add(new FloatSetting("world_reach", Component.literal("Spread"), 0.45f, 0f, 1f, 2), "Lyrics in the world",
-		"How far from the crosshair the lines stand");
-	final FloatSetting worldDistance = add(new FloatSetting("world_distance", Component.literal("Distance"), 1f, 0.6f, 1.6f, 2), "Lyrics in the world");
+		TextColor::displayName, EnumSetting.Style.DROPDOWN), "World lyrics");
+	private final ColorSetting worldTextCustom = add(new ColorSetting("world_text_custom", Component.literal("Custom text color"), 0xFFF4E6), "World lyrics");
+	final EnumSetting<GlowColor> worldGlowColor = add(new ColorDotsSetting<>("world_glow_color", Component.literal("Glow color"), GlowColor.ACCENT,
+		GlowColor::displayName, this::glowColorOf, GlowColor.CUSTOM), "World lyrics");
+	private final ColorSetting worldGlowCustom = add(new ColorSetting("world_glow_custom", Component.literal("Custom glow color"), 0xFFB347), "World lyrics");
 	final EnumSetting<WorldLinger> worldLinger = add(new EnumSetting<>("world_linger", Component.literal("Older lines stay"), WorldLinger.NORMAL,
-		WorldLinger::displayName, EnumSetting.Style.SEGMENTED), "Lyrics in the world");
+		WorldLinger::displayName, EnumSetting.Style.SEGMENTED), "World lyrics",
+		null);
+	final FloatSetting worldLinesAtOnce = add(new FloatSetting("world_lines_at_once", Component.literal("Lines at once"), 2f, 1f, 4f, 0), "World lyrics",
+		null);
+	final BooleanSetting worldGroupFast = add(new BooleanSetting("world_group_fast", Component.literal("Group fast lines"), true), "World lyrics",
+		"Short lines in a row as one block");
+	final FloatSetting worldGroupSeconds = add(new FloatSetting("world_group_seconds", Component.literal("Fast below"), 1f, 0.5f, 2f, 1).unit(" s"), "World lyrics");
+	final EnumSetting<WorldLyricPace.Fade> worldFade = add(new EnumSetting<>("world_fade", Component.literal("Fade"), WorldLyricPace.Fade.AUTO,
+		value -> Component.literal(value.label()), EnumSetting.Style.SEGMENTED), "World lyrics", "Auto: faster for short lines");
+	/** The preset of the lyrics in the world and the pulse of the sung word. */
+	private static final Map<WorldLyricPreset, EnumSetting.OptionCard> PRESET_CARDS = new EnumMap<>(Map.of(
+		WorldLyricPreset.CLASSIC, new EnumSetting.OptionCard("lyrics", SystemColors.PURPLE_RGB, "The line with its glow", null, MusicPictures::presetClassic),
+		WorldLyricPreset.CUTOUT, new EnumSetting.OptionCard("lyrics", SystemColors.ORANGE_RGB, "Word by word, like paper", null, MusicPictures::presetCutout)));
+	final EnumSetting<WorldLyricPreset> worldPreset = add(new EnumSetting<>("world_preset", Component.literal("Preset"), WorldLyricPreset.CLASSIC,
+		value -> Component.literal(value.label()), EnumSetting.Style.SEGMENTED).withOptionCards(PRESET_CARDS::get), "World lyrics");
+	/**
+	 * The Cut-out preset: how the column goes on (pages planned for the song, or a slow scroll), where the colors
+	 * come from, and the symbols. A saved "Words kept" of before is left out when the settings load: the pages are planned from the room now.
+	 */
+	final EnumSetting<CutoutFlow.Mode> cutoutFlow = add(new EnumSetting<>("world_cutout_flow", Component.literal("Flow"), CutoutFlow.Mode.AUTO,
+		value -> Component.literal(value.toString()), EnumSetting.Style.SEGMENTED), "World lyrics",
+		null);
+	final EnumSetting<CutoutWords.Colors> cutoutColors = add(new EnumSetting<>("world_cutout_colors", Component.literal("Color from"), CutoutWords.Colors.COVER,
+		value -> Component.literal(value.label()), EnumSetting.Style.SEGMENTED), "World lyrics", null);
+	final BooleanSetting cutoutSymbols = add(new BooleanSetting("world_cutout_symbols", Component.literal("Word symbols"), true), "World lyrics",
+		"Beside words like \"car\" or \"heart\"");
+	/** Cut-out: whether a strong key word stamps a box in behind it; without, it is only larger and brighter, in the same place. */
+	final BooleanSetting cutoutKeyBox = add(new BooleanSetting("world_cutout_key_box", Component.literal("Key word box"), true), "World lyrics");
 
 	// ------------------------------------------------------------------------------------------------- the music page
 	// The page is a short overview: the song that plays and one row per part, each opening a sub-page in the same window (Where the song shows,
@@ -473,13 +490,13 @@ public class MusicFeature extends Feature implements EditableHud {
 	private static final String GROUP_WORLD = "In the world";
 	private final DerivedEnumSetting<PlayerSize> playerSize = add(new DerivedEnumSetting<>("player_size", Component.literal("Size"), PlayerSize.MEDIUM,
 		PlayerSize::displayName, EnumSetting.Style.SEGMENTED, () -> PlayerSize.nearest(windowScale.get()), size -> windowScale.set(size.scale)), UNTITLED);
-	private final TickTilesSetting lyricPlaces = add(new TickTilesSetting("lyric_places", Component.literal("Where the lyrics show"), null, List.of(
-		new TickTilesSetting.Tile(barLyrics, "In the info bar & players", "", MusicPictures::barLyrics, null, null),
+	private final TickTilesSetting lyricPlaces = add(new TickTilesSetting("lyric_places", Component.literal("Where lyrics show"), null, List.of(
+		new TickTilesSetting.Tile(barLyrics, "Info bar & players", "", MusicPictures::barLyrics, null, null),
 		new TickTilesSetting.Tile(worldLyrics, "In the world", "", MusicPictures::inWorld, null, null)))
 		.compact("Show lyrics in one or more places. Options below only appear for the places you picked."), UNTITLED);
 	private final NowPlayingSetting nowPlaying = add(new NowPlayingSetting(this), UNTITLED);
 	private final NavListSetting overview = add(new NavListSetting("music_overview", Component.literal("Music"), List.of(
-		new NavListSetting.Item("note", SystemColors.PINK_RGB, "Where the song shows", this::displayValue, null, () -> MacScreen.openSubPage(whereView())),
+		new NavListSetting.Item("note", SystemColors.PINK_RGB, "Where songs show", this::displayValue, null, () -> MacScreen.openSubPage(whereView())),
 		new NavListSetting.Item("lyrics", SystemColors.PURPLE_RGB, "Lyrics", this::lyricsValue, null, () -> MacScreen.openSubPage(lyricsView())),
 		new NavListSetting.Item("link", SystemColors.BLUE_RGB, "Source", this::sourceValue, this::sourceDot, () -> MacScreen.openSubPage(sourceView())),
 		new NavListSetting.Item("keyboard", SystemColors.GRAY_RGB, "Keys", this::keysValue, null, () -> MacScreen.openSubPage(keysView())),
@@ -487,7 +504,7 @@ public class MusicFeature extends Feature implements EditableHud {
 	/** While Cider does not answer: says so, with Retry, on the page of the source. */
 	private final ActionRowSetting ciderRetry = add(new ActionRowSetting("cider_retry", Component.literal("Cider"), new ActionRowSetting.Look(() -> "note",
 		() -> CIDER_RGB, () -> "Cider", null, () -> CIDER_DOWN, null, () -> "Retry"), MusicService::retryCider), UNTITLED);
-	private static final String MORE_SUMMARY = "Size, cover lookup, level bars, timing";
+	private static final String MORE_SUMMARY = "Size, covers, bars, timing";
 	private SettingsView whereView;
 	private SettingsView lyricsView;
 	private SettingsView sourceView;
@@ -535,10 +552,10 @@ public class MusicFeature extends Feature implements EditableHud {
 	private int[] bounds = {12, 40, WINDOW_WIDTH, WINDOW_HEIGHT};
 
 	public MusicFeature() {
-		super("music", "Now playing", "The song that is playing, with the cover and live lyrics, from Apple Music or Cider.", false);
+		super("music", "Now playing", "The song playing, its cover and live lyrics.", false);
 		iconRgb(SystemColors.PINK_RGB);
 		iconName("note");
-		summary("The song that plays, with its cover and live lyrics");
+		summary("The song, its cover and live lyrics");
 		ciderToken.under(player, () -> player.get() == Player.AUTO || player.get() == Player.CIDER);
 		// Spotify is set up through the guide, which covers every step. Before that the page only offers the guide; once a Client ID exists (from
 		// the guide or typed in) it can be edited here, with the connect/disconnect button and the status below it.
@@ -557,6 +574,7 @@ public class MusicFeature extends Feature implements EditableHud {
 		spotifyOff.visibleWhen(() -> spotify.getAsBoolean() && MusicService.spotifyConnected());
 		windowX.visibleWhen(() -> false);
 		windowY.visibleWhen(() -> false);
+		sizeAutoOffered.visibleWhen(() -> false);
 		textWidth.under(display, () -> display.get() != Display.WINDOW);
 		windowScale.under(display, () -> display.get() != Display.INFO_BAR);
 		lyricTiming.visibleWhen(() -> lyrics.get() && timingMode.get() == TimingMode.MANUAL);
@@ -564,26 +582,40 @@ public class MusicFeature extends Feature implements EditableHud {
 		worldLyrics.visibleWhen(lyrics::get);
 		adlibs.under(lyrics);
 		bracketAdlibs.under(adlibs);
+		barAdlibs.under(adlibs);
 		worldSize.visibleWhen(() -> lyrics.get() && worldLyrics.get());
 		worldFont.visibleWhen(() -> lyrics.get() && worldLyrics.get());
 		// on the lyrics page a group shows for each place that is ticked; the info bar and the players share one
 		BooleanSupplier world = () -> lyrics.get() && worldLyrics.get();
 		BooleanSupplier screen = () -> lyrics.get() && barLyrics.get();
-		for (Setting<?> look : List.of(worldPlacement, worldEffect, worldTextColor, worldGlowColor, worldLinger)) {
+		for (Setting<?> look : List.of(worldPlacement, worldTextColor, worldGlow, worldLinger, worldLinesAtOnce, worldGroupFast, worldFade)) {
 			look.visibleWhen(world);
 		}
-		// the manual place shows below Placement only while it is Manual
-		for (Setting<?> manual : List.of(worldPlace, worldReach, worldDistance)) {
-			manual.visibleWhen(() -> world.getAsBoolean() && worldPlacement.get() == WorldPlacement.MANUAL);
+		// the glow's color only matters while there is a glow
+		worldGlowColor.visibleWhen(() -> world.getAsBoolean() && worldGlow.get() != WorldGlow.OFF);
+		worldGroupSeconds.visibleWhen(() -> world.getAsBoolean() && worldGroupFast.get());
+		worldPreset.visibleWhen(world);
+		BooleanSupplier cutout = () -> world.getAsBoolean() && worldPreset.get() == WorldLyricPreset.CUTOUT;
+		for (Setting<?> own : List.of(cutoutFlow, cutoutColors, cutoutSymbols, cutoutKeyBox)) {
+			own.visibleWhen(cutout);
+		}
+		// what a preset does not use is greyed out, with a quiet note
+		BooleanSupplier wordByWord = () -> worldPreset.get() == WorldLyricPreset.CUTOUT;
+		for (Setting<?> ofLines : List.of(worldFont, worldTextColor, worldGlowColor, worldLinger, worldLinesAtOnce, worldGroupFast)) {
+			ofLines.disabledWhen(wordByWord, "Set by the preset");
 		}
 		for (Setting<?> look : List.of(highlightBox, lyricsColor)) {
 			look.visibleWhen(screen);
 		}
 		lyricsCustom.visibleWhen(() -> screen.getAsBoolean() && lyricsColor.get() == LyricColor.CUSTOM);
 		worldTextCustom.visibleWhen(() -> world.getAsBoolean() && worldTextColor.get() == TextColor.CUSTOM);
-		worldGlowCustom.visibleWhen(() -> world.getAsBoolean() && worldGlowColor.get() == GlowColor.CUSTOM);
+		worldGlowCustom.visibleWhen(() -> worldGlowColor.isVisible() && worldGlowColor.get() == GlowColor.CUSTOM);
 		playerSize.visibleWhen(() -> display.get() != Display.INFO_BAR);
 		lyricPlaces.visibleWhen(lyrics::get);
+		safeLyrics.visibleWhen(lyrics::get);
+		// the players' card: the info bar has a background and glow of its own
+		panelBackground.visibleWhen(() -> display.get() != Display.INFO_BAR);
+		glow.visibleWhen(() -> display.get() != Display.INFO_BAR && panelBackground.get());
 		ciderRetry.visibleWhen(this::ciderDown);
 		addResetButton();
 	}
@@ -619,10 +651,6 @@ public class MusicFeature extends Feature implements EditableHud {
 		return ON_WINDOWS;
 	}
 
-	/** The currently sung line and how many of its characters are sung. */
-	public record SungLine(String text, float sungChars) {
-	}
-
 	/** @return whether world lyrics are shown: when enabled, and always in cinematic mode, which shows them in its shots */
 	boolean worldLyricsShown() {
 		// while the cinematic camera runs, its own setting decides: the lyrics stand in its shots
@@ -643,15 +671,37 @@ public class MusicFeature extends Feature implements EditableHud {
 	 * before they are sung, compensating for the player's position reporting and rendering delay, and long lines appear earlier than short ones
 	 * since they take longer to read.
 	 */
-	private long timedPosition() {
-		long position = controls.scrubbing() ? controls.scrubMs() : MusicService.position();
+	private final LyricLead lyricLead = new LyricLead();
+
+	/** @return whether the song's position is being dragged in the player, where {@link #scrubMs} is the position */
+	public boolean scrubbing() {
+		return controls.scrubbing();
+	}
+
+	public long scrubMs() {
+		return controls.scrubMs();
+	}
+
+	/**
+	 * @return how far ahead of the player's position the lyrics should run now, as wanted for the next line (the smooth clock of the world lyrics
+	 *         eases into its changes itself)
+	 */
+	public long lyricLeadMs(long position) {
 		if (timingMode.get() == TimingMode.MANUAL) {
-			return position + Math.round(lyricTiming.get() * 1000f);
+			return Math.round(lyricTiming.get() * 1000f);
 		}
 		MusicService.LyricLine next = MusicService.lyricLineAt(position + 300L);
 		float characters = next == null ? 20f : next.text().length();
-		long lead = 260L + Math.round(Mth.clamp(characters / 60f, 0.1f, 1f) * 380f);
-		return position + lead;
+		return 260L + Math.round(Mth.clamp(characters / 60f, 0.1f, 1f) * 380f);
+	}
+
+	private long timedPosition() {
+		long position = controls.scrubbing() ? controls.scrubMs() : MusicService.position();
+		if (timingMode.get() == TimingMode.MANUAL) {
+			return position + lyricLeadMs(position);
+		}
+		// the lead only drifts toward what the next line asks for: taken at once, the clock jumped over a short line or stepped back before one
+		return position + lyricLead.at(position, lyricLeadMs(position));
 	}
 
 	private float tickClock() {
@@ -814,23 +864,9 @@ public class MusicFeature extends Feature implements EditableHud {
 			long next = LyricBreaks.nextStart(MusicService.lyrics(), line);
 			return LyricBreaks.progress(line.timeMs(), next, at) * line.text().length();
 		}
-		if (!line.words().isEmpty()) {
-			float chars = 0f;
-			for (MusicService.Word word : line.words()) {
-				if (at >= word.endMs()) {
-					chars = word.to();
-				} else if (at >= word.startMs()) {
-					// clamp to the word: a held word whose end is not after its start would otherwise run ahead and jump back
-						float part = Mth.clamp((at - word.startMs()) / (float) Math.max(1L, word.endMs() - word.startMs()), 0f, 1f);
-						chars = Math.max(chars, word.from() + (word.to() - word.from()) * part);
-					break;
-				} else {
-					break;
-				}
-			}
-			return chars;
-		}
-		return MusicService.lyricProgress(at) * line.text().length();
+		// word timings exactly where the line has them; without, estimated ones from the line's own start to the next line's, never by whichever
+		// line the time falls into
+		return LyricSweep.sung(line, line.words().isEmpty() ? MusicService.nextLineStart(line) : line.timeMs(), at);
 	}
 
 	/** The current background vocal (ad-lib), or null; the last one stays while it fades out. */
@@ -994,6 +1030,25 @@ public class MusicFeature extends Feature implements EditableHud {
 	/** @return the color of the world lyrics' glow: the accent, the cover's (bright enough to glow), white, or the custom one */
 	int worldGlowArgb() {
 		return glowColorOf(worldGlowColor.get());
+	}
+
+	/** A config from before the three placements: its "Manual" becomes the place that was chosen with it. */
+	@Override
+	public void load(JsonObject json) {
+		LyricSpots.keepOldPlacement(json);
+		LyricReach.offerAuto(json);
+		super.load(json);
+	}
+
+	int cutoutBase() {
+		int[] palette = cutoutColors.get() == CutoutWords.Colors.COVER ? coverPalette() : null;
+		return palette != null && palette.length > 0 ? 0xFF000000 | palette[0] : accentArgb();
+	}
+
+	/** @return a second color beside it: another color of the cover where it has one, else the main color itself, so all tones are of one family */
+	int cutoutSecond() {
+		int[] palette = cutoutColors.get() == CutoutWords.Colors.COVER ? coverPalette() : null;
+		return palette != null && palette.length > 1 ? 0xFF000000 | palette[1] : cutoutBase();
 	}
 
 	private int glowColorOf(GlowColor choice) {
@@ -1225,7 +1280,7 @@ public class MusicFeature extends Feature implements EditableHud {
 	}
 
 	/** @return whether the settings put the lyrics in the info bar, whether or not the feature is on (for the page's preview) */
-	boolean barLyricsChosen() {
+	public boolean barLyricsChosen() {
 		return lyrics.get() && barLyrics.get() && display.get() == Display.INFO_BAR;
 	}
 
@@ -1248,6 +1303,11 @@ public class MusicFeature extends Feature implements EditableHud {
 	/** @return whether a lyric line is being sung and shown: lyrics on, a line now, and the song playing */
 	boolean lyricsPlaying() {
 		return isEnabled() && lyrics.get() && showingLyric && !pausedLong() && MusicService.isPlaying();
+	}
+
+	/** @return how ad-libs show in the info bar, which has one line */
+	BarAdlibs.Mode barAdlibMode() {
+		return barAdlibs.get();
 	}
 
 	/** @return whether adlibs are shown */
@@ -1291,6 +1351,11 @@ public class MusicFeature extends Feature implements EditableHud {
 	}
 
 	/** @return the song's progress as shown, from 0 to 1, moving smoothly */
+	/** @return how far the song is, from 0 to 1, for a picture of the music card outside this package */
+	public float cardProgress() {
+		return shownProgress();
+	}
+
 	float shownProgress() {
 		return seeking ? seekFraction : progressShown;
 	}
@@ -1307,34 +1372,6 @@ public class MusicFeature extends Feature implements EditableHud {
 		menuBarWidth = barWidth;
 		seekFraction = Mth.clamp((float) ((mouseX - barX) / Math.max(1, barWidth)), 0f, 1f);
 	}
-
-	/** The line the main menu's next line was looked up for, and that next line. */
-	private MusicService.LyricLine menuLineFor;
-	private String menuNext = "";
-
-	/** @return the line sung now, for the main menu, or null when there is none (no lyrics, a break, or lyrics are off) */
-	public String menuLyricNow() {
-		update(Minecraft.getInstance());
-		return lyrics.get() && showingLyric && lyricLine != null && !pausedLong() && !lyricLine.text().isBlank() ? lyricLine.text() : null;
-	}
-
-	/** @return the line after the one sung now, for the main menu, or an empty text; looked up once per line */
-	public String menuLyricNext() {
-		if (lyricLine != menuLineFor) {
-			menuLineFor = lyricLine;
-			menuNext = "";
-			List<MusicService.LyricLine> all = MusicService.lyrics();
-			int at = lyricLine == null ? -1 : all.indexOf(lyricLine);
-			for (int i = at + 1; at >= 0 && i < all.size(); i++) {
-				if (!all.get(i).text().isBlank()) {
-					menuNext = all.get(i).text();
-					break;
-				}
-			}
-		}
-		return menuNext;
-	}
-
 
 	/** Draws a media button glyph: 0 previous, 1 play, 2 pause, 3 next; smooth shapes with rounded corners. */
 	private static void glyph(Ui ui, int kind, int cx, int cy, int color) {
@@ -2309,7 +2346,8 @@ public class MusicFeature extends Feature implements EditableHud {
 		}
 	}
 
-	static String clock(long millis) {
+	/** @return a song position as minutes and seconds, "3:07"; shared by every view of the playing song */
+	public static String clock(long millis) {
 		long seconds = Math.max(0, millis / 1000);
 		return seconds / 60 + (seconds % 60 < 10 ? ":0" : ":") + seconds % 60;
 	}
@@ -2323,6 +2361,17 @@ public class MusicFeature extends Feature implements EditableHud {
 	@Override
 	public boolean hudShown() {
 		return isEnabled() && display.get() != Display.INFO_BAR;
+	}
+
+	/** Set to show in the info bar, the song is a segment of that bar: the bar stands for it in the editor while it shows. */
+	@Override
+	public EditableHud hudShownIn() {
+		return isEnabled() && display.get() == Display.INFO_BAR && ModFeatures.INFO_BAR.hudShown() ? ModFeatures.INFO_BAR : null;
+	}
+
+	@Override
+	public String hudShownInNote() {
+		return "Shown in the info bar";
 	}
 
 	@Override
@@ -2420,7 +2469,7 @@ public class MusicFeature extends Feature implements EditableHud {
 	private String keysValue() {
 		for (Setting<?> setting : keys()) {
 			if (setting instanceof KeySetting key && !key.mapping().isUnbound()) {
-				return key.labelText() + " " + key.mapping().getTranslatedKeyMessage().getString();
+				return key.labelText() + " " + dev.tim1337.lumio.features.misc.keybinds.KeyCombos.shown(key.mapping());
 			}
 		}
 		return "None set";
@@ -2442,8 +2491,8 @@ public class MusicFeature extends Feature implements EditableHud {
 		if (whereView == null) {
 			// the info bar's song width shows here too while the song is in the info bar
 			EnumSetting<?> songWidth = ModFeatures.INFO_BAR.songSizeSetting();
-			songWidth.visibleWhen(() -> display.get() == Display.INFO_BAR);
-			whereView = new SettingsView("music_where", "Where the song shows", "", "note", SystemColors.PINK_RGB,
+			songWidth.visibleWhen(ModFeatures.INFO_BAR::songWidthUsed);
+			whereView = new SettingsView("music_where", "Where songs show", "", "note", SystemColors.PINK_RGB,
 				List.of(new SettingsView.Group(UNTITLED, List.of(display, songWidth, playerSize))));
 		}
 		return whereView;
@@ -2451,14 +2500,14 @@ public class MusicFeature extends Feature implements EditableHud {
 
 	/**
 	 * @return the sub-page of the lyrics: where they show, and a group for each place that is ticked (the info bar and the players
-	 *         share one), then the adlibs and the main menu
+	 *         share one), then the adlibs
 	 */
 	private SettingsView lyricsView() {
 		if (lyricsView == null) {
 			lyricsView = new SettingsView("music_lyrics", "Lyrics", "", "lyrics", SystemColors.PURPLE_RGB, List.of(
 				new SettingsView.Group(UNTITLED, List.of(lyricPlaces)),
 				new SettingsView.Group(GROUP_SCREEN, List.of(highlightBox, lyricsColor, lyricsCustom)),
-				new SettingsView.Group(GROUP_WORLD, List.of(worldPlacement, worldPlace, worldReach, worldDistance, worldEffect, worldGlowColor, worldGlowCustom)),
+				new SettingsView.Group(GROUP_WORLD, List.of(worldPreset, worldPlacement, worldSize, cutoutFlow, cutoutColors, cutoutKeyBox, worldGlow, worldGlowColor, worldGlowCustom, cutoutSymbols)),
 				new SettingsView.Group(UNTITLED_2, List.of(adlibs))));
 		}
 		return lyricsView;
@@ -2478,7 +2527,8 @@ public class MusicFeature extends Feature implements EditableHud {
 			moreView = new SettingsView("music_more", "More", "", "sliders", SystemColors.GRAY_RGB, List.of(
 				new SettingsView.Group("Player", List.of(windowScale, textWidth, show, accent, panelBackground, glow)),
 				new SettingsView.Group("Lyrics", List.of(lyrics, bracketAdlibs, safeLyrics, timingMode, lyricTiming)),
-				new SettingsView.Group("Lyrics in the world", List.of(worldTextColor, worldTextCustom, worldFont, worldSize, worldLinger)),
+				new SettingsView.Group("World lyrics", List.of(worldTextColor, worldTextCustom, worldFont, worldLinger, worldLinesAtOnce, worldGroupFast,
+					worldGroupSeconds, worldFade)),
 				new SettingsView.Group("Cover", List.of(onlineCovers))));
 		}
 		return moreView;

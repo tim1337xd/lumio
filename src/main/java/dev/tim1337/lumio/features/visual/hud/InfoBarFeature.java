@@ -1,5 +1,6 @@
 package dev.tim1337.lumio.features.visual.hud;
 
+import dev.tim1337.lumio.hud.PanelSizes;
 import dev.tim1337.lumio.api.experimental.motion.Spring;
 import dev.tim1337.lumio.api.InfoSegment;
 import dev.tim1337.lumio.api.experimental.draw.SystemColors;
@@ -113,7 +114,7 @@ public class InfoBarFeature extends Feature implements EditableHud {
 	/** When the song segment shows the song. */
 	public enum SongWhen {
 		ALWAYS("Always"),
-		NO_LYRICS("When no lyrics are shown");
+		NO_LYRICS("Without lyrics");
 
 		private final Component displayName;
 
@@ -138,7 +139,7 @@ public class InfoBarFeature extends Feature implements EditableHud {
 	// the segments' own options, edited in their rows of the segment list
 	private final EnumSetting<Clock> clock = add(new EnumSetting<>("clock", Component.literal("Time"), Clock.REAL, Clock::displayName, EnumSetting.Style.SEGMENTED));
 	private final BooleanSetting hours24 = add(new BooleanSetting("hours_24", Component.literal("24 hour clock"), true));
-	private final BooleanSetting fpsLine = add(new BooleanSetting("fps_line", Component.literal("Line of the last 10 seconds"), true));
+	private final BooleanSetting fpsLine = add(new BooleanSetting("fps_line", Component.literal("10 s graph"), true));
 	private final FloatSetting fpsYellow = add(new FloatSetting("fps_yellow", Component.literal("Yellow below"), 60f, 5f, 360f, 0)).atLeast(this::fpsRedValue);
 	private final FloatSetting fpsRed = add(new FloatSetting("fps_red", Component.literal("Red below"), 30f, 5f, 360f, 0)).atMost(this::fpsYellowValue);
 	private final BooleanSetting pingBars = add(new BooleanSetting("ping_bars", Component.literal("Signal bars"), true));
@@ -154,7 +155,7 @@ public class InfoBarFeature extends Feature implements EditableHud {
 		SONG_WIDTH_MOST, 0));
 	private final DerivedEnumSetting<SongSize> songSize = add(new DerivedEnumSetting<>("song_size", Component.literal("Song width"), SongSize.MEDIUM,
 		SongSize::displayName, EnumSetting.Style.SEGMENTED, () -> SongSize.nearest(songWidth.get()), size -> songWidth.set(size.width)));
-	private final BooleanSetting coordsY = add(new BooleanSetting("coords_y", Component.literal("Height (Y)"), true));
+	private final BooleanSetting coordsY = add(new BooleanSetting("coords_y", Component.literal("Height"), true));
 	private final BooleanSetting facing = add(new BooleanSetting("facing", Component.literal("Facing direction"), true));
 
 	private final EnumSetting<Style> style = add(new EnumSetting<>("style", Component.literal("Style"), Style.BOX, Style::displayName, EnumSetting.Style.SEGMENTED), "Segments");
@@ -162,7 +163,7 @@ public class InfoBarFeature extends Feature implements EditableHud {
 		// the bar as it looks with these settings, above its segment list
 		add(new PreviewSetting("preview", Component.literal("Preview"), PREVIEW_HEIGHT, this::drawSettingsPreview), "Segments");
 	}
-	private final OrderedListSetting segments = add(new OrderedListSetting(SEGMENTS_KEY, Component.literal("Segments and their order"), List.of(
+	private final OrderedListSetting segments = add(new OrderedListSetting(SEGMENTS_KEY, Component.literal("Segments"), List.of(
 		segment(InfoBarSegment.CLOCK, clock, hours24),
 		segment(InfoBarSegment.FPS, fpsLine, fpsYellow, fpsRed),
 		segment(InfoBarSegment.PING, pingBars, pingNumber, pingYellow, pingRed),
@@ -172,7 +173,7 @@ public class InfoBarFeature extends Feature implements EditableHud {
 		segment(InfoBarSegment.COORDS, coordsY, facing),
 		segment(InfoBarSegment.MEMORY),
 		segment(InfoBarSegment.CPS))).defaultLayout(List.of("clock", "fps", "ping", "tps", "area", "song")), "Segments",
-		"Switch them on or off, drag to order; click one for its options");
+		"Click one for its options");
 
 	private final Spring awayFromTitle = Spring.smooth(Spring.DEFAULT);
 	private static final float AWAY_MARGIN = 2f;
@@ -180,7 +181,7 @@ public class InfoBarFeature extends Feature implements EditableHud {
 	private final EnumSetting<PanelLook.Mode> lookMode = add(new EnumSetting<>("look_mode", Component.literal("Look"), PanelLook.Mode.THEME, PanelLook.Mode::displayName,
 		EnumSetting.Style.SEGMENTED), "Panel");
 	private final PanelLook look = new PanelLook(lookMode);
-	private final FloatSetting scale = add(new FloatSetting("scale", Component.literal("Size"), 1f, 0.3f, 3f, 2).percent(), "Panel");
+	private final FloatSetting scale = add(new FloatSetting("scale", Component.literal("Size"), 1f, PanelSizes.LEAST, PanelSizes.MOST, 2).percent(), "Panel");
 	private final BooleanSetting background = add(new BooleanSetting("background", Component.literal("Background"), true), "Panel");
 	private final BooleanSetting glow = add(new BooleanSetting("glow", Component.literal("Glow"), true), "Panel");
 	private final BooleanSetting glowSoft = add(new BooleanSetting("glow_soft", Component.literal("Soft glow"), false), "Panel");
@@ -201,10 +202,12 @@ public class InfoBarFeature extends Feature implements EditableHud {
 	private boolean previewing;
 
 	public InfoBarFeature() {
-		super("info_bar", "Info bar", "The time, frame rate, connection, where you are and the song, at the top of the screen.", true);
+		super("info_bar", "Info bar", "Time, FPS, ping, place and song at the top.", true);
+		// an add-on may ask for one ping measurement while the bar does not show the ping
+		dev.tim1337.lumio.api.experimental.util.ServerPing.asker(InfoBarValues::askOnce);
 		iconRgb(SystemColors.TEAL_RGB);
 		iconName("gauge");
-		summary("Time, frame rate, ping and more at the top of the screen");
+		summary("Time, FPS, ping and more at the top");
 		xOffset.visibleWhen(() -> false);
 		top.visibleWhen(() -> false);
 		for (Setting<?> own : List.of(clock, hours24, fpsLine, fpsYellow, fpsRed, pingBars, pingNumber, pingYellow, pingRed, tpsYellow, tpsOrange, songWhen,
@@ -214,6 +217,9 @@ public class InfoBarFeature extends Feature implements EditableHud {
 		}
 		background.visibleWhen(() -> style.get() != Style.MINIMAL);
 		glowRow.visibleWhen(() -> style.get() != Style.MINIMAL && background.get());
+		panelDepth.visibleWhen(() -> style.get() != Style.MINIMAL && background.get());
+		songSize.visibleWhen(this::songWidthUsed);
+		songWidth.visibleWhen(this::songWidthUsed);
 		glow.visibleWhen(() -> false);
 		glowSoft.visibleWhen(() -> false);
 		look.follow(scale, () -> ModFeatures.MENU.hudSize());
@@ -452,12 +458,29 @@ public class InfoBarFeature extends Feature implements EditableHud {
 		InfoBarValues.onPong(timestamp);
 	}
 
+	/** How far the bar is dimmed under the open chat. */
+	private final dev.tim1337.lumio.hud.HudUnderChat.Fade underChat = new dev.tim1337.lumio.hud.HudUnderChat.Fade();
+
 	/** Draws the bar. Called every frame, above the game and below screens. */
 	public void render(GuiGraphicsExtractor graphics, DeltaTracker deltaTracker) {
 		Minecraft client = Minecraft.getInstance();
 		if (!isEnabled() || client.level == null && !previewing) {
 			return;
 		}
+		// behind a menu with slots the bar follows the HUD's setting like the panels: dimmed, as it is, or not there
+		boolean menuOpen = !previewing && client.gui.screen() instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>;
+		dev.tim1337.lumio.hud.HudInMenus.Look menuLook = dev.tim1337.lumio.hud.HudInMenus.look(ModFeatures.MENU.hudInMenus(), dev.tim1337.lumio.hud.HudInMenus.Own.FOLLOW, menuOpen, false);
+		// under the menu's window or an overlay on it (the storage overlay is large) the bar steps back, as a panel does, and returns afterwards
+		float menuCovered = menuOpen ? dev.tim1337.lumio.hud.HudPanelFeature.coveredByMenu(client, hudBounds()) : 0f;
+		float menuOpacity = dev.tim1337.lumio.hud.HudInMenus.opacity(menuLook, ModFeatures.MENU.hudMenuDim(), menuCovered);
+		if (dev.tim1337.lumio.hud.HudPanelFeature.menuWatch && menuOpen) {
+			(menuOpacity <= 0f ? dev.tim1337.lumio.hud.HudPanelFeature.MENU_HIDDEN : menuCovered > 0f ? dev.tim1337.lumio.hud.HudPanelFeature.MENU_FADED
+				: dev.tim1337.lumio.hud.HudPanelFeature.MENU_SHOWN).add(id());
+		}
+		if (menuOpacity <= 0f) {
+			return;
+		}
+		float alphaBefore = Ui.alpha();
 		// own stratum, like every panel: the game only checks for overlaps within a stratum
 		graphics.nextStratum();
 		// its own theme while it is drawn
@@ -470,8 +493,12 @@ public class InfoBarFeature extends Feature implements EditableHud {
 			// over a menu of the game the bar makes way for its title, up off the screen
 			float away = awayFromTitle.follow(ScreenTitles.titleShown() ? 1f : 0f);
 			float rise = away * (top.get() + hudBounds()[3] + AWAY_MARGIN);
+			// under the open chat the bar is dimmed, as a panel is
+			Ui.setAlpha(alphaBefore * menuOpacity * underChat.step(!previewing && dev.tim1337.lumio.hud.HudUnderChat.under(hudBounds(), ModFeatures.CHAT == null ? null : ModFeatures.CHAT.openPanel()),
+				ModFeatures.MENU.animations(), System.nanoTime()));
 			renderer.render(graphics, graphics.guiWidth() / 2f + xOffset.get(), top.get() - rise, !previewing);
 		} finally {
+			Ui.setAlpha(alphaBefore);
 			HudStyle.setPanelTheme(null);
 			HudStyle.setPanelSurface(null, 0f);
 			HudStyle.setPanelDepth(null);
@@ -513,6 +540,11 @@ public class InfoBarFeature extends Feature implements EditableHud {
 	/** @return the song segment's width with the lyrics in it, in GUI pixels at the bar's own size */
 	public float songWidth() {
 		return songWidth.get() * MOCKUP_TO_GUI;
+	}
+
+	/** @return whether the song width counts: it is the room of the lyrics in the song segment, which the stacked style lays out by itself */
+	public boolean songWidthUsed() {
+		return segments.isOn(InfoBarSegment.SONG.id) && style.get() != Style.STACKED && ModFeatures.MUSIC.barLyricsChosen();
 	}
 
 	/** @return the song width presets, for the music page's Where the song shows */
@@ -572,6 +604,21 @@ public class InfoBarFeature extends Feature implements EditableHud {
 	@Override
 	public float hudScale() {
 		return scale.get();
+	}
+
+	@Override
+	public float hudAutoFit() {
+		return renderer.autoFit();
+	}
+
+	/** Takes the size the bar is shrunk to now as its own. */
+	@Override
+	public boolean hudApplyFit() {
+		if (renderer.autoFit() >= dev.tim1337.lumio.hud.HudFit.KEPT) {
+			return false;
+		}
+		scale.set(Mth.clamp(scale.get() * renderer.autoFit(), scale.min(), scale.max()));
+		return true;
 	}
 
 	@Override

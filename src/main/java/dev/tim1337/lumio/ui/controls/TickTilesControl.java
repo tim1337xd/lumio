@@ -17,7 +17,7 @@ import java.util.List;
  * Picture tiles to tick, one or more, in one row: each with its picture, a tick box in its corner, its name and what it is. A ticked tile has an
  * accent frame; a tile that cannot be used now is greyed and says why instead. A click ticks or unticks a usable tile.
  */
-public class TickTilesControl extends Control {
+public final class TickTilesControl extends Control {
 	private static final int GAP = 8;
 	private static final int PAD = 8;
 	private static final int TICK = 10;

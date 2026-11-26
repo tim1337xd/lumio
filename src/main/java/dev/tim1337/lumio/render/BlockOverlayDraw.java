@@ -1,5 +1,6 @@
 package dev.tim1337.lumio.render;
 
+import dev.tim1337.lumio.api.experimental.draw.Draw;
 import dev.tim1337.lumio.features.visual.world.BlockOverlayLook;
 
 import com.mojang.blaze3d.vertex.PoseStack;
@@ -45,10 +46,6 @@ public final class BlockOverlayDraw {
 	private BlockOverlayDraw() {
 	}
 
-	private static int argb(int rgb, float alpha) {
-		return Math.round(Math.clamp(alpha, 0f, 1f) * 255f) << 24 | rgb & 0xFFFFFF;
-	}
-
 	/** Moves to a block and draws what is given there. */
 	private static void at(LevelRenderContext context, BlockPos pos, Runnable draw) {
 		Vec3 camera = Minecraft.getInstance().gameRenderer.mainCamera().position();
@@ -71,13 +68,13 @@ public final class BlockOverlayDraw {
 			switch (look.style()) {
 				case OUTLINE -> {
 					if (look.fill() > 0f) {
-						faces(context, shape, argb(look.colorAt(0f), look.fill() * look.alpha()));
+						faces(context, shape, Draw.argb(look.colorAt(0f), look.fill() * look.alpha()));
 					}
-					context.submitNodeCollector().submitShapeOutline(context.poseStack(), shape, RenderTypes.lines(), argb(look.colorAt(0f), look.alpha()), look.width(), false);
+					context.submitNodeCollector().submitShapeOutline(context.poseStack(), shape, RenderTypes.lines(), Draw.argb(look.colorAt(0f), look.alpha()), look.width(), false);
 				}
 				case GLOW -> {
 					if (look.fill() > 0f) {
-						faces(context, shape, argb(look.colorAt(0f), look.fill() * look.alpha()));
+						faces(context, shape, Draw.argb(look.colorAt(0f), look.fill() * look.alpha()));
 					}
 					edges(context, shape, look, GLOW_LAYERS);
 					edges(context, shape, look, new float[][]{{1f, 1f}});
@@ -133,13 +130,13 @@ public final class BlockOverlayDraw {
 	private static void edgeEnd(PoseStack.Pose last, VertexConsumer consumer, float x, float y, float z, float nx, float ny, float nz, Look look, float width, float strength) {
 		float place = BlockOverlayLook.place(x, y, z);
 		int rgb = look.style() == BlockOverlayLook.Style.SHADER ? BlockOverlayLook.shaderColor(look.colors(), look.rgb(), place, look.seconds(), look.speed()) : look.colorAt(place);
-		consumer.addVertex(last, x, y, z).setColor(argb(rgb, strength * look.alpha())).setNormal(last, nx, ny, nz).setLineWidth(width);
+		consumer.addVertex(last, x, y, z).setColor(Draw.argb(rgb, strength * look.alpha())).setNormal(last, nx, ny, nz).setLineWidth(width);
 	}
 
 	/** The faces in the colors of the Shader style, which run along the block from corner to corner. */
 	private static void flowingFaces(LevelRenderContext context, VoxelShape shape, Look look, double grow, float alpha) {
 		List<AABB> boxes = shape.toAabbs();
-		BlockHighlight.Shade shade = place -> argb(BlockOverlayLook.shaderColor(look.colors(), look.rgb(), place, look.seconds(), look.speed()), alpha);
+		BlockHighlight.Shade shade = place -> Draw.argb(BlockOverlayLook.shaderColor(look.colors(), look.rgb(), place, look.seconds(), look.speed()), alpha);
 		context.submitNodeCollector().submitCustomGeometry(context.poseStack(), RenderTypes.debugQuads(), (last, consumer) -> {
 			for (AABB box : boxes) {
 				BlockHighlight.quadsOf(last, consumer, box, grow, boxes, 0, shade);
@@ -154,7 +151,7 @@ public final class BlockOverlayDraw {
 		}
 		AABB bounds = shape.bounds();
 		double top = bounds.minY + (bounds.maxY - bounds.minY) * progress;
-		int argb = argb(rgb, BREAKING_ALPHA * alpha);
+		int argb = Draw.argb(rgb, BREAKING_ALPHA * alpha);
 		at(context, pos, () -> context.submitNodeCollector().submitCustomGeometry(context.poseStack(), RenderTypes.debugQuads(), (last, consumer) -> {
 			for (AABB box : shape.toAabbs()) {
 				if (box.minY < top) {
@@ -173,8 +170,8 @@ public final class BlockOverlayDraw {
 		double grow = BlockOverlayLook.pulseGrow(ageMillis);
 		VoxelShape bigger = net.minecraft.world.phys.shapes.Shapes.create(shape.bounds().inflate(grow));
 		at(context, pos, () -> {
-			faces(context, bigger, argb(rgb, PULSE_FILL * alpha));
-			context.submitNodeCollector().submitShapeOutline(context.poseStack(), bigger, RenderTypes.lines(), argb(rgb, alpha), width, false);
+			faces(context, bigger, Draw.argb(rgb, PULSE_FILL * alpha));
+			context.submitNodeCollector().submitShapeOutline(context.poseStack(), bigger, RenderTypes.lines(), Draw.argb(rgb, alpha), width, false);
 		});
 	}
 }

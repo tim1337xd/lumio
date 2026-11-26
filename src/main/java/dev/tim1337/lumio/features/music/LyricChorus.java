@@ -56,6 +56,33 @@ public final class LyricChorus {
 		return !key.isEmpty() && key.equals(key(b));
 	}
 
+	/** @return whether two lines are the same sung line: the same words, case, marks and ad-libs in brackets aside */
+	public static boolean sameLine(String a, String b) {
+		return sameWords(withoutBrackets(a), withoutBrackets(b));
+	}
+
+	/** @return what a sung line is known by: its words without case, marks and ad-libs in brackets ({@link #sameLine}) */
+	static String lineKey(String text) {
+		return key(withoutBrackets(text));
+	}
+
+	/** @return a line without the parts in round or square brackets (ad-libs sung in the background) */
+	static String withoutBrackets(String text) {
+		StringBuilder out = new StringBuilder(text.length());
+		int depth = 0;
+		for (int i = 0; i < text.length(); i++) {
+			char c = text.charAt(i);
+			if (c == '(' || c == '[') {
+				depth++;
+			} else if ((c == ')' || c == ']') && depth > 0) {
+				depth--;
+			} else if (depth == 0) {
+				out.append(c);
+			}
+		}
+		return out.toString();
+	}
+
 	/** @return whether the next line is the same line sung again soon after: shorter pauses than this between them keep the line on show */
 	public static boolean repeats(String shownText, long shownEndMs, String nextText, long nextStartMs) {
 		return sameWords(shownText, nextText) && nextStartMs - shownEndMs <= REPEAT_PAUSE_MS;

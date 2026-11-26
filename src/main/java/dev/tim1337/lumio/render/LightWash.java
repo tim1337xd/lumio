@@ -6,7 +6,6 @@ import dev.tim1337.lumio.api.experimental.util.Logs;
 import org.joml.Matrix3x2f;
 
 import com.mojang.blaze3d.pipeline.RenderPipeline;
-import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.Minecraft;

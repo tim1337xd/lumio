@@ -19,7 +19,7 @@ import java.util.List;
  * summary of what it does (wrapped onto a second line where the row is narrow, never cut), the switch, and a chevron when it has settings. Clicking a row opens its settings next to the menu, or
  * toggles it if it has none; the row of the open feature is marked.
  */
-public class FeatureListControl extends Control {
+public final class FeatureListControl extends Control {
 	private static final int ROW_HEIGHT = 32;
 	/** A summary's second line, and the most lines it takes. */
 	private static final int SUMMARY_LINE = 10;
@@ -28,6 +28,12 @@ public class FeatureListControl extends Control {
 	private static final int TILE = 20;
 	private static final int TILE_ICON = 13;
 	private static final int TEXT_GAP = 8;
+	/** The badge after a feature's name: its height, the room beside its text and the gap to the name. */
+	private static final int BADGE_HEIGHT = 12;
+	private static final int BADGE_PAD = 5;
+	private static final int BADGE_GAP = 6;
+	/** The color of the "Work in progress" tag. */
+	public static final int WORK_COLOR = 0xFFFF9F0A;
 	/** Room for the chevron at the end of a row. */
 	private static final int CHEVRON_ROOM = 14;
 	/** Width of the accent bar at the left edge of the row whose settings are open. */
@@ -191,7 +197,38 @@ public class FeatureListControl extends Control {
 		int textX = tileX + TILE + TEXT_GAP;
 		int textRight = (feature.isSwitchable() ? switchX() : x + width - PAD - CHEVRON_ROOM) - TEXT_GAP;
 		int room = Math.max(30, textRight - textX);
-		ui.textAtScaledBold(ui.fit(feature.nameText(), room - 4), textX, top + 6, 1f, palette.text());
+		// the name is never cut for its tags: the work-in-progress tag (in full, else short) and then the floor badge only where they fit after it
+		int nameWidth = Math.round(ui.boldWidthScaled(feature.nameText(), 1f));
+		int left = room - 4 - nameWidth;
+		String work = null;
+		if (feature.isWorkInProgress()) {
+			for (String tag : new String[] {Feature.WORK_IN_PROGRESS, Feature.WORK_IN_PROGRESS_SHORT}) {
+				if (work == null && ui.width(tag) + BADGE_PAD * 2 + BADGE_GAP <= left) {
+					work = tag;
+				}
+			}
+		}
+		int workRoom = work == null ? 0 : ui.width(work) + BADGE_PAD * 2 + BADGE_GAP;
+		String badge = feature.badge();
+		if (badge != null && ui.width(badge) + BADGE_PAD * 2 + BADGE_GAP > left - workRoom) {
+			badge = null;
+		}
+		int badgeRoom = badge == null ? 0 : ui.width(badge) + BADGE_PAD * 2 + BADGE_GAP;
+		String name = ui.fit(feature.nameText(), room - 4 - badgeRoom - workRoom);
+		ui.textAtScaledBold(name, textX, top + 6, 1f, palette.text());
+		if (work != null) {
+			int workX = textX + Math.round(ui.boldWidthScaled(name, 1f)) + BADGE_GAP + badgeRoom;
+			int workWidth = ui.width(work) + BADGE_PAD * 2;
+			ui.rounded(workX, top + 4, workWidth, BADGE_HEIGHT, Radius.box(BADGE_HEIGHT), Ui.withOpacity(WORK_COLOR, 0.18f));
+			ui.textMiddle(work, workX + BADGE_PAD, top + 4 + BADGE_HEIGHT / 2, Ui.mix(palette.text(), palette.coloredText(WORK_COLOR), 0.55f));
+		}
+		if (badge != null) {
+			// the floor or phase the feature is for, a small pill after its name
+			int badgeX = textX + Math.round(ui.boldWidthScaled(name, 1f)) + BADGE_GAP;
+			int badgeWidth = ui.width(badge) + BADGE_PAD * 2;
+			ui.rounded(badgeX, top + 4, badgeWidth, BADGE_HEIGHT, Radius.box(BADGE_HEIGHT), Ui.withOpacity(0xFF000000 | feature.iconRgb(), 0.18f));
+			ui.textMiddle(badge, badgeX + BADGE_PAD, top + 4 + BADGE_HEIGHT / 2, Ui.mix(palette.text(), palette.coloredText(0xFF000000 | feature.iconRgb()), 0.45f));
+		}
 		List<String> lines = summaries.get(i);
 		for (int k = 0; k < lines.size(); k++) {
 			ui.textAtScaled(lines.get(k), textX, top + 18 + k * SUMMARY_LINE, TextScale.SMALL, Ui.withOpacity(palette.textSecondary(), 0.95f));

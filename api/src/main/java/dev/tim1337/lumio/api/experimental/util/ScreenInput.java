@@ -18,6 +18,10 @@ public final class ScreenInput {
 	public static final int RIGHT = 1;
 	/** The middle mouse button. */
 	public static final int MIDDLE = 2;
+	/** The mouse's back button (the fourth), as {@link #button} gives it. */
+	public static final int BACK = 3;
+	/** The mouse's forward button (the fifth). */
+	public static final int FORWARD = 4;
 
 	/** Either Shift key, in the value of {@link #modifiers}. */
 	public static final int SHIFT = 1;

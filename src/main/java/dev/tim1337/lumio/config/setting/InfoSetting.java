@@ -30,6 +30,7 @@ public class InfoSetting extends Setting<Void> implements InfoLine {
 
 	@Override
 	public Control createControl(Runnable onChanged) {
-		return new InfoControl(text);
+		// a text without a name is a plain explanation: it takes the whole row, wrapped
+		return new InfoControl(text, labelText().isBlank());
 	}
 }

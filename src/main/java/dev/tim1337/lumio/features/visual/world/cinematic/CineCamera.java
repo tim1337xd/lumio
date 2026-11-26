@@ -1,11 +1,12 @@
 package dev.tim1337.lumio.features.visual.world.cinematic;
 
-import dev.tim1337.lumio.features.music.LyricCutFade;
 import dev.tim1337.lumio.ModFeatures;
+import dev.tim1337.lumio.api.experimental.debug.DebugCategory;
+import dev.tim1337.lumio.api.experimental.debug.DebugHooks;
 import dev.tim1337.lumio.api.experimental.motion.AnimClock;
 import dev.tim1337.lumio.api.experimental.motion.Easing;
 import dev.tim1337.lumio.api.experimental.motion.Spring;
-import dev.tim1337.lumio.api.experimental.util.Debug;
+import dev.tim1337.lumio.features.music.LyricCutFade;
 import dev.tim1337.lumio.features.music.LyricTimes;
 import dev.tim1337.lumio.features.music.MusicService;
 
@@ -194,8 +195,8 @@ final class CineCamera {
 	}
 
 	private void adoptAnchor() {
-		if (Debug.on() && !Float.isNaN(turnYaw)) {
-			Debug.log("Cinematic shot {} motion: fastest turn {} degrees a second, whole turn {} degrees", shots, Math.round(turnMost * 100f) / 100f,
+		if (DebugHooks.ACTIVE && !Float.isNaN(turnYaw)) {
+			DebugHooks.log(DebugCategory.CAMERA, "Cinematic shot {} motion: fastest turn {} degrees a second, whole turn {} degrees", shots, Math.round(turnMost * 100f) / 100f,
 				Math.round((turnHighest - turnLeast) * 100f) / 100f);
 		}
 		turnYaw = Float.NaN;
@@ -204,8 +205,8 @@ final class CineCamera {
 		turnHighest = 0f;
 		anchored = shot.hasAnchor;
 		shots++;
-		if (Debug.on()) {
-			Debug.log("Cinematic shot {}: {}, lyric {} at {} {} {} from the player", shots, shot.type, shot.anchorFallback ? "at the safe spot" : "in the open",
+		if (DebugHooks.ACTIVE) {
+			DebugHooks.log(DebugCategory.CAMERA, "Cinematic shot {}: {}, lyric {} at {} {} {} from the player", shots, shot.type, shot.anchorFallback ? "at the safe spot" : "in the open",
 				Math.round(shot.anchorX - focusX), Math.round(shot.anchorY - focusY), Math.round(shot.anchorZ - focusZ));
 		}
 		anchorPending = false;
@@ -214,6 +215,69 @@ final class CineCamera {
 		anchorZ = shot.anchorZ - focusZ;
 		anchorUnit = shot.anchorUnit;
 		anchorLine = LyricTimes.mainIndexAt(MusicService.lyrics(), ModFeatures.MUSIC.lyricClockMs());
+		findOpen();
+	}
+
+	/** The shot's open area for its lyric (see {@link CineOpenArea}), relative to the player's eyes, found once when the shot takes its spot. */
+	private final CineOpenArea openArea = new CineOpenArea();
+	private final CineScout.LevelSpace openSpace = new CineScout.LevelSpace();
+	private final CinePose openStart = new CinePose();
+	private final CinePose openEnd = new CinePose();
+	private boolean opened;
+	private double openX;
+	private double openY;
+	private double openZ;
+
+	/** Looks for the shot's open area from its view now and from where its move ends; the lyric keeps it for the whole shot. */
+	private void findOpen() {
+		opened = false;
+		Minecraft client = Minecraft.getInstance();
+		if (client.level == null || !feature.showsWorldLyrics()) {
+			return;
+		}
+		float aspect = aspect(client);
+		shot.pose(shotTime, focusX, focusY, focusZ, aspect, openStart);
+		shot.pose((float) CineMotion.MOVE_SECONDS, focusX, focusY, focusZ, aspect, openEnd);
+		openStart.pitch = Math.max(Shot.MOST_UP, openStart.pitch);
+		openEnd.pitch = Math.max(Shot.MOST_UP, openEnd.pitch);
+		openSpace.level = client.level;
+		opened = openArea.find(openSpace, openStart, openEnd, aspect, feature.picture(aspect), focusX, focusY, focusZ);
+		openSpace.level = null;
+		if (opened) {
+			openX = openArea.x - focusX;
+			openY = openArea.y - focusY;
+			openZ = openArea.z - focusZ;
+		}
+		if (DebugHooks.ACTIVE) {
+			DebugHooks.log(DebugCategory.CAMERA, "Cinematic shot {}: open sky {} ({} free cells, {} x {} blocks)", shots, opened ? (openArea.startOnly ? "found in the first view only" : "found") : "none",
+				openArea.freeCells, Math.round(openArea.halfWidth * 2.0), Math.round(openArea.halfHeight * 2.0));
+		}
+	}
+
+	/** @return whether the shot has an open area for its lyric, read with {@link #openX} and the others */
+	boolean opened() {
+		return opened && phase != Phase.OFF;
+	}
+
+	double openX() {
+		return focusX + openX;
+	}
+
+	double openY() {
+		return focusY + openY;
+	}
+
+	double openZ() {
+		return focusZ + openZ;
+	}
+
+	/** @return half the open area's width and height at its middle, in blocks */
+	double openHalfWidth() {
+		return openArea.halfWidth;
+	}
+
+	double openHalfHeight() {
+		return openArea.halfHeight;
 	}
 
 	/** @return the pose for this frame; false once the film is over */
@@ -255,7 +319,7 @@ final class CineCamera {
 			out.set(shotPose);
 		}
 		out.fov = fov.step(out.fov, dt);
-		if (Debug.on()) {
+		if (DebugHooks.ACTIVE) {
 			measureTurn(dt);
 		}
 		if (frame % VIEW_EVERY == 0) {
@@ -449,10 +513,6 @@ final class CineCamera {
 
 	/** Poses along the shot's planned path at which a lyric line is checked, from now to the end of its time. */
 	private static final int LYRIC_SAMPLES = 5;
-	/** The character's box around the eyes, in blocks: half its width, how far above the eyes and below them it reaches. */
-	private static final double BODY_HALF = 0.35;
-	private static final double BODY_ABOVE = 0.3;
-	private static final double BODY_BELOW = 1.55;
 	/** The share of a lyric box's half size where its text's corners are, inside its glow: the rays for blocks aim there. */
 	private static final double TEXT_SHARE = 0.8;
 	private final LyricFrame lyricFrame = new LyricFrame();
@@ -524,33 +584,8 @@ final class CineCamera {
 
 	/** @return whether the box measured last covers the character at the sample pose */
 	private boolean onCharacter(float aspect, float picture) {
-		return characterBox(samplePose, aspect, picture, bodyBox) && lyricFrame.overlaps(bodyBox[0], bodyBox[1], bodyBox[2], bodyBox[3]);
-	}
-
-	/**
-	 * Projects the character's box through a camera pose.
-	 *
-	 * @param box its bounds in picture units: left, bottom, right, top
-	 * @return false when none of it is in front of the camera
-	 */
-	private boolean characterBox(CinePose pose, float aspect, float picture, float[] box) {
-		box[0] = Float.MAX_VALUE;
-		box[1] = Float.MAX_VALUE;
-		box[2] = -Float.MAX_VALUE;
-		box[3] = -Float.MAX_VALUE;
-		for (int corner = 0; corner < 8; corner++) {
-			double cx = focusX + ((corner & 1) == 0 ? -BODY_HALF : BODY_HALF);
-			double cy = focusY + ((corner & 2) == 0 ? -BODY_BELOW : BODY_ABOVE);
-			double cz = focusZ + ((corner & 4) == 0 ? -BODY_HALF : BODY_HALF);
-			if (!LyricFrame.project(pose, aspect, picture, cx, cy, cz, projected)) {
-				continue;
-			}
-			box[0] = Math.min(box[0], projected[0]);
-			box[2] = Math.max(box[2], projected[0]);
-			box[1] = Math.min(box[1], projected[1]);
-			box[3] = Math.max(box[3], projected[1]);
-		}
-		return box[0] < box[2];
+		return LyricFrame.characterBox(samplePose, aspect, picture, focusX, focusY, focusZ, bodyBox, projected)
+			&& lyricFrame.overlaps(bodyBox[0], bodyBox[1], bodyBox[2], bodyBox[3]);
 	}
 
 	// ------------------------------------------------------------------------------------------------------ the lines on screen

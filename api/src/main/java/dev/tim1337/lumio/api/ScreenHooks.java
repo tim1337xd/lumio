@@ -1,5 +1,7 @@
 package dev.tim1337.lumio.api;
 
+import com.mojang.blaze3d.platform.InputConstants;
+
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
@@ -41,6 +43,25 @@ public interface ScreenHooks {
 
 	/** @return whether the add-on used the typed character (a search field of its own has the keyboard) */
 	default boolean charTyped(Screen screen, int codepoint) {
+		return false;
+	}
+
+	/**
+	 * @return whether the add-on uses this key or mouse button itself on this screen (a key of its own for the open menu), so Lumio's command
+	 *         keybinds leave that one key alone there; asked only while a screen is open and a keybind would take the key
+	 * @since 1.18.0
+	 */
+	default boolean ownsKey(Screen screen, InputConstants.Key key) {
+		return false;
+	}
+
+	/**
+	 * @return whether the add-on uses this key or mouse button itself in the world right now, with no screen open (a key that stands for an
+	 *         action of the game while a feature is active), so Lumio's command keybinds leave that one key alone meanwhile; asked only when a
+	 *         keybind would take the key
+	 * @since 1.25.0
+	 */
+	default boolean ownsWorldKey(InputConstants.Key key) {
 		return false;
 	}
 

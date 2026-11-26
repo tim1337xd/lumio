@@ -1,5 +1,6 @@
 package dev.tim1337.lumio.ui;
 
+import dev.tim1337.lumio.ModFeatures;
 import dev.tim1337.lumio.addon.Addons;
 import dev.tim1337.lumio.api.experimental.draw.Radius;
 import dev.tim1337.lumio.api.experimental.motion.Spring;
@@ -34,15 +35,19 @@ final class HudEditToolbar {
 	/** The theme and depth of the whole HUD, in a small menu of its own. */
 	private static final int LOOK = 5;
 	private static final int SIMULATE = 6;
+	/** Every panel with its sample, also those that belong to another place or activity, so all can be placed. */
+	private static final int ALL = 7;
+	/** Makes the places and sizes the auto-fit gives the elements on this screen their own. */
+	private static final int FIT = 8;
 	/** The list of elements, as an icon: it is where hidden elements come back and the whole layout is reset. */
-	private static final int ELEMENTS = 7;
-	private static final int DONE = 8;
-	private static final int COLLAPSE = 9;
-	private static final int EXPAND = 10;
-	private static final int STOP_SIMULATION = 11;
-	private static final String[] LABELS = {"", "Undo", "Redo", "Grid", "Snap", "Look", "Simulate", "", "Done", "", "Edit HUD", ""};
-	/** Separators come before these buttons, grouping them: Undo, Redo | Grid, Snap | Look, Simulate, Done. */
-	private static final boolean[] GROUP_START = {false, true, false, true, false, true, false, false, false, true, false, false};
+	private static final int ELEMENTS = 9;
+	private static final int DONE = 10;
+	private static final int COLLAPSE = 11;
+	private static final int EXPAND = 12;
+	private static final int STOP_SIMULATION = 13;
+	private static final String[] LABELS = {"", "Undo", "Redo", "Grid", "Snap", "Look", "Simulate", "All panels", "Fit to screen", "", "Done", "", "Edit HUD", ""};
+	/** Separators come before these buttons, grouping them: Undo, Redo | Grid, Snap | Look, Simulate, All panels, Fit to screen, Done. */
+	private static final boolean[] GROUP_START = {false, true, false, true, false, true, false, false, false, false, false, true, false, false};
 
 	// where the toolbar is (its center across, relative to the screen center, and its top) and whether it is collapsed, kept while the game runs
 	private static int offsetX;
@@ -77,6 +82,8 @@ final class HudEditToolbar {
 	/** Where the Look button is, so its menu opens under it. */
 	int lookX;
 	int lookBottom;
+	int snapX;
+	int snapBottom;
 
 	HudEditToolbar(HudEditScreen screen) {
 		this.screen = screen;
@@ -141,6 +148,10 @@ final class HudEditToolbar {
 			if (button == LOOK) {
 				lookX = bx;
 				lookBottom = y + height;
+			}
+			if (button == SNAP) {
+				snapX = bx;
+				snapBottom = y + height;
 			}
 		}
 		drawSimulationChip(ui, mouseX, mouseY);
@@ -219,8 +230,8 @@ final class HudEditToolbar {
 
 	private void drawButton(Ui ui, int button, int bx, int by, int buttonWidth, int mouseX, int mouseY) {
 		boolean enabled = button != UNDO && button != REDO || (button == UNDO ? screen.history.canUndo() : screen.history.canRedo());
-		boolean on = button == SNAP && HudEditScreen.snapOn || button == GRID && HudEditScreen.gridOn
-			|| button == ELEMENTS && screen.list.isOpen() || button == SIMULATE && HudSimulation.running() != null || button == LOOK && screen.look.isOpen();
+		boolean on = button == SNAP && (ModFeatures.MENU.hudSnapSetting().get() != HudSnapMode.OFF || screen.snapMenu.isOpen()) || button == GRID && HudEditScreen.gridOn
+			|| button == ELEMENTS && screen.list.isOpen() || button == SIMULATE && HudSimulation.running() != null || button == ALL && HudEditPreview.allPanels() || button == LOOK && screen.look.isOpen();
 		boolean over = enabled && mouseX >= bx && mouseX < bx + buttonWidth && mouseY >= by && mouseY < by + BUTTON_HEIGHT;
 		hover[button] = ui.approach(hover[button], over ? 1f : 0f, Ui.HOVER_RATE);
 		Palette palette = ui.palette;
@@ -264,9 +275,9 @@ final class HudEditToolbar {
 		}
 		boolean over = mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height;
 		hover[EXPAND] = ui.approach(hover[EXPAND], over ? 1f : 0f, Ui.HOVER_RATE);
-		HudEditScreen.surface(ui, x, y, width, height, Radius.pill(height), alpha);
+		HudEditScreen.surface(ui, x, y, width, height, Radius.box(height), alpha);
 		if (hover[EXPAND] > 0f) {
-			ui.rounded(x, y, width, height, Radius.pill(height), Ui.withOpacity(ui.palette.hover(), hover[EXPAND] * alpha));
+			ui.rounded(x, y, width, height, Radius.box(height), Ui.withOpacity(ui.palette.hover(), hover[EXPAND] * alpha));
 		}
 		ui.textMiddle(LABELS[EXPAND], x + 9, y + height / 2, Ui.withOpacity(ui.palette.text(), alpha));
 		ui.icon("chevron", x + width - 14, y + height / 2 - 4, 8, Ui.withOpacity(ui.palette.textSecondary(), alpha));
@@ -297,7 +308,7 @@ final class HudEditToolbar {
 		}
 		boolean over = mouseX >= chipX + chipWidth - 20 && mouseX < chipX + chipWidth && mouseY >= chipY && mouseY < chipY + chipHeight;
 		stopHover = ui.approach(stopHover, over ? 1f : 0f, Ui.HOVER_RATE);
-		ui.rounded(chipX, chipY, chipWidth, chipHeight, Radius.pill(chipHeight), Ui.withOpacity(ui.accent, alpha));
+		ui.rounded(chipX, chipY, chipWidth, chipHeight, Radius.box(chipHeight), Ui.withOpacity(ui.accent, alpha));
 		ui.textMiddle(chipText, chipX + 10, chipY + chipHeight / 2, Ui.withOpacity(0xFFFFFFFF, alpha));
 		ui.icon("close", chipX + chipWidth - 15, chipY + chipHeight / 2 - 4, 8, Ui.withOpacity(0xFFFFFFFF, (0.7f + 0.3f * stopHover) * alpha));
 		hits.add(STOP_SIMULATION, chipX + chipWidth - 20, chipY, 20, chipHeight);
@@ -324,16 +335,21 @@ final class HudEditToolbar {
 			case GRIP -> grab(mouseX, mouseY);
 			case UNDO -> screen.undo();
 			case REDO -> screen.redo();
-			case SNAP -> {
-				HudEditScreen.snapOn = !HudEditScreen.snapOn;
-				UiSounds.toggle(HudEditScreen.snapOn);
-			}
+			case SNAP -> screen.snapMenu.toggle(snapX, snapBottom);
 			case GRID -> {
 				HudEditScreen.gridOn = !HudEditScreen.gridOn;
 				UiSounds.toggle(HudEditScreen.gridOn);
 			}
 			case LOOK -> screen.look.toggle(lookX, lookBottom);
 			case SIMULATE -> screen.simulate.toggle(simulateX, simulateBottom);
+			case ALL -> {
+				HudEditPreview.setAllPanels(!HudEditPreview.allPanels());
+				UiSounds.toggle(HudEditPreview.allPanels());
+			}
+			case FIT -> {
+				UiSounds.click();
+				screen.fitToScreen();
+			}
 			case ELEMENTS -> screen.list.toggle();
 			case DONE -> {
 				UiSounds.click();

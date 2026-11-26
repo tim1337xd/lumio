@@ -30,19 +30,12 @@ final class MenuPictures {
 	private MenuPictures() {
 	}
 
-	/** The living world, darker on the left where the main menu's column is, with a sketch of the island and the column. */
+	/** The living world, darker on the left where the main menu's column is, with a sketch of the column and the music card under it. */
 	static void livingWorld(SetupKit kit, int x, int y, int width, int height) {
 		Ui ui = kit.ui;
 		SetupPreview.world(kit, x, y, width, height, RADIUS);
 		float s = width / MOCKUP_WIDTH;
 		shadeLeft(ui, x, y, height, Math.round(width * 0.55f), Ui.withOpacity(SKETCH_DARK, 0.6f));
-
-		int islandWidth = scaled(92, s);
-		int islandHeight = scaled(16, s);
-		int islandX = x + (width - islandWidth) / 2;
-		int islandY = y + scaled(12, s);
-		ui.rounded(islandX, islandY, islandWidth, islandHeight, islandHeight / 2f, Ui.withOpacity(SKETCH_DARK, 0.65f));
-		ui.ring(islandX, islandY, islandWidth, islandHeight, islandHeight / 2f, 1, 0x2EFFFFFF);
 
 		// the greeting, the title and the box of buttons
 		int columnX = x + scaled(18, s);
@@ -69,6 +62,15 @@ final class MenuPictures {
 			ui.rounded(tileX, rowY + (row - tile) / 2, tile, tile, 4 * s, ROW_COLORS[i]);
 			ui.rounded(tileX + tile + scaled(6, s), rowY + (row - lineHeight) / 2, scaled(ROW_LINES[i], s), lineHeight, lineHeight / 2f, 0xB3FFFFFF);
 		}
+		// the music card under the column: a cover, two lines and a thin line of progress
+		int cardY = top + boxHeight + scaled(6, s);
+		int cardHeight = scaled(18, s);
+		ui.rounded(columnX, cardY, boxWidth, cardHeight, 6 * s, Ui.withOpacity(SKETCH_DARK, 0.65f));
+		ui.ring(columnX, cardY, boxWidth, cardHeight, 6 * s, 1, 0x2EFFFFFF);
+		int cover = scaled(10, s);
+		ui.rounded(columnX + pad, cardY + (cardHeight - cover) / 2, cover, cover, 3 * s, 0xFFFF375F);
+		ui.rounded(columnX + pad + cover + scaled(5, s), cardY + (cardHeight - lineHeight) / 2, scaled(54, s), lineHeight, lineHeight / 2f, 0xB3FFFFFF);
+		ui.rounded(columnX + scaled(4, s), cardY + cardHeight - scaled(2, s), scaled(40, s), Math.max(1, scaled(2, s)), s, 0xFFFF375F);
 	}
 
 	/** The game's own title screen as a plain sketch: sky and grass, the logo, its buttons, and the mod's small settings button. */

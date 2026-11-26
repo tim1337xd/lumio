@@ -12,4 +12,9 @@ public final class Menus {
 	public static void openSettings(AddonFeature feature) {
 		Backend.get().openSettings(feature);
 	}
+
+	/** Opens the menu on its Keybinds page, for a "Set a key" of an add-on's own. */
+	public static void openKeybinds() {
+		Backend.get().openKeybinds();
+	}
 }

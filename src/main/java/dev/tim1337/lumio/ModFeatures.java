@@ -10,6 +10,8 @@ import dev.tim1337.lumio.features.misc.DebugFeature;
 import dev.tim1337.lumio.features.misc.KeepServerPacksFeature;
 import dev.tim1337.lumio.features.misc.keybinds.CommandKeybindsFeature;
 import dev.tim1337.lumio.features.music.MusicFeature;
+import dev.tim1337.lumio.features.waypoints.WaypointMapHudFeature;
+import dev.tim1337.lumio.features.waypoints.WaypointsFeature;
 import dev.tim1337.lumio.features.visual.hud.ActionBarHudFeature;
 import dev.tim1337.lumio.features.visual.hud.ArmorHudFeature;
 import dev.tim1337.lumio.features.visual.hud.BossBarHudFeature;
@@ -27,6 +29,7 @@ import dev.tim1337.lumio.features.visual.screen.NotificationsFeature;
 import dev.tim1337.lumio.features.visual.world.AmbienceFeature;
 import dev.tim1337.lumio.features.visual.world.ArrowTrailFeature;
 import dev.tim1337.lumio.features.visual.world.BlockOverlayFeature;
+import dev.tim1337.lumio.features.visual.world.CameraFeature;
 import dev.tim1337.lumio.features.visual.world.HeldItemOutlineFeature;
 import dev.tim1337.lumio.features.visual.world.HeldItemTransformFeature;
 import dev.tim1337.lumio.features.visual.world.SkyFeature;
@@ -62,6 +65,8 @@ public final class ModFeatures {
 	public static final ArrowTrailFeature ARROW_TRAILS = FeatureManager.register(new ArrowTrailFeature());
 	public static final WalkEffectFeature WALK = FeatureManager.register(new WalkEffectFeature());
 	public static final BlockOverlayFeature BLOCK_OVERLAY = FeatureManager.register(new BlockOverlayFeature());
+	public static final CameraFeature CAMERA = FeatureManager.register(new CameraFeature());
+	public static final dev.tim1337.lumio.features.visual.world.VisualFilterFeature VISUAL_FILTER = FeatureManager.register(new dev.tim1337.lumio.features.visual.world.VisualFilterFeature());
 	public static final InfoBarFeature INFO_BAR = FeatureManager.register(new InfoBarFeature());
 	public static final HotbarFeature HOTBAR = FeatureManager.register(new HotbarFeature());
 	public static final ArmorHudFeature ARMOR = FeatureManager.register(new ArmorHudFeature());
@@ -82,16 +87,18 @@ public final class ModFeatures {
 	public static final BorderlessFeature BORDERLESS = FeatureManager.register(new BorderlessFeature());
 	public static final KeepServerPacksFeature KEEP_SERVER_PACKS = FeatureManager.register(new KeepServerPacksFeature());
 	public static final CommandKeybindsFeature COMMAND_KEYBINDS = FeatureManager.register(new CommandKeybindsFeature());
+	public static final WaypointsFeature WAYPOINTS = FeatureManager.register(new WaypointsFeature());
+	public static final WaypointMapHudFeature WAYPOINT_MAP = FeatureManager.register(new WaypointMapHudFeature(WAYPOINTS));
 	public static final DebugFeature DEBUG = FeatureManager.register(new DebugFeature());
 
 	// Feature pages: each lists its features with a toggle and a settings button.
 	public static final FeatureListFeature WORLD = FeatureManager.register(new FeatureListFeature("world", "World",
-		"What is added to the game world: the sky, the ambience, trails, the outline of the item you hold, and the cinematic camera.", SystemColors.PURPLE_RGB, "sparkle")
+		"Sky, ambience, trails, camera and more.", SystemColors.PURPLE_RGB, "sparkle")
 		.category("Environment", SKY, AMBIENCE)
 		.category("Effects", ARROW_TRAILS, WALK, HELD_ITEM_OUTLINE, HELD_ITEM_TRANSFORM, BLOCK_OVERLAY)
-		.category("Camera", CINEMATIC));
+		.category("Camera", CAMERA, VISUAL_FILTER, CINEMATIC));
 	public static final FeatureListFeature INTERFACE = FeatureManager.register(new FeatureListFeature("interface", "Interface",
-		"The bars and panels drawn over the game. Move them in the editor of the layout.", SystemColors.TEAL_RGB, "gauge")
+		"Bars and panels over the game.", SystemColors.TEAL_RGB, "gauge")
 		.category("Bars", HOTBAR, STATUS, ACTION_BAR, INFO_BAR)
 		.category("Panels", BOSS_BARS, ARMOR, INVENTORY, SCOREBOARD, TAB_LIST)
 		.category("Screens", INVENTORY_SCREEN, ITEM_TOOLTIPS, MENUS, NOTIFICATIONS));
@@ -100,10 +107,16 @@ public final class ModFeatures {
 		.category("", MUSIC)
 		// the feature's switch sits in the page header, on every tab
 		.inline(MUSIC).switchInHeader(MUSIC));
+	/** Pages of their own that are tools rather than looks: chat, keybinds and waypoints, listed under it in the sidebar. */
+	public static final FeatureListFeature EXTRAS = FeatureManager.register(new FeatureListFeature("extras", "Extras",
+		"Chat, keybinds and waypoints.", SystemColors.INDIGO_RGB, "grid").overview());
 	public static final FeatureListFeature CHAT_PAGE = FeatureManager.register(new FeatureListFeature("chat_page", "Chat",
-		"Messages stay as the game sends them; Lumio adds the rest.", SystemColors.INDIGO_RGB, "bubble").direct(CHAT));
+		"Messages stay as sent.", SystemColors.INDIGO_RGB, "bubble").direct(CHAT).under(EXTRAS));
 	public static final FeatureListFeature KEYBINDS_PAGE = FeatureManager.register(new FeatureListFeature("keybinds_page", "Keybinds",
-		"Put a command on a key.", SystemColors.GRAY_RGB, "keyboard").direct(COMMAND_KEYBINDS));
+		"Put a command on a key.", SystemColors.GRAY_RGB, "keyboard").direct(COMMAND_KEYBINDS).under(EXTRAS));
+	public static final FeatureListFeature WAYPOINTS_PAGE = FeatureManager.register(new FeatureListFeature("waypoints_page", "Waypoints",
+		"Mark places, plan routes, and share them.", SystemColors.ORANGE_RGB, "pin")
+		.direct(WAYPOINTS).under(EXTRAS));
 	public static final ConfigsFeature CONFIGS = FeatureManager.register(new ConfigsFeature());
 	public static final MenuFeature MENU = FeatureManager.register(new MenuFeature());
 
@@ -122,7 +135,7 @@ public final class ModFeatures {
 		huds.addAll(List.of(ACTION_BAR, ARMOR, INVENTORY, SCOREBOARD, TAB_LIST));
 		// the add-ons' elements (the SkyBlock panels)
 		huds.addAll(Addons.huds().keySet());
-		huds.addAll(List.of(BOSS_BARS, HELD_ITEM_TRANSFORM, CHAT));
+		huds.addAll(List.of(BOSS_BARS, HELD_ITEM_TRANSFORM, CHAT, WAYPOINT_MAP));
 		return huds;
 	}
 }

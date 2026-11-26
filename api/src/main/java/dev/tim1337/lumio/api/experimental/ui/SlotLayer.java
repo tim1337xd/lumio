@@ -17,6 +17,7 @@ public final class SlotLayer {
 	}
 
 	private static Painter[] painters = new Painter[0];
+	private static Painter[] behind = new Painter[0];
 
 	private SlotLayer() {
 	}
@@ -25,6 +26,22 @@ public final class SlotLayer {
 	public static void add(Painter painter) {
 		painters = Arrays.copyOf(painters, painters.length + 1);
 		painters[painters.length - 1] = painter;
+	}
+
+	/**
+	 * Adds a painter that draws behind the items, at startup: over the menu's background and its slot frames, under the items, such as a box that
+	 * marks a slot. Coordinates as for {@link #add}: the screen's, so a slot is at its menu's left and top plus its own place.
+	 */
+	public static void addBehind(Painter painter) {
+		behind = Arrays.copyOf(behind, behind.length + 1);
+		behind[behind.length - 1] = painter;
+	}
+
+	/** Called by the main mod while a menu is drawn, before its slots and items. */
+	public static void drawBehind(AbstractContainerScreen<?> screen, GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
+		for (Painter painter : behind) {
+			painter.draw(screen, graphics, mouseX, mouseY);
+		}
 	}
 
 	/** Called by the main mod while a menu is drawn, between its slots and its tooltip. */

@@ -1,17 +1,19 @@
 package dev.tim1337.lumio.features.visual.world;
 
+import dev.tim1337.lumio.addon.Addons;
 import dev.tim1337.lumio.api.experimental.draw.SystemColors;
 import dev.tim1337.lumio.config.Feature;
 import dev.tim1337.lumio.config.setting.BooleanSetting;
-import dev.tim1337.lumio.config.setting.DerivedBooleanSetting;
-import dev.tim1337.lumio.config.setting.DerivedEnumSetting;
-import dev.tim1337.lumio.config.setting.DerivedFloatSetting;
 import dev.tim1337.lumio.config.setting.GlowColorsSetting;
 import dev.tim1337.lumio.config.setting.Setting;
 import dev.tim1337.lumio.config.setting.ColorSetting;
 import dev.tim1337.lumio.config.setting.EnumSetting;
 import dev.tim1337.lumio.config.setting.FloatSetting;
+import dev.tim1337.lumio.config.setting.MultiSelectSetting;
+import dev.tim1337.lumio.config.setting.StringSetting;
 import dev.tim1337.lumio.menu.MenuFeature;
+
+import com.google.gson.JsonObject;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -23,9 +25,9 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.attribute.EnvironmentAttribute;
 import net.minecraft.world.attribute.EnvironmentAttributeSystem;
 import net.minecraft.world.attribute.EnvironmentAttributes;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.chunk.EmptyLevelChunk;
 import net.minecraft.world.level.dimension.DimensionType;
-import net.minecraft.world.level.LightLayer;
-import net.minecraft.world.level.levelgen.Heightmap;
 
 import java.util.List;
 import java.util.Set;
@@ -38,7 +40,8 @@ import java.util.Set;
 public class SkyFeature extends Feature {
 	/** The night skies, with the index the shader uses for each. */
 	public enum Theme {
-		NORTHERN_LIGHTS(2), FALLING_STARS(5);
+		/** The aurora; the calm night of the clouds (stars, Milky Way, the moon's glow, seen through the gaps); the falling stars with their shower. */
+		NORTHERN_LIGHTS(2), CLEAR_NIGHT(3), FALLING_STARS(5);
 
 		private final int shaderIndex;
 
@@ -51,6 +54,10 @@ public class SkyFeature extends Feature {
 			float r = (rgb >> 16 & 0xFF) / 255f;
 			float g = (rgb >> 8 & 0xFF) / 255f;
 			float b = (rgb & 0xFF) / 255f;
+			if (this == CLEAR_NIGHT) {
+				// a plain night: dark navy, as the game's own
+				return new float[]{0.035f, 0.05f, 0.09f};
+			}
 			return this == NORTHERN_LIGHTS ? new float[]{0.02f + r * 0.03f, 0.07f + g * 0.04f, 0.11f + b * 0.03f} : new float[]{r * 0.07f + 0.025f, g * 0.02f + 0.006f, b * 0.06f + 0.03f};
 		}
 
@@ -59,24 +66,68 @@ public class SkyFeature extends Feature {
 			float r = (rgb >> 16 & 0xFF) / 255f;
 			float g = (rgb >> 8 & 0xFF) / 255f;
 			float b = (rgb & 0xFF) / 255f;
+			if (this == CLEAR_NIGHT) {
+				return new float[]{0.008f, 0.012f, 0.03f};
+			}
 			return this == NORTHERN_LIGHTS ? new float[]{0.006f + r * 0.01f, 0.02f + g * 0.015f, 0.04f + b * 0.015f} : new float[]{r * 0.02f + 0.006f, g * 0.006f + 0.002f, b * 0.02f + 0.01f};
 		}
 	}
 
 	/** Detail level of the sky lights, i.e. the GPU cost. */
-	public enum Quality {
-		FAST("Fast"),
-		BALANCED("Balanced"),
-		DETAILED("Detailed");
+	/** What the page's preview shows while it is open: the game's own time and weather, or the sky by day, by night or in the rain. Never saved. */
+	public enum PreviewLook {
+		DAY("Day"), NIGHT("Night"), RAIN("Rain"), AUTO("Auto");
+
+		private final String label;
+
+		PreviewLook(String label) {
+			this.label = label;
+		}
+
+		public String label() {
+			return label;
+		}
+	}
+
+	/** How often a shooting star crosses the night of the aurora. */
+	public enum ShootingStars {
+		OFF("Off"),
+		RARE("Rare"),
+		OFTEN("Often");
 
 		private final Component displayName;
 
-		Quality(String displayName) {
+		ShootingStars(String displayName) {
 			this.displayName = Component.literal(displayName);
 		}
 
 		public Component displayName() {
 			return displayName;
+		}
+	}
+
+	/** The sky's quality: Auto picks a level by what the sky costs on the graphics card ({@link dev.tim1337.lumio.render.SkyAutoQuality}). */
+	public enum Quality {
+		FAST("Low", 0),
+		BALANCED("Medium", 1),
+		DETAILED("High", 2),
+		AUTO("Auto", -1);
+
+		private final Component displayName;
+		private final int level;
+
+		Quality(String displayName, int level) {
+			this.displayName = Component.literal(displayName);
+			this.level = level;
+		}
+
+		public Component displayName() {
+			return displayName;
+		}
+
+		/** @return the level as the shader expects it (0 Low, 1 Medium, 2 High), or -1 for Auto */
+		public int level() {
+			return level;
 		}
 	}
 
@@ -89,6 +140,18 @@ public class SkyFeature extends Feature {
 	private static final String LIGHT = "Clouds: light";
 	private static final String AURORA = "Aurora";
 	private static final String STARS = "Stars";
+	private static final String NIGHT = "Night sky";
+	/** How dark the night is in the preview's Night, as the game reports its darkest. */
+	private static final float PREVIEW_NIGHT_STARS = 0.5f;
+	/** How the day comes up with the sun's height: none below this much under the horizon, all this much later. */
+	private static final float DAY_FROM = 0.1f;
+	private static final float DAY_OVER = 0.35f;
+	/** Shooting stars over the aurora's night, as a share of the falling stars' own shower: Rare is one in about half a minute, Often one in six seconds. */
+	private static final float RARE_SHOOTING = 1f / 240f;
+	private static final float OFTEN_SHOOTING = 1f / 48f;
+	/** How much rain or cover of the clouds still lets a shooting star be seen: they only fly under an open sky. */
+	private static final float OPEN_SKY_COVER = 0.35f;
+	private static final float OPEN_SKY_RAIN = 0.05f;
 	private static final int NATURAL_TINT_DEFAULT = 0xFFD0B0;
 	private static final int NATURAL_AURORA_RGB = 0x3DFF9A;
 	private static final int NATURAL_STAR_RGB = 0x9A4DFF;
@@ -100,8 +163,6 @@ public class SkyFeature extends Feature {
 	private static final int NETHER_ASH_RGB = 0x3A2C28;
 	private static final float[] NETHER_HORIZON = {0.26f, 0.085f, 0.045f};
 	private static final float[] NETHER_ZENITH = {0.05f, 0.025f, 0.03f};
-	/** How far from the camera the cover over the Nether is looked at, besides straight above it. */
-	private static final int NETHER_AROUND_BLOCKS = 12;
 	/** How much a flash of lightning brightens the sky and the fog at most. */
 	private static final float FLASH_ON_SKY = 0.22f;
 	private static final float STYLE_FADE_SECONDS = 3f;
@@ -113,8 +174,8 @@ public class SkyFeature extends Feature {
 	/** How fast the clouds go when the camera goes under cover, and come back when it comes out. */
 	private static final float OPEN_SKY_FADE_SECONDS = 1.5f;
 	private static final float COVER_CHECK_SECONDS = 0.25f;
-	/** The Weather look: how long it fades, how much Cloudy veils the sun and the moon and dims the stars, and how much rain it is on the clouds and on the sky. */
-	private static final float WEATHER_LOOK_SECONDS = 2f;
+	/** The cloudy and stormy looks that rain and thunder give: how long they fade, how much the cloudy one veils the sun and the moon and dims the stars, and how much rain it is on the clouds and on the sky. */
+	private static final float WEATHER_FADE_SECONDS = 2f;
 	private static final float CLOUDY_VEIL = 0.4f;
 	private static final float CLOUDY_STAR_DIM = 0.6f;
 	private static final float CLOUDY_RAIN = 0.3f;
@@ -123,13 +184,29 @@ public class SkyFeature extends Feature {
 	private static final float WIND_BLOCKS_PER_SECOND = 9f;
 	private static final float FOLLOW_COLOR_SECONDS = 1.2f;
 
-	private final EnumSetting<SkyLook.Style> style = add(new EnumSetting<>("style", Component.literal("Style"), SkyLook.Style.AUTO, SkyLook.Style::displayName, EnumSetting.Style.SEGMENTED), LOOK);
-	private final FloatSetting cloudCover = add(new FloatSetting("cloud_cover", Component.literal("Cloud cover"), 0.55f, 0f, 1f, 2).percent(), LOOK);
-	private final EnumSetting<SkyLook.WeatherLook> weather = add(new EnumSetting<>("weather_look", Component.literal("Weather look"), SkyLook.WeatherLook.CLEAR, SkyLook.WeatherLook::displayName, EnumSetting.Style.SEGMENTED), LOOK);
+	private final EnumSetting<SkyLook.Style> style = add(new EnumSetting<>("style", Component.literal("Style"), SkyLook.Style.CLOUDS, SkyLook.Style::displayName, EnumSetting.Style.SEGMENTED)
+		.withOptionCards(SkyFeature::styleCard).optionCardsInGroup(), LOOK);
+	/** The live preview at the top of the page, with its Day, Night and Rain chips. */
+	private final SkyPreviewSetting preview = add(new SkyPreviewSetting(this), LOOK);
+	private final EnumSetting<SkyLook.CloudStyle> cloudStyle = add(new EnumSetting<>("cloud_style", Component.literal("Clouds"), SkyLook.CloudStyle.NATURAL, SkyLook.CloudStyle::displayName,
+		EnumSetting.Style.SEGMENTED), LOOK, "Not the game's cloud options");
+	private final FloatSetting cloudCover = add(new FloatSetting("cloud_cover", Component.literal("Cloud cover"), 0.55f, 0f, 1f, 2).percent(), LOOK, null);
+	private final BooleanSetting cumulus = new BooleanSetting("cumulus", Component.literal("Cumulus"), true, BooleanSetting.Style.CHECKBOX);
+	private final BooleanSetting altocumulus = new BooleanSetting("altocumulus", Component.literal("Altocumulus"), true, BooleanSetting.Style.CHECKBOX);
+	private final BooleanSetting cirrus = new BooleanSetting("cirrus", Component.literal("Cirrus"), true, BooleanSetting.Style.CHECKBOX);
+	private final MultiSelectSetting cloudLayers = add(new MultiSelectSetting("cloud_layers", Component.literal("Layers"), List.of(cumulus, altocumulus, cirrus)).asChips(), LOOK,
+		"Heaps, puffs and streaks by height");
 	private final EnumSetting<SkyLook.CloudHeight> cloudHeight = add(new EnumSetting<>("cloud_height", Component.literal("Cloud height"), SkyLook.CloudHeight.GAME, SkyLook.CloudHeight::displayName, EnumSetting.Style.SEGMENTED), LOOK,
-		"Low clouds drift through hills");
-	private final BooleanSetting cloudLight = add(new BooleanSetting("cloud_light", Component.literal("Light and shadows"), true), LOOK, "Sun and moon light them");
-	private final BooleanSetting weatherFollows = add(new BooleanSetting("weather_follows", Component.literal("Weather follows the game"), true), WHEN, "Rain turns clouds into a storm");
+		null);
+	private final BooleanSetting cloudShadows = add(new BooleanSetting("cloud_shadows", Component.literal("Cloud shadows"), false), LOOK);
+	private final BooleanSetting milkyWay = add(new BooleanSetting("milky_way", Component.literal("Milky Way"), true), NIGHT);
+	private final EnumSetting<ShootingStars> shootingStars = add(new EnumSetting<>("shooting_stars", Component.literal("Shooting stars"), ShootingStars.RARE,
+		ShootingStars::displayName, EnumSetting.Style.SEGMENTED), NIGHT);
+	private final BooleanSetting moonGlow = add(new BooleanSetting("moon_glow", Component.literal("Moon glow"), true), NIGHT);
+	/** What the page's preview shows now; back to the game's own when the page is left. */
+	private PreviewLook previewLook = PreviewLook.AUTO;
+	private final BooleanSetting cloudLight = add(new BooleanSetting("cloud_light", Component.literal("Light and shadows"), true), LOOK, null);
+	private final BooleanSetting weatherFollows = add(new BooleanSetting("weather_follows", Component.literal("Follow the weather"), true), WHEN, null);
 	private final EnumSetting<SkyLightning.When> lightning = add(new EnumSetting<>("lightning_when", Component.literal("Lightning"), SkyLightning.When.WITH_RAIN, SkyLightning.When::displayName, EnumSetting.Style.SEGMENTED), WHEN,
 		"Flashes in the clouds");
 	private final EnumSetting<SkyLightning.Often> lightningOften = add(new EnumSetting<>("lightning_often", Component.literal("Lightning"), SkyLightning.Often.NORMAL, SkyLightning.Often::displayName, EnumSetting.Style.SEGMENTED), LIGHT);
@@ -145,11 +222,6 @@ public class SkyFeature extends Feature {
 	private final ColorSetting starColor = hiddenColor("star_color", NATURAL_STAR_RGB);
 	private final GlowColorsSetting starColorRow = add(new GlowColorsSetting("star_color_row", Component.literal("Stars"), new FloatSetting("one", Component.empty(), 1f, 1f, 1f, 0), new ColorSetting[]{starColor}), LOOK);
 	private final FloatSetting starTrail = add(new FloatSetting("star_trail", Component.literal("Trail length"), 0.6f, 0f, 1f, 2).percent(), LOOK);
-	private final DerivedFloatSetting starAmountAgain = add(new DerivedFloatSetting("star_amount_again", Component.literal("Amount"), 0f, 1f, 2, () -> this.starDensity.get(), value -> this.starDensity.set(value)), STARS);
-	private final DerivedFloatSetting starSpeedAgain = add(new DerivedFloatSetting("star_speed_again", Component.literal("Speed"), 0.2f, 5f, 2, () -> this.starSpeed.get(), value -> this.starSpeed.set(value)), STARS);
-	private final DerivedFloatSetting starTrailAgain = add(new DerivedFloatSetting("star_trail_again", Component.literal("Trail length"), 0f, 1f, 2, () -> starTrail.get(), value -> starTrail.set(value)), STARS);
-	private final DerivedBooleanSetting flyBysAgain = add(new DerivedBooleanSetting("fly_bys_again", Component.literal("Close fly-bys"), flyBys), STARS);
-	private final DerivedFloatSetting coverAgain = add(new DerivedFloatSetting("cover_again", Component.literal("Cover"), 0f, 1f, 2, () -> cloudCover.get(), value -> cloudCover.set(value)), SHAPE);
 	private final EnumSetting<SkyLook.Gaps> gaps = add(new EnumSetting<>("gaps", Component.literal("Gaps"), SkyLook.Gaps.FEW, SkyLook.Gaps::displayName, EnumSetting.Style.SEGMENTED), SHAPE);
 	private final FloatSetting gapSize = add(new FloatSetting("gap_size", Component.literal("Gap size"), 0.4f, 0f, 1f, 2).percent(), SHAPE);
 	private final FloatSetting cloudSize = add(new FloatSetting("cloud_size", Component.literal("Cloud size"), 0.42f, 0f, 1f, 2).percent(), SHAPE);
@@ -162,22 +234,22 @@ public class SkyFeature extends Feature {
 	private final BooleanSetting sunsetGlow = add(new BooleanSetting("sunset_glow", Component.literal("Sunset glow"), true), LIGHT);
 	private final FloatSetting rainDarkness = add(new FloatSetting("rain_darkness", Component.literal("Rain darkness"), 0.7f, 0f, 1f, 2).percent(), LIGHT);
 
-	private final SkyLook.AutoPick autoPick = new SkyLook.AutoPick();
 	private final SkyLook.Eye eye = new SkyLook.Eye();
 	private final SkyLook.SkyClock clock = new SkyLook.SkyClock();
 	private final SkyLook.Fade<Theme> shownTheme = new SkyLook.Fade<>(STYLE_FADE_SECONDS);
 	private final SkyLook.Slew cloudLevel = new SkyLook.Slew(CLOUD_FADE_SECONDS);
 	private final SkyLook.Slew gloom = new SkyLook.Slew(GLOOM_FADE_SECONDS);
-	/** The Weather look shown, faded in and out: Cloudy and Storm. */
-	private final SkyLook.Slew cloudyLook = new SkyLook.Slew(WEATHER_LOOK_SECONDS);
-	private final SkyLook.Slew stormLook = new SkyLook.Slew(WEATHER_LOOK_SECONDS);
+	/** The cloudy and stormy looks shown, following rain and thunder, faded in and out. */
+	private final SkyLook.Slew cloudyLook = new SkyLook.Slew(WEATHER_FADE_SECONDS);
+	private final SkyLook.Slew stormLook = new SkyLook.Slew(WEATHER_FADE_SECONDS);
 	/** 1 where the camera is under the open sky, 0 under cover (a cave, the mines): the clouds and their weather on the sky and the fog go with it. */
 	private final SkyLook.Slew openSky = new SkyLook.Slew(OPEN_SKY_FADE_SECONDS);
 	private boolean underCover;
-	/** In a world of the Nether's kind, which has no sky of the game: 1 under the open sky, 0 under its roof. Only then is the mod's sky shown there. */
+	/** In a world of the Nether's kind, which has no sky of the game: 1 where it has the mod's sky (no bedrock ceiling), 0 in the vanilla Nether. */
 	private final SkyLook.Slew netherSky = new SkyLook.Slew(OPEN_SKY_FADE_SECONDS);
 	private boolean netherKind;
-	private boolean netherOpen;
+	/** Whether this world of the Nether's kind has a bedrock ceiling: decided once per world, never by where the camera is. */
+	private final SkyLook.Ceiling ceiling = new SkyLook.Ceiling();
 	private float coverCheckIn;
 	private final SkyLook.Slew rainNow = new SkyLook.Slew(RAIN_FADE_SECONDS);
 	private final SkyLook.Slew stormNow = new SkyLook.Slew(RAIN_FADE_SECONDS);
@@ -205,27 +277,44 @@ public class SkyFeature extends Feature {
 	private final FloatSetting starDensity = add(new FloatSetting("star_density", Component.literal("Amount"), 0.6f, 0f, 1f, 2).percent(), LOOK);
 	private final FloatSetting starSpeed = add(new FloatSetting("star_speed", Component.literal("Speed"), 1f, 0.2f, 5f, 2), LOOK);
 	/** How fast the aurora's curtains drift and wave, against their usual pace. */
+	/** How strong the aurora's curtains are, from a subtle veil to bright, sharp rays. */
+	private final FloatSetting auroraIntensity = add(new FloatSetting("aurora_intensity", Component.literal("Intensity"), 0.5f, 0f, 1f, 2).percent(), LOOK);
 	private final FloatSetting auroraSpeed = add(new FloatSetting("aurora_speed", Component.literal("Speed"), 1f, 0.25f, 3f, 2), LOOK);
 
 
 	private final BooleanSetting showSun = add(new BooleanSetting("show_sun", Component.literal("Sun"), true), SHOW);
 	private final BooleanSetting showMoon = add(new BooleanSetting("show_moon", Component.literal("Moon"), true), SHOW);
-	private final BooleanSetting showStars = add(new BooleanSetting("show_stars", Component.literal("Stars"), true), SHOW, "The game's own stars");
+	private final BooleanSetting showStars = add(new BooleanSetting("show_stars", Component.literal("Stars"), true), SHOW);
 	private final EnumSetting<SkyLook.When> when = add(new EnumSetting<>("when", Component.literal("When"), SkyLook.When.NIGHT, SkyLook.When::displayName, EnumSetting.Style.SEGMENTED), LOOK);
-	private final EnumSetting<Quality> quality = add(new EnumSetting<>("quality", Component.literal("Quality"), Quality.BALANCED, Quality::displayName, EnumSetting.Style.SEGMENTED), LOOK,
-		"Higher costs more performance");
-	private final FloatSetting brightness = add(new FloatSetting("brightness", Component.literal("Brightness"), 1f, 0.3f, 2f, 2), LOOK);
+	private final EnumSetting<Quality> quality = add(new EnumSetting<>("quality", Component.literal("Quality"), Quality.AUTO, Quality::displayName, EnumSetting.Style.SEGMENTED), LOOK,
+		"Auto measures the sky and picks a level");
+	/** What Auto chose, with a mark of the graphics it was measured on (only a hash); never shared, as it belongs to this computer. */
+	private final StringSetting autoQualityMemory = add(new StringSetting("auto_quality", Component.literal("Auto quality"), "", false), LOOK);
+	/** How bright the whole sky's light is: the aurora and the stars together. */
+	private final FloatSetting brightness = add(new FloatSetting("brightness", Component.literal("Sky brightness"), 1f, 0.3f, 2f, 2).percent(), LOOK);
 
-	// the rows of the styles' main pages again in Advanced, where Auto has them all
-	private final DerivedEnumSetting<SkyLook.CloudHeight> heightAgain = add(new DerivedEnumSetting<>("height_again", Component.literal("Cloud height"), SkyLook.CloudHeight.GAME, SkyLook.CloudHeight::displayName, EnumSetting.Style.SEGMENTED, cloudHeight::get, cloudHeight::set), SHAPE);
-	private final DerivedBooleanSetting lightAgain = add(new DerivedBooleanSetting("light_again", Component.literal("Light and shadows"), cloudLight), LIGHT);
-	private final DerivedBooleanSetting weatherAgain = add(new DerivedBooleanSetting("weather_again", Component.literal("Weather follows the game"), weatherFollows), LIGHT);
-	private final DerivedFloatSetting auroraBrightness = add(new DerivedFloatSetting("aurora_brightness_again", Component.literal("Brightness"), 0.3f, 2f, 2, brightness::get, brightness::set), AURORA);
-	private final DerivedFloatSetting starBrightness = add(new DerivedFloatSetting("star_brightness_again", Component.literal("Brightness"), 0.3f, 2f, 2, brightness::get, brightness::set), STARS);
-
-	private final DerivedEnumSetting<SkyLightning.When> lightningAgain = add(new DerivedEnumSetting<>("lightning_again", Component.literal("Lightning"), SkyLightning.When.WITH_RAIN, SkyLightning.When::displayName,
-		EnumSetting.Style.SEGMENTED, lightning::get, lightning::set), LIGHT);
 	private final SkyLightning strikes = new SkyLightning();
+
+	// Molten: thin glowing lines over a dark sky in one color, by day and night, its own page
+	private static final String MOLTEN = "Molten";
+	/** How long the Molten sky takes to come and go. */
+	private static final float MOLTEN_FADE_SECONDS = 1.2f;
+	private final ColorSetting moltenColor = add(new ColorSetting("molten_color", Component.literal("Color"), SkyMolten.GOLD_RGB), MOLTEN);
+	private final FloatSetting moltenSpeed = add(new FloatSetting("molten_speed", Component.literal("Speed"), 1f, 0.25f, 3f, 2), MOLTEN);
+	private final FloatSetting moltenBrightness = add(new FloatSetting("molten_brightness", Component.literal("Brightness"), 1f, 0.3f, 2f, 2).percent(), MOLTEN);
+	private final EnumSetting<SkyMolten.Lines> moltenLines = add(new EnumSetting<>("molten_lines", Component.literal("Lines"), SkyMolten.Lines.NORMAL, SkyMolten.Lines::displayName,
+		EnumSetting.Style.SEGMENTED), MOLTEN);
+	private final FloatSetting moltenThickness = add(new FloatSetting("molten_thickness", Component.literal("Line thickness"), 1f, 0.5f, 2.5f, 2), MOLTEN);
+	private final FloatSetting moltenGlow = add(new FloatSetting("molten_glow", Component.literal("Glow size"), 1f, 0.3f, 2.5f, 2), MOLTEN);
+	private final BooleanSetting moltenPulses = add(new BooleanSetting("molten_pulses", Component.literal("Pulses"), true), MOLTEN);
+	private final BooleanSetting moltenTint = add(new BooleanSetting("molten_tint", Component.literal("Tint the world"), true), MOLTEN);
+	private final BooleanSetting moltenThunder = add(new BooleanSetting("molten_thunder", Component.literal("Flash with thunder"), true), MOLTEN);
+	// a style that replaces the sky itself starts without the game's sun, moon and stars; each comes back with its own switch (the natural styles keep
+	// the Shows page's switches)
+	private final BooleanSetting moltenSun = add(new BooleanSetting("molten_sun", Component.literal("Sun"), false), MOLTEN);
+	private final BooleanSetting moltenMoon = add(new BooleanSetting("molten_moon", Component.literal("Moon"), false), MOLTEN);
+	private final BooleanSetting moltenStars = add(new BooleanSetting("molten_stars", Component.literal("Stars"), false), MOLTEN);
+	private final SkyLook.Slew moltenShown = new SkyLook.Slew(MOLTEN_FADE_SECONDS);
 
 	/** The sky opacity as last computed. */
 	private float lastOpacity;
@@ -236,11 +325,18 @@ public class SkyFeature extends Feature {
 		iconName("moon");
 		summary("Clouds, aurora and stars in the world, in 3D");
 
-		for (Setting<?> row : List.of(cloudCover, weather, cloudHeight, cloudLight, weatherFollows, lightning)) {
-			row.visibleWhen(() -> style.get() == SkyLook.Style.CLOUDS);
+		// each row once, on its sub-page: shown wherever its part of the sky can be chosen (with Auto, every part)
+		for (Setting<?> row : List.of(cloudCover, cloudHeight, cloudLight, weatherFollows, lightning, lightningOften)) {
+			row.visibleWhen(this::cloudsChoosable);
 		}
-		for (Setting<?> row : List.of(starDensity, starSpeed, starTrail, flyBys)) {
-			row.visibleWhen(() -> style.get() == SkyLook.Style.STARS);
+		// only where an add-on knows the places: without one there is nothing it could fit
+		// the night sky's settings hold in every style; the falling stars have their own shower instead of single shooting stars
+		shootingStars.visibleWhen(() -> style.get() != SkyLook.Style.STARS && !moltenChosen());
+		cloudShadows.visibleWhen(this::cloudsChoosable);
+		cloudStyle.visibleWhen(this::cloudsChoosable);
+		cloudLayers.visibleWhen(() -> cloudsChoosable() && cloudStyle.get() == SkyLook.CloudStyle.NATURAL);
+		for (Setting<?> row : List.of(starSpeed, starTrail, flyBys)) {
+			row.visibleWhen(this::starsChoosable);
 		}
 		cloudColors.visibleWhen(this::cloudsChoosable);
 		cloudColorRow.visibleWhen(() -> cloudsChoosable() && cloudColors.get() == SkyLook.Colors.CUSTOM);
@@ -249,18 +345,24 @@ public class SkyFeature extends Feature {
 		starColors.visibleWhen(this::starsChoosable);
 		starColorRow.visibleWhen(() -> starsChoosable() && starColors.get() == SkyLook.Colors.CUSTOM);
 		auroraCount.visibleWhen(() -> false);
-		when.visibleWhen(() -> style.get() != SkyLook.Style.CLOUDS);
-		brightness.visibleWhen(() -> style.get() == SkyLook.Style.AURORA);
-		auroraSpeed.visibleWhen(() -> style.get() == SkyLook.Style.AURORA);
-		// Advanced: the sections of the style in use; with Auto one for each
-		for (Setting<?> row : List.of(gaps, gapSize, cloudSize, puffiness, heightOffset, thickness, cloudSpeed, windFrom, shadowStrength, sunsetGlow, rainDarkness)) {
+		autoQualityMemory.visibleWhen(() -> false);
+		when.visibleWhen(() -> style.get() != SkyLook.Style.CLOUDS && style.get() != SkyLook.Style.MOLTEN);
+		// Molten's rows only with Molten; what it replaces (the night sky, the other styles' sun and moon switches) only without it; the quality is for all
+		for (Setting<?> row : List.of(moltenColor, moltenSpeed, moltenBrightness, moltenLines, moltenThickness, moltenGlow, moltenPulses, moltenTint, moltenThunder, moltenSun, moltenMoon, moltenStars)) {
+			row.visibleWhen(this::moltenChosen);
+		}
+		for (Setting<?> row : List.of(starDensity, milkyWay, moonGlow, showSun, showMoon, showStars)) {
+			row.visibleWhen(() -> !moltenChosen());
+		}
+		brightness.visibleWhen(() -> auroraChoosable() || starsChoosable());
+		auroraSpeed.visibleWhen(this::auroraChoosable);
+		auroraIntensity.visibleWhen(this::auroraChoosable);
+		// the clouds' details: for the clouds in use; with Auto as well
+		for (Setting<?> row : List.of(gaps, gapSize, cloudSize, puffiness, heightOffset, thickness, cloudSpeed, windFrom, sunsetGlow, rainDarkness)) {
 			row.visibleWhen(this::cloudsChoosable);
 		}
+		shadowStrength.visibleWhen(() -> cloudsChoosable() && cloudShadows.get());
 		gapSize.visibleWhen(() -> cloudsChoosable() && gaps.get() != SkyLook.Gaps.NONE);
-		for (Setting<?> row : List.of(coverAgain, heightAgain, lightAgain, weatherAgain, lightningAgain, auroraBrightness, starAmountAgain, starSpeedAgain, starTrailAgain, flyBysAgain)) {
-			row.visibleWhen(() -> style.get() == SkyLook.Style.AUTO);
-		}
-		starBrightness.visibleWhen(this::starsChoosable);
 		addResetButton();
 	}
 
@@ -287,11 +389,13 @@ public class SkyFeature extends Feature {
 
 	/** @return the current horizon color: the night's or the day's, or a blend */
 	public float[] horizonNow() {
-		return netherLook(theme().horizon(rgb()), NETHER_HORIZON);
+		float[] color = netherLook(theme().horizon(rgb()), NETHER_HORIZON);
+		return color;
 	}
 
 	public float[] zenithNow() {
-		return netherLook(theme().zenith(rgb()), NETHER_ZENITH);
+		float[] color = netherLook(theme().zenith(rgb()), NETHER_ZENITH);
+		return color;
 	}
 
 	/** @return the color, turned towards the Nether's own over one of its islands, with natural colors */
@@ -335,16 +439,43 @@ public class SkyFeature extends Feature {
 
 	/** @return the quality as the shader expects it: 0, 1 or 2 */
 	public int quality() {
-		return dev.tim1337.lumio.render.GraphicsQuality.isFast() ? 0 : quality.get().ordinal();
+		if (dev.tim1337.lumio.render.GraphicsQuality.isFast()) {
+			return 0;
+		}
+		Quality chosen = quality.get();
+		return chosen == Quality.AUTO ? dev.tim1337.lumio.render.SkyAutoQuality.level() : chosen.level();
+	}
+
+	/** @return whether the quality is Auto: a level picked by hand always wins */
+	public boolean autoQuality() {
+		return quality.get() == Quality.AUTO && !dev.tim1337.lumio.render.GraphicsQuality.isFast();
+	}
+
+	/** @return what Auto remembered: its level and the mark of the graphics it measured on */
+	public String autoQualityMemory() {
+		return autoQualityMemory.get();
+	}
+
+	/** Keeps what Auto chose, saved with the settings. */
+	public void rememberAutoQuality(String memory) {
+		if (!memory.equals(autoQualityMemory.get())) {
+			autoQualityMemory.set(memory);
+			dev.tim1337.lumio.config.FeatureManager.saveSoon();
+		}
 	}
 
 	public float brightness() {
 		return brightness.get();
 	}
 
-	/** @return how much of the sun, the moon and the lights of the sky is shown: less only while a jump of the time of day is hidden */
+	/** @return how much of the game's sun, moon and stars is shown: less only while a jump of the time of day is hidden */
 	public float shownAfterJump() {
 		return clock.shown();
+	}
+
+	/** @return the turn of the sky's own stars and lights, in radians: gliding to a new time of day */
+	public float skyStarAngle() {
+		return clock.lightStars();
 	}
 
 	public float starDensity() {
@@ -361,18 +492,18 @@ public class SkyFeature extends Feature {
 	}
 
 	public boolean hidesVanillaStars() {
-		return isEnabled() && (lastOpacity > 0f || !showStars.get());
+		return isEnabled() && (lastOpacity > 0f || !moltenChosen() && !showStars.get());
 	}
 
 	/** @return whether the game's sun is left out */
 	public boolean hidesSun() {
 		// the Nether has no time of day, so no sun or moon over its islands
-		return isEnabled() && (!showSun.get() || netherKind);
+		return isEnabled() && (!moltenChosen() && !showSun.get() || netherKind);
 	}
 
 	/** @return whether the game's moon is left out */
 	public boolean hidesMoon() {
-		return isEnabled() && (!showMoon.get() || netherKind);
+		return isEnabled() && (!moltenChosen() && !showMoon.get() || netherKind);
 	}
 
 	/** What a place must not change under the mod's sky: its colors, and how far off it and the clouds fade into the fog. */
@@ -397,9 +528,21 @@ public class SkyFeature extends Feature {
 		return level != null && level.environmentAttributes() == system && level.dimensionType().skybox() == DimensionType.Skybox.OVERWORLD;
 	}
 
-	/** @return whether vanilla clouds are hidden: they would be drawn on top of the sky, which does not fit a nebula */
+	@Override
+	public void load(JsonObject json) {
+		super.load(json);
+		// new configs start without cloud shadows; those saved before keep them on
+		if (SkyLook.shadowsFromBefore(json)) {
+			cloudShadows.set(true);
+		}
+	}
+
+	/**
+	 * @return whether the game's clouds are hidden: while Lumio's clouds can show (the Clouds or Auto style), so clouds are never drawn twice. Otherwise the
+	 * game's own cloud options apply as usual; Lumio's clouds never follow them.
+	 */
 	public boolean hidesClouds() {
-		return isEnabled();
+		return isEnabled() && cloudsChoosable();
 	}
 
 	/** @return what the page wants of the night skies: a theme, or null for none */
@@ -407,15 +550,13 @@ public class SkyFeature extends Feature {
 		if (!isEnabled()) {
 			return null;
 		}
+		// the clouds' own night: the stars and the rest of the night sky through the gaps, but not over an island of the Nether, which has no night
+		Theme cloudNight = netherKind ? null : Theme.CLEAR_NIGHT;
 		return switch (style.get()) {
-			case CLOUDS -> null;
+			case CLOUDS -> cloudNight;
 			case AURORA -> Theme.NORTHERN_LIGHTS;
 			case STARS -> Theme.FALLING_STARS;
-			case AUTO -> switch (autoPick.update(sunY, rain)) {
-				case CLOUDS -> null;
-				case AURORA -> Theme.NORTHERN_LIGHTS;
-				case STARS -> Theme.FALLING_STARS;
-			};
+			case MOLTEN -> null;
 		};
 	}
 
@@ -425,8 +566,7 @@ public class SkyFeature extends Feature {
 		}
 		return switch (style.get()) {
 			case CLOUDS -> true;
-			case AURORA, STARS -> false;
-			case AUTO -> autoPick.update(sunY, rain) == SkyLook.Pick.CLOUDS;
+			case AURORA, STARS, MOLTEN -> false;
 		};
 	}
 
@@ -441,12 +581,16 @@ public class SkyFeature extends Feature {
 		return setting;
 	}
 
+	private boolean moltenChosen() {
+		return style.get() == SkyLook.Style.MOLTEN;
+	}
+
 	private boolean auroraChoosable() {
-		return (style.get() == SkyLook.Style.AURORA || style.get() == SkyLook.Style.AUTO);
+		return style.get() == SkyLook.Style.AURORA;
 	}
 
 	private boolean starsChoosable() {
-		return (style.get() == SkyLook.Style.STARS || style.get() == SkyLook.Style.AUTO);
+		return style.get() == SkyLook.Style.STARS;
 	}
 
 	/** @return how many colors the aurora blends, 0 for its natural ones */
@@ -489,7 +633,7 @@ public class SkyFeature extends Feature {
 	}
 
 	private boolean cloudsChoosable() {
-		return (style.get() == SkyLook.Style.CLOUDS || style.get() == SkyLook.Style.AUTO);
+		return style.get() == SkyLook.Style.CLOUDS;
 	}
 
 	/** Moves all that blends on by a frame, from what the game says of the moment. */
@@ -497,11 +641,11 @@ public class SkyFeature extends Feature {
 		long now = System.nanoTime();
 		float seconds = lastFrame == 0L ? 0f : Math.min(0.25f, (now - lastFrame) / 1e9f);
 		lastFrame = now;
+		moltenShown.update(isEnabled() && style.get() == SkyLook.Style.MOLTEN ? 1f : 0f, seconds);
 		boolean nether = level.dimensionType().skybox() == DimensionType.Skybox.NONE;
 		if (nether != netherKind) {
 			// into a world of the Nether's kind or out of it: looked at again at once, and the sky starts from nothing there
 			netherKind = nether;
-			netherOpen = false;
 			netherSky.update(0f, OPEN_SKY_FADE_SECONDS);
 			coverCheckIn = 0f;
 		}
@@ -511,13 +655,17 @@ public class SkyFeature extends Feature {
 		double eyeZ = eye.z();
 		eye.update(camera.x, camera.y, camera.z, seconds);
 		meteors.shift((float) (eye.x() - eyeX), (float) (eye.y() - eyeY), (float) (eye.z() - eyeZ));
-		clock.update(state.sunAngle, state.moonAngle, state.starAngle, System.identityHashCode(level), seconds);
+		// the page's preview: the sky by day or by night, through the clock, so the change fades as a jump of the time does
+		float wantedSun = previewLook == PreviewLook.DAY ? 0f : previewLook == PreviewLook.NIGHT ? Mth.PI : state.sunAngle;
+		float wantedMoon = previewLook == PreviewLook.DAY || previewLook == PreviewLook.NIGHT ? wantedSun + Mth.PI : state.moonAngle;
+		clock.update(wantedSun, wantedMoon, state.starAngle, System.identityHashCode(level), seconds);
 		float sun = clock.sun();
 		state.sunAngle = sun;
 		state.moonAngle = clock.moon();
 		state.starAngle = clock.stars();
-		sunX = -Mth.sin(sun);
-		sunY = Mth.cos(sun);
+		// what the sky is lit by glides to a new time of day, so the clouds and the colors never change at once
+		sunX = -Mth.sin(clock.lightSun());
+		sunY = Mth.cos(clock.lightSun());
 		// the game's fan of light at sunrise and sunset stands where the sun is: while a jump of time is hidden it has to wait, and it never comes at once
 		//#if 26.3
 		//$ float fanWanted = state.sunriseAndSunsetColor.w();
@@ -525,14 +673,18 @@ public class SkyFeature extends Feature {
 		float fanWanted = (state.sunriseAndSunsetColor >>> 24) / 255f;
 		//#endif
 		glowShare.update(clock.settled() ? fanWanted : 0f, seconds);
+		if (previewLook == PreviewLook.DAY || previewLook == PreviewLook.NIGHT) {
+			state.starBrightness = previewLook == PreviewLook.NIGHT ? PREVIEW_NIGHT_STARS : 0f;
+		}
 		state.starBrightness = starLevel.update(state.starBrightness, seconds);
-		float rain = weatherFollows.get() ? 1f - state.rainBrightness : 0f;
+		float rain = previewLook == PreviewLook.RAIN ? 1f : previewLook != PreviewLook.AUTO ? 0f : weatherFollows.get() ? 1f - state.rainBrightness : 0f;
 		rainNow.update(rain, seconds);
 		stormNow.update(weatherFollows.get() ? level.getThunderLevel(1f) : 0f, seconds);
 		boolean cloudSky = style.get() == SkyLook.Style.CLOUDS;
-		cloudyLook.update(cloudSky && weather.get() == SkyLook.WeatherLook.CLOUDY ? 1f : 0f, seconds);
-		stormLook.update(cloudSky && weather.get() == SkyLook.WeatherLook.STORM ? 1f : 0f, seconds);
-		// the Weather look hides the sun, the moon and the stars as the game's rain does: softened behind thin clouds, gone in a storm
+		// the cloudy and storm looks follow the game's weather: rain makes the cloud sky cloudier and darker, thunder a storm
+		cloudyLook.update(cloudSky ? rainNow.value() : 0f, seconds);
+		stormLook.update(cloudSky ? stormNow.value() : 0f, seconds);
+		// the weather's look hides the sun, the moon and the stars as the game's rain does: softened behind thin clouds, gone in a storm
 		float veil = shownClouds() * Math.max(cloudyLook.value() * CLOUDY_VEIL, stormLook.value());
 		state.rainBrightness = Math.min(state.rainBrightness, 1f - veil);
 		state.starBrightness *= 1f - Math.max(veil, cloudyLook.value() * shownClouds() * CLOUDY_STAR_DIM);
@@ -549,12 +701,19 @@ public class SkyFeature extends Feature {
 			checkCover(level, camera);
 		}
 		openSky.update(underCover ? 0f : 1f, seconds);
-		netherSky.update(netherKind && netherOpen ? 1f : 0f, seconds);
+		netherSky.update(netherKind && ceiling.hasSky() ? 1f : 0f, seconds);
 		float drift = WIND_BLOCKS_PER_SECOND * cloudSpeed.get() * (1f + 2f * rainNow.value()) * seconds;
 		windX += windFrom.get() == SkyLook.Wind.GAME ? drift : drift * 0.8f;
 		windZ += windFrom.get() == SkyLook.Wind.GAME ? 0f : drift * 0.6f;
 		boolean flying = shownTheme.shown() == Theme.FALLING_STARS && lastOpacity > 0.05f;
-		meteors.update(seconds, starDensity.get(), starSpeed.get(), flying, flyBys.get());
+		if (flying || shownTheme.shown() != Theme.NORTHERN_LIGHTS && shownTheme.shown() != Theme.CLEAR_NIGHT) {
+			meteors.update(seconds, starDensity.get(), starSpeed.get(), flying, flyBys.get());
+		} else {
+			// over the aurora's and the clouds' night now and then one, only under an open sky: they are drawn in the world, over the clouds, so they wait for a clear one
+			boolean open = rainNow.value() < OPEN_SKY_RAIN && cloudCover.get() * shownClouds() < OPEN_SKY_COVER;
+			float often = shootingStars.get() == ShootingStars.OFTEN ? OFTEN_SHOOTING : RARE_SHOOTING;
+			meteors.update(seconds, often, starSpeed.get(), shootingStars.get() != ShootingStars.OFF && open && lastOpacity > 0.05f, false);
+		}
 	}
 
 	public SkyMeteors meteors() {
@@ -567,7 +726,7 @@ public class SkyFeature extends Feature {
 
 	/** @return how strongly the shooting stars show now */
 	public float meteorStrength() {
-		return shownTheme.shown() == Theme.FALLING_STARS ? lastOpacity * brightness.get() : 0f;
+		return shownTheme.shown() != null ? lastOpacity * brightness.get() : 0f;
 	}
 
 	public float starTrail() {
@@ -588,30 +747,37 @@ public class SkyFeature extends Feature {
 	}
 
 	/**
-	 * Looks at the cover over the camera, from the sky light where it is and how high the land above it reaches; only where the world has a sky.
-	 * Asked a few times a second.
+	 * Looks whether the world has a sky at all: in a world of the Nether's kind by its bedrock ceiling, once per world; elsewhere by what an add-on knows of
+	 * the place. Asked a few times a second.
 	 */
 	private void checkCover(ClientLevel level, net.minecraft.world.phys.Vec3 camera) {
 		if (netherKind) {
-			// the roof of the Nether is in the height map; over an island there is nothing above: straight up, or in most places around
-			BlockPos at = BlockPos.containing(camera);
-			int openAround = 0;
-			for (int side = 0; side < 4; side++) {
-				int x = at.getX() + (side == 0 ? NETHER_AROUND_BLOCKS : side == 1 ? -NETHER_AROUND_BLOCKS : 0);
-				int z = at.getZ() + (side == 2 ? NETHER_AROUND_BLOCKS : side == 3 ? -NETHER_AROUND_BLOCKS : 0);
-				openAround += level.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z) <= at.getY() ? 1 : 0;
+			// the sky is there unless the world has a solid bedrock ceiling (the vanilla Nether), looked at once per world in the top layer of the
+			// build height; never where the camera stands. Blocks cover the sky only where they stand on the screen
+			if (!ceiling.decidedFor(level)) {
+				BlockPos at = BlockPos.containing(camera);
+				int topY = level.getMinY() + level.dimensionType().logicalHeight() - 1;
+				BlockPos.MutableBlockPos spot = new BlockPos.MutableBlockPos();
+				ceiling.look(level, at.getX() >> 4, at.getZ() >> 4, new SkyLook.TopLayer() {
+					@Override
+					public boolean loaded(int chunkX, int chunkZ) {
+						// the client holds an empty stand-in for a chunk whose data has not come yet: only a chunk with its data counts
+						return level.hasChunk(chunkX, chunkZ) && !(level.getChunk(chunkX, chunkZ) instanceof EmptyLevelChunk);
+					}
+
+					@Override
+					public boolean bedrock(int x, int z) {
+						return level.getBlockState(spot.set(x, topY, z)).is(Blocks.BEDROCK);
+					}
+				});
 			}
-			netherOpen = SkyLook.openOverNether(level.getHeight(Heightmap.Types.MOTION_BLOCKING, at.getX(), at.getZ()) - at.getY(), openAround);
 			underCover = false;
 			return;
 		}
-		if (!level.dimensionType().hasSkyLight()) {
-			underCover = false;
-			return;
-		}
-		BlockPos at = BlockPos.containing(camera);
-		int above = level.getHeight(Heightmap.Types.MOTION_BLOCKING, at.getX(), at.getZ()) - at.getY();
-		underCover = SkyLook.underCover(level.getBrightness(LightLayer.SKY, at), above);
+		// a roof over the camera never takes the clouds away: where the sky shows on the screen (a doorway, a window, a skylight), they show, and
+		// what is in front of them hides them. Only a world an add-on knows to lie underground (the mines) has none.
+		dev.tim1337.lumio.api.LocationProvider place = Addons.location();
+		underCover = SkyLook.underCover(place != null && place.inWorld(), place != null && place.has("mines"));
 	}
 
 	public float sunX() {
@@ -634,7 +800,7 @@ public class SkyFeature extends Feature {
 		return windZ;
 	}
 
-	/** @return how much of the sky the clouds cover: the setting, raised by the Weather look */
+	/** @return how much of the sky the clouds cover: the setting, raised by rain and thunder */
 	public float cover() {
 		return SkyLook.weatherCover(cloudCover.get(), cloudyLook.value(), stormLook.value());
 	}
@@ -655,6 +821,16 @@ public class SkyFeature extends Feature {
 		return puffiness.get();
 	}
 
+	/** @return whether the clouds are the game's blocky cells, shaded, instead of the soft layers */
+	public boolean blockClouds() {
+		return cloudStyle.get() == SkyLook.CloudStyle.GAME;
+	}
+
+	/** @return the soft layers shown, as bits: 1 the heaps (cumulus), 2 the rows of puffs (altocumulus), 4 the streaks (cirrus) */
+	public int cloudLayers() {
+		return (cumulus.get() ? 1 : 0) | (altocumulus.get() ? 2 : 0) | (cirrus.get() ? 4 : 0);
+	}
+
 	/** @return the height of the base of the clouds, in blocks of the world */
 	public float cloudBottom() {
 		return cloudHeight.get().blocks() + heightOffset.get();
@@ -669,7 +845,25 @@ public class SkyFeature extends Feature {
 	}
 
 	public float shadowStrength() {
-		return cloudLight.get() ? shadowStrength.get() : 0f;
+		return cloudLight.get() && cloudShadows.get() ? shadowStrength.get() : 0f;
+	}
+
+	/** @return how strong the aurora is, 0 subtle to 1 strong */
+	public float auroraIntensity() {
+		return auroraIntensity.get();
+	}
+
+	public boolean milkyWay() {
+		return milkyWay.get();
+	}
+
+	public boolean moonGlow() {
+		return moonGlow.get();
+	}
+
+	/** @return whether the clouds are marched with fewer steps: the page's Quality on Fast (Balanced and Detailed are Fancy) */
+	public boolean fastClouds() {
+		return quality() == 0;
 	}
 
 	public boolean sunsetGlow() {
@@ -682,7 +876,7 @@ public class SkyFeature extends Feature {
 
 	/** Gives the vanilla sky the theme color, so no daytime blue or night black remains, and takes the jumps out of what the game shows: a warp to a place with another time of day or other weather blends. */
 	public void apply(ClientLevel level, SkyRenderState state) {
-		if (!isEnabled() && cloudLevel.value() <= 0f && shownTheme.shown() == null) {
+		if (!isEnabled() && cloudLevel.value() <= 0f && moltenShown.value() <= 0f && shownTheme.shown() == null) {
 			lastFrame = 0L;
 			clock.forget();
 			return;
@@ -696,6 +890,7 @@ public class SkyFeature extends Feature {
 		updateFrame(level, state);
 		float opacity = opacity(state.starBrightness, state.rainBrightness);
 		steadySkyColor(state);
+		moltenSkyColor(state);
 		if (opacity <= 0f) {
 			return;
 		}
@@ -713,6 +908,24 @@ public class SkyFeature extends Feature {
 		state.skyColor = mix(state.skyColor, average(horizon, zenith), opacity);
 		// the orange sunrise/sunset band does not belong in the theme
 		int glowAlpha = Math.round((state.sunriseAndSunsetColor >>> 24) * (1f - opacity));
+		state.sunriseAndSunsetColor = (glowAlpha << 24) | (state.sunriseAndSunsetColor & 0xFFFFFF);
+		//#endif
+	}
+
+	/** Over the Molten sky the game's sky color (what shows below the horizon and in the gaps) is its dark horizon, and the sunset band goes. */
+	private void moltenSkyColor(SkyRenderState state) {
+		float molten = moltenLevel();
+		if (molten <= 0f) {
+			return;
+		}
+		float[] horizon = SkyMolten.horizon(moltenRgb());
+		//#if 26.3
+		//$ state.skyColor = shownSky.set(Mth.lerp(molten, state.skyColor.x(), horizon[0]), Mth.lerp(molten, state.skyColor.y(), horizon[1]), Mth.lerp(molten, state.skyColor.z(), horizon[2]));
+		//$ org.joml.Vector4fc glow = state.sunriseAndSunsetColor;
+		//$ state.sunriseAndSunsetColor = shownGlow.set(glow.x(), glow.y(), glow.z(), glow.w() * (1f - molten));
+		//#else
+		state.skyColor = mix(state.skyColor, horizon, molten);
+		int glowAlpha = Math.round((state.sunriseAndSunsetColor >>> 24) * (1f - molten));
 		state.sunriseAndSunsetColor = (glowAlpha << 24) | (state.sunriseAndSunsetColor & 0xFFFFFF);
 		//#endif
 	}
@@ -801,6 +1014,131 @@ public class SkyFeature extends Feature {
 		return sunsetRgb;
 	}
 
+	/** @return how much it is day, from the sun's height: 0 at night, 1 by day */
+	private float daylight() {
+		return Mth.clamp((sunY + DAY_FROM) / DAY_OVER, 0f, 1f);
+	}
+
+	/** @return how much of the game's sun shows: a smoky place dims it */
+	public float sunShown() {
+		return replacedSkyLeft(moltenSun.get(), SkyMolten.SUN_LEFT);
+	}
+
+	/** @return how much of the moon is shown: less over the Molten sky */
+	public float moonShown() {
+		return replacedSkyLeft(moltenMoon.get(), SkyMolten.SUN_LEFT);
+	}
+
+	/** @return how much of the game's stars is shown: none over the Molten sky unless its Stars switch is on */
+	public float starsShown() {
+		return replacedSkyLeft(moltenStars.get(), 1f);
+	}
+
+	/**
+	 * @param on   whether the sky that replaces the game's keeps this part of it (its own switch)
+	 * @param kept how much of it is left when it is kept
+	 * @return how much of the game's sun, moon or stars shows over the sky that replaces it, as far as that sky is shown: fading as it comes and goes
+	 */
+	private float replacedSkyLeft(boolean on, float kept) {
+		return 1f - (1f - (on ? kept : 0f)) * moltenLevel();
+	}
+
+	/** @return how much of the Molten sky is shown, from 0 to 1: it fades in and out when chosen or left */
+	public float moltenLevel() {
+		return isEnabled() || moltenShown.value() > 0f ? moltenShown.value() : 0f;
+	}
+
+	/** @return the color of the Molten sky's lines, as 0xRRGGBB */
+	public int moltenRgb() {
+		return moltenColor.get();
+	}
+
+	/** @return how thick the Molten lines are against their usual width */
+	public float moltenThickness() {
+		return moltenThickness.get();
+	}
+
+	/** @return how far their glow reaches against its usual size */
+	public float moltenGlow() {
+		return moltenGlow.get();
+	}
+
+	public boolean moltenPulses() {
+		return moltenPulses.get();
+	}
+
+	public float moltenSpeed() {
+		return moltenSpeed.get();
+	}
+
+	public float moltenBrightness() {
+		return moltenBrightness.get();
+	}
+
+	/** @return how many lines cross the Molten sky: 0, 1 or 2 */
+	public int moltenLines() {
+		return moltenLines.get().ordinal();
+	}
+
+	/** @return how much a flash of lightning lights the Molten sky's lines now, from 0 to 1 */
+	public float moltenFlash() {
+		return moltenThunder.get() ? strikes.flash() : 0f;
+	}
+
+	/** @return how far the sky's light on the world turns to the Molten color, from 0 to 1 */
+	public float moltenWorldTint() {
+		return moltenTint.get() ? SkyMolten.WORLD_TINT * moltenLevel() : 0f;
+	}
+
+	/** @return whether the Molten sky is fading in or out, while the light map follows it every frame */
+	public boolean moltenChanging() {
+		float level = moltenShown.value();
+		return level > 0f && level < 1f;
+	}
+
+	/** @return the sky's light on the world, tinted to the Molten color as far as {@link #moltenWorldTint} says */
+	public float[] moltenLight(float red, float green, float blue) {
+		return SkyMolten.tintedLight(new float[]{red, green, blue}, moltenRgb(), moltenWorldTint());
+	}
+
+	public PreviewLook previewLook() {
+		return previewLook;
+	}
+
+	public void previewLook(PreviewLook look) {
+		previewLook = look;
+	}
+
+	@Override
+	public void pageLeft() {
+		previewLook = PreviewLook.AUTO;
+	}
+
+	@Override
+	public boolean neverTabbed() {
+		return true;
+	}
+
+	/** @return the preview's line on the style chosen */
+	public String styleCaption() {
+		return switch (style.get()) {
+			case CLOUDS -> "Clouds · lit by the sun";
+			case AURORA -> "Aurora · rays in folding ribbons";
+			case STARS -> "Night sky · stars";
+			case MOLTEN -> "Molten · glowing lines";
+		};
+	}
+
+	private static EnumSetting.OptionCard styleCard(SkyLook.Style style) {
+		String text = switch (style) {
+			case CLOUDS -> "Volumetric, lit by the sun";
+			case AURORA -> "Curtains of light";
+			case STARS -> "Stars and Milky Way";
+			case MOLTEN -> "Glowing lines, day and night";
+		};
+		return new EnumSetting.OptionCard("moon", SystemColors.PURPLE_RGB, text, null, dev.tim1337.lumio.ui.SkyPictures.of(style.name()));
+	}
+
 	private float frameSeconds() {
 		return 1f / Math.max(10, Minecraft.getInstance().getFps());
 	}
@@ -821,6 +1159,12 @@ public class SkyFeature extends Feature {
 				Mth.lerp(toSky, fog.color.z, horizon[2]),
 				fog.color.w);
 		}
+		// over the Molten sky the fog is its horizon, so the world fades into it
+		float molten = moltenLevel();
+		if (molten > 0f) {
+			float[] horizon = SkyMolten.horizon(moltenRgb());
+			fog.color.set(Mth.lerp(molten, fog.color.x, horizon[0]), Mth.lerp(molten, fog.color.y, horizon[1]), Mth.lerp(molten, fog.color.z, horizon[2]), fog.color.w);
+		}
 		// the fog and the horizon are the sky's: the same weather over them, so there is no seam between sky, fog and clouds
 		look[0] = fog.color.x;
 		look[1] = fog.color.y;
@@ -832,6 +1176,10 @@ public class SkyFeature extends Feature {
 		shownFogGreen += (fog.color.y - shownFogGreen) * share;
 		shownFogBlue += (fog.color.z - shownFogBlue) * share;
 		fog.color.set(shownFogRed, shownFogGreen, shownFogBlue, fog.color.w);
+	}
+
+	private static float luminance(float r, float g, float b) {
+		return 0.2126f * r + 0.7152f * g + 0.0722f * b;
 	}
 
 	private static float[] average(float[] a, float[] b) {

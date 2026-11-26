@@ -1,5 +1,6 @@
 package dev.tim1337.lumio.features.visual.screen;
 
+import dev.tim1337.lumio.hud.PanelSizes;
 import dev.tim1337.lumio.api.experimental.draw.SystemColors;
 import dev.tim1337.lumio.config.Feature;
 import dev.tim1337.lumio.config.FeatureManager;
@@ -45,17 +46,19 @@ public class NotificationsFeature extends Feature {
 	private final FloatSetting volume = add(new FloatSetting("volume", Component.literal("Volume"), 0.7f, 0.05f, 1f, 2).percent(), "Sound");
 	private final BooleanSetting errorSound = add(new BooleanSetting("error_sound", Component.literal("Error sound"), true), "Sound");
 	private final FloatSetting seconds = add(new FloatSetting("seconds", Component.literal("Duration"), 6.5f, 2f, 15f, 1), "General");
-	private final FloatSetting scale = add(new FloatSetting("scale", Component.literal("Size"), 1f, 0.6f, 1.5f, 2), "General");
+	private final FloatSetting scale = add(new FloatSetting("scale", Component.literal("Size"), 1f, PanelSizes.LEAST, PanelSizes.MOST, 2).percent(), "General");
 	private final BooleanSetting glow = add(new BooleanSetting("glow", Component.literal("Glow"), false), "General");
-	private final FloatSetting fromRight = add(new FloatSetting("from_right", Component.literal("From the right edge"), 10f, -4000f, 4000f, 0), "Place");
-	private final FloatSetting fromTop = add(new FloatSetting("from_top", Component.literal("From the top edge"), 10f, -4000f, 4000f, 0), "Place");
+	private final FloatSetting fromRight = add(new FloatSetting("from_right", Component.literal("From the right"), 10f, -4000f, 4000f, 0), "Place");
+	private final FloatSetting fromTop = add(new FloatSetting("from_top", Component.literal("From the top"), 10f, -4000f, 4000f, 0), "Place");
 
 	public NotificationsFeature() {
-		super("notifications", "Notifications", "The notices at the top right: their sound, how long they stay, how large they are, and where.", false, false);
+		super("notifications", "Notifications", "The pop-ups at the top right.", false, false);
+		searchWords("toast toasts pop-up pop-ups popup popups notices");
 		iconRgb(SystemColors.ORANGE_RGB);
 		iconName("bell");
 		summary("The notices at the top right of the screen");
-		volume.under(sound, () -> sound.get() != Sound.NONE);
+		// the soft chime is one of the menu's sounds and plays at their volume
+		volume.under(sound, () -> sound.get() != Sound.NONE && sound.get() != Sound.CHIME);
 		errorSound.under(sound, () -> sound.get() != Sound.NONE);
 		fromRight.visibleWhen(() -> false);
 		fromTop.visibleWhen(() -> false);

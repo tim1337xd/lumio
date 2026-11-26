@@ -12,8 +12,9 @@ import dev.tim1337.lumio.ui.UiSounds;
  * A color as a small swatch at the end of its row, or as a chip with a name in a row of several colors. A click opens the full color picker
  * in a popup attached to it, which stays open while the color is edited and closes on a click outside or Escape.
  */
-public class ColorSwatchControl extends Control {
-	private static final int SWATCH_WIDTH = 26;
+public final class ColorSwatchControl extends Control {
+	private static final int SWATCH_WIDTH = 18;
+	private static final float SWATCH_EDGE_OPACITY = 0.18f;
 	static final int HEIGHT = 18;
 	/** Size of the color square inside a chip. */
 	private static final int CHIP_SWATCH = 12;
@@ -77,11 +78,14 @@ public class ColorSwatchControl extends Control {
 
 	/** Fills the color, over a light and a dark half when it is translucent, so its opacity shows. */
 	private void swatch(Ui ui, int sx, int sy, int sw, int sh) {
+		// a small box of the color with a fine edge: a pill of the accent's color would read as a switch beside the page's switches
+		float corner = Radius.box(sh);
 		if (setting.hasOpacity() && setting.opacity() < 1f) {
-			ui.rounded(sx, sy, sw, sh, Radius.pill(sh), 0xFFFFFFFF);
-			ui.rounded(sx + sw / 2, sy, sw - sw / 2, sh, Radius.pill(sh), 0xFF2C2C2E);
+			ui.rounded(sx, sy, sw, sh, corner, 0xFFFFFFFF);
+			ui.rounded(sx + sw / 2, sy, sw - sw / 2, sh, corner, 0xFF2C2C2E);
 		}
-		ui.rounded(sx, sy, sw, sh, Radius.pill(sh), setting.hasOpacity() ? setting.argb() : 0xFF000000 | setting.get());
+		ui.rounded(sx, sy, sw, sh, corner, setting.hasOpacity() ? setting.argb() : 0xFF000000 | setting.get());
+		ui.ring(sx, sy, sw, sh, corner, 1, Ui.withOpacity(ui.palette.text(), SWATCH_EDGE_OPACITY));
 	}
 
 	private int popupHeight() {

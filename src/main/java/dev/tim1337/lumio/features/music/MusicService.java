@@ -1,8 +1,10 @@
 package dev.tim1337.lumio.features.music;
 
 import dev.tim1337.lumio.Lumio;
-import dev.tim1337.lumio.api.experimental.util.Debug;
+import dev.tim1337.lumio.api.experimental.debug.DebugCategory;
+import dev.tim1337.lumio.api.experimental.debug.DebugHooks;
 import dev.tim1337.lumio.api.experimental.util.HttpLimits;
+import dev.tim1337.lumio.api.experimental.util.Threads;
 import dev.tim1337.lumio.ui.Toasts;
 
 import com.google.gson.JsonElement;
@@ -30,7 +32,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
@@ -157,6 +158,24 @@ public final class MusicService {
 		return playing && track != null;
 	}
 
+	/** @return the playback position like {@link #position}, with the fraction of a millisecond, so motion by it moves evenly at any frame rate */
+	public static double positionExact() {
+		Track current = track;
+		if (current == null) {
+			return 0.0;
+		}
+		double value = positionMs;
+		if (playing) {
+			value += (System.nanoTime() - positionStamp) / 1_000_000.0;
+		}
+		return current.durationMs() > 0 ? Math.min(value, current.durationMs()) : value;
+	}
+
+	/** @return when the position was last reported, as {@link System#nanoTime} */
+	public static long positionStamp() {
+		return positionStamp;
+	}
+
 	/** @return the playback position in milliseconds, extrapolated from the last report */
 	public static long position() {
 		Track current = track;
@@ -174,7 +193,7 @@ public final class MusicService {
 	private static List<LyricLine> safeFrom;
 	private static List<LyricLine> safeLines = List.of();
 	/** Basic slurs hidden by the "Censor slurs" option, matched as whole words or as word stems with suffixes. */
-	private static final Pattern SLURS = Pattern.compile("\\b(?:nigg\\w*|fagg?(?:ot|ots|it|its)?|retard(?:ed|s)?|tranny|trannies|kikes?|chinks?|spics?|wetbacks?|gooks?|dykes?|coons?)\\b", Pattern.CASE_INSENSITIVE);
+	static final Pattern SLURS = Pattern.compile("\\b(?:nigg\\w*|fagg?(?:ot|ots|it|its)?|retard(?:ed|s)?|tranny|trannies|kikes?|chinks?|spics?|wetbacks?|gooks?|dykes?|coons?)\\b", Pattern.CASE_INSENSITIVE);
 
 	/** Enables censoring: slurs in the lyrics are shown as asterisks. */
 	public static void setSafe(boolean on) {
@@ -278,6 +297,23 @@ public final class MusicService {
 			}
 		}
 		return found == null || found.isBlank() ? null : found;
+	}
+
+	/** @return when the line after a line of the lyrics starts (adlibs on their own aside), or the line's own start when it is the last or not of these lyrics */
+	public static long nextLineStart(LyricLine line) {
+		List<LyricLine> lines = lyrics();
+		for (int i = 0; i < lines.size(); i++) {
+			if (lines.get(i) != line) {
+				continue;
+			}
+			for (int next = i + 1; next < lines.size(); next++) {
+				if (!lines.get(next).adlibOnly()) {
+					return lines.get(next).timeMs();
+				}
+			}
+			break;
+		}
+		return line.timeMs();
 	}
 
 	/** @return progress through the sung line from 0 to 1, used to highlight words as they are sung */
@@ -609,11 +645,7 @@ public final class MusicService {
 	private static volatile boolean ciderRunning = true;
 	/** Set to ask Cider again right away, without waiting for the pause after it did not answer. */
 	private static volatile boolean retryCider;
-	private static final ExecutorService CHECKS = Executors.newSingleThreadExecutor(task -> {
-		Thread thread = new Thread(task, "Lumio source check");
-		thread.setDaemon(true);
-		return thread;
-	});
+	private static final ExecutorService CHECKS = Threads.daemonExecutor("Lumio source check");
 
 	/** @return whether Cider answered the last time it was asked */
 	public static boolean ciderRunning() {
@@ -927,11 +959,7 @@ public final class MusicService {
 		}
 	}
 
-	private static final ExecutorService CONTROLS = Executors.newSingleThreadExecutor(runnable -> {
-		Thread thread = new Thread(runnable, "Lumio controls");
-		thread.setDaemon(true);
-		return thread;
-	});
+	private static final ExecutorService CONTROLS = Threads.daemonExecutor("Lumio controls");
 
 	/**
 	 * Pauses, plays, skips or goes back in the player the song comes from. Runs on a background thread, since a player request can take a moment
@@ -1117,8 +1145,10 @@ public final class MusicService {
 					if (fromCider.isEmpty()) {
 						fromCider = ciderLyrics(forTrack); // Cider can be slow right after a song starts: retry once
 					}
-					Debug.log("Lyrics from Cider for \"{}\" (id {}): {} lines, {} with words", forTrack.title(), forTrack.id(), fromCider.size(),
-						fromCider.stream().filter(line -> !line.words().isEmpty()).count());
+					if (DebugHooks.ACTIVE) {
+						DebugHooks.log(DebugCategory.MUSIC, "Lyrics from Cider for \"{}\" (id {}): {} lines, {} with words", forTrack.title(), forTrack.id(), fromCider.size(),
+							fromCider.stream().filter(line -> !line.words().isEmpty()).count());
+					}
 					if (!fromCider.isEmpty() && forTrack.key().equals(lyricsKey)) {
 						lyrics = fromCider;
 						lyricsOrigin = "Cider (Apple Music)";
@@ -1384,7 +1414,9 @@ public final class MusicService {
 				}
 			}
 		} catch (Exception e) {
-			Debug.log("Lyrics from Cider failed: {}", e.toString());
+			if (DebugHooks.ACTIVE) {
+				DebugHooks.log(DebugCategory.MUSIC, "Lyrics from Cider failed: {}", e.toString());
+			}
 		}
 		return List.of();
 	}

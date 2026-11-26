@@ -12,6 +12,8 @@ import net.minecraft.util.Mth;
 /** A walk effect particle: either flat, lying on a block or the ground, or camera-facing. */
 public class WalkParticle extends SingleQuadParticle {
 	private static int alive;
+	/** The turn of a flat particle, made once: the game only reads its four numbers into the quad, so all particles share it. Never changed. */
+	private static final Quaternionf FLAT = new Quaternionf().rotationX(-Mth.HALF_PI);
 
 	public static int alive() {
 		return alive;
@@ -90,7 +92,7 @@ public class WalkParticle extends SingleQuadParticle {
 				yo = height;
 			}
 			// lying flat, like the rings of the Warden's shriek
-			extractRotatedQuad(state, camera, new Quaternionf().rotationX(-Mth.HALF_PI), partialTick);
+			extractRotatedQuad(state, camera, FLAT, partialTick);
 		} else {
 			super.extract(state, camera, partialTick);
 		}

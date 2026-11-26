@@ -126,7 +126,11 @@ final class AddonFeatureAdapter extends Feature {
 
 	/** @return the main mod's place of a key */
 	static KeySetting.Where whereOf(KeyPlace place) {
-		return place == KeyPlace.SCREENS ? KeySetting.Where.SCREENS : KeySetting.Where.WORLD;
+		return switch (place) {
+			case SCREENS -> KeySetting.Where.SCREENS;
+			case TYPING -> KeySetting.Where.TYPING;
+			case WORLD -> KeySetting.Where.WORLD;
+		};
 	}
 
 	/** The add-on's side calls the feature through this. */
@@ -167,8 +171,38 @@ final class AddonFeatureAdapter extends Feature {
 		}
 
 		@Override
+		public void addMenuKey(KeyMapping mapping, String menu) {
+			AddonFeatureAdapter.this.addMenuKey(mapping, menu);
+		}
+
+		@Override
 		public void summary(String text) {
 			AddonFeatureAdapter.this.summary(text);
+		}
+
+		@Override
+		public void badge(String text) {
+			AddonFeatureAdapter.this.badge(text);
+		}
+
+		@Override
+		public void searchWords(String words) {
+			AddonFeatureAdapter.this.searchWords(words);
+		}
+
+		@Override
+		public void pageGroup(String name) {
+			AddonFeatureAdapter.this.pageGroup(name);
+		}
+
+		@Override
+		public void workInProgress() {
+			AddonFeatureAdapter.this.workInProgress();
+		}
+
+		@Override
+		public void cardSettings(java.util.List<? extends dev.tim1337.lumio.api.setting.AddonSetting<?>> settings) {
+			AddonFeatureAdapter.this.cardSettings(Adapters.settingsOf(settings));
 		}
 
 		@Override

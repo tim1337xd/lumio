@@ -1,4 +1,4 @@
-# How the pages are laid out: features | Main or Advanced | group | key | name. See PageOutline. The saved keys stay; only rows and names move.
+# How the pages are laid out: features | Main, Advanced or Page <title> @<icon> (a sub-page, opened from the page's overview; icon on its first row) | group | key | name.  An optional last column: the tooltip, a longer explanation shown on hover of the name. See PageOutline. The saved keys stay; only rows and names move.
 
 # Chat, its own page in the sidebar
 chat | Main | Look | background
@@ -34,15 +34,15 @@ chat | Advanced | Tabs | tabs_size
 # Status bars
 status_bars | Main | Bars | bars_row
 status_bars | Main | Numbers | text_size
-status_bars | Main | Numbers | maximum | Show the maximum
-status_bars | Main | General | hide_vanilla | Hide the game's bars
+status_bars | Main | Numbers | maximum | Maximum
+status_bars | Main | General | hide_vanilla | Hide game bars
 status_bars | Main | General | low_health_edge | Low health edge
 status_bars | Main | Appearance | look_row
 status_bars | Advanced | Shows | show_defense
 status_bars | Advanced | Shows | show_absorption
 status_bars | Advanced | Shows | show_overflow_mana
 status_bars | Advanced | Numbers | separators
-status_bars | Advanced | Numbers | fuel_percent | Drill fuel in percent
+status_bars | Advanced | Numbers | fuel_percent | Fuel in percent
 status_bars | Advanced | Numbers | extra_mode
 status_bars | Advanced | General | skyblock_health
 status_bars | Advanced | Layout | stack_width_mode
@@ -74,18 +74,17 @@ scoreboard_hud | Main | Appearance | look_row
 menus | Main | Main menu | main_menu | Style
 menus | Main | Main menu | song_card
 menus | Main | Main menu | cards
-menus | Main | Main menu | menu_lyrics
 menus | Main | Main menu | buttons
 menus | Main | Startup | startup_animation
 menus | Main | Startup | loading_style
+menus | Main | Background | background_style | | Falling stars: trails that follow the mouse. Minecraft world: a blocky world.
 menus | Main | Background | shader_background | Animated world
 menus | Main | Background | world_season
 menus | Main | Background | follow_time
-menus | Main | Background | world_quality
+menus | Main | Background | world_quality | | Low: a third of the size, no shadows. Balanced: half the size. High: the full size.
 menus | Main | Servers | keep_server_packs_row | Keep server packs
 menus | Advanced | Main menu | list_style
 menus | Advanced | Main menu | song_cover
-menus | Advanced | Background | background_style
 menus | Advanced | Background | stars_color
 menus | Advanced | Background | stars_pulse
 menus | Advanced | Background | stars_size
@@ -94,56 +93,64 @@ menus | Advanced | Background | background_speed | Speed
 menus | Advanced | Menu world | world_lights
 menus | Advanced | Menu world | world_stars
 
-# Sky
-sky | Main | Look | style
-sky | Main | Look | cloud_colors
-sky | Main | Look | cloud_color_row
-sky | Main | Look | aurora_colors
-sky | Main | Look | aurora_color_row
-sky | Main | Look | aurora_speed | Speed
-sky | Main | Look | star_colors
-sky | Main | Look | star_color_row
-sky | Main | Look | cloud_cover
-sky | Main | Look | weather_look
-sky | Main | Look | cloud_height
-sky | Main | Look | cloud_light
-sky | Main | Look | weather_follows
-sky | Main | Look | lightning_when
-sky | Main | Look | star_density | Amount
-sky | Main | Look | star_speed | Speed
-sky | Main | Look | star_trail
-sky | Main | Look | fly_bys
-sky | Main | Look | when
-sky | Main | Look | brightness
-sky | Main | Look | quality
-sky | Main | Show | show_sun
-sky | Main | Show | show_moon
-sky | Main | Show | show_stars
-sky | Advanced | Clouds: amount and shape | cover_again
-sky | Advanced | Clouds: amount and shape | height_again
-sky | Advanced | Clouds: amount and shape | gaps
-sky | Advanced | Clouds: amount and shape | gap_size
-sky | Advanced | Clouds: amount and shape | cloud_size
-sky | Advanced | Clouds: amount and shape | puffiness
-sky | Advanced | Clouds: layer and motion | height_offset
-sky | Advanced | Clouds: layer and motion | thickness
-sky | Advanced | Clouds: layer and motion | cloud_speed
-sky | Advanced | Clouds: layer and motion | wind
-sky | Advanced | Clouds: light | light_again
-sky | Advanced | Clouds: light | weather_again
-sky | Advanced | Clouds: light | lightning_again
-sky | Advanced | Clouds: light | lightning_often
-sky | Advanced | Clouds: light | shadow_strength
-sky | Advanced | Clouds: light | sunset_glow
-sky | Advanced | Clouds: light | rain_darkness
-sky | Advanced | Aurora | aurora_brightness_again
-sky | Advanced | Stars | star_amount_again
-sky | Advanced | Stars | star_speed_again
-sky | Advanced | Stars | star_trail_again
-sky | Advanced | Stars | fly_bys_again
-sky | Advanced | Stars | star_brightness_again
+# Sky: the preview, then an overview of its sub-pages
+sky | Main | | sky_preview
+sky | Page Style @palette | Style | style
+sky | Page Style | Style | when
+sky | Page Style | Style | brightness | Sky brightness
+sky | Page Style | Style | quality
+sky | Page Molten @swoosh | Molten | molten_color | Color
+sky | Page Molten | Molten | molten_speed | Speed
+sky | Page Molten | Molten | molten_brightness | Brightness
+sky | Page Molten | Molten | molten_lines | Lines
+sky | Page Molten | Molten | molten_thickness | Line thickness
+sky | Page Molten | Molten | molten_glow | Glow size
+sky | Page Molten | Molten | molten_pulses | Pulses
+sky | Page Molten | Molten | molten_tint | Tint the world | The sky's light on the world takes on its color.
+sky | Page Molten | Molten | molten_thunder | Flash with thunder
+sky | Page Molten | In the sky | molten_sun | Sun
+sky | Page Molten | In the sky | molten_moon | Moon
+sky | Page Molten | In the sky | molten_stars | Stars
+sky | Page Clouds @layers | Clouds | cloud_style | Style | Independent of the game's cloud options. Game keeps the blocky shapes.
+sky | Page Clouds | Clouds | cloud_cover | Cover
+sky | Page Clouds | Clouds | cloud_layers
+sky | Page Clouds | Clouds | cloud_height
+sky | Page Clouds | Clouds | cloud_shadows
+sky | Page Clouds | Clouds | cloud_light
+sky | Page Clouds | Colors | cloud_colors | Colors
+sky | Page Clouds | Colors | cloud_color_row
+sky | Page Clouds | Amount and shape | gaps
+sky | Page Clouds | Amount and shape | gap_size
+sky | Page Clouds | Amount and shape | cloud_size
+sky | Page Clouds | Amount and shape | puffiness
+sky | Page Clouds | Layer and motion | height_offset
+sky | Page Clouds | Layer and motion | thickness
+sky | Page Clouds | Layer and motion | cloud_speed
+sky | Page Clouds | Layer and motion | wind
+sky | Page Clouds | Light | shadow_strength
+sky | Page Clouds | Light | sunset_glow
+sky | Page Aurora @sparkle | Aurora | aurora_intensity
+sky | Page Aurora | Aurora | aurora_speed | Speed
+sky | Page Aurora | Colors | aurora_colors | Colors
+sky | Page Aurora | Colors | aurora_color_row
+sky | Page Night sky @moon | Night sky | star_density | Star amount
+sky | Page Night sky | Night sky | milky_way
+sky | Page Night sky | Night sky | shooting_stars
+sky | Page Night sky | Night sky | moon_glow
+sky | Page Night sky | Falling stars | star_speed | Speed
+sky | Page Night sky | Falling stars | star_trail
+sky | Page Night sky | Falling stars | fly_bys
+sky | Page Night sky | Colors | star_colors | Colors
+sky | Page Night sky | Colors | star_color_row | Star colors
+sky | Page Weather @bolt | Weather | weather_follows | | Rain turns the clouds into a storm.
+sky | Page Weather | Weather | lightning_when | Lightning
+sky | Page Weather | Weather | lightning_often | How often
+sky | Page Weather | Weather | rain_darkness
+sky | Page Shows @eye | Shows | show_sun
+sky | Page Shows | Shows | show_moon
+sky | Page Shows | Shows | show_stars | Game's stars
 
-# Weather
+# Ambience (Weather in the sidebar)
 ambience | Main | Look | mode
 ambience | Main | Look | intensity
 ambience | Main | Look | particle_size
@@ -186,8 +193,6 @@ walk_effects | Main | When | trigger | Show on
 walk_effects | Main | When | sprint_only
 walk_effects | Advanced | General | glow
 
-# Swing trail
-
 # Held item outline
 held_item_outline | Main | Look | mode
 held_item_outline | Main | Look | echo_length
@@ -209,6 +214,7 @@ held_item_transform | Main | Size | show_hand
 held_item_transform | Main | Motion | swing_look
 held_item_transform | Main | Motion | swing_rate
 held_item_transform | Main | Motion | equip_animation
+held_item_transform | Main | Server items | bow_pose | | A server's bow that would lie flat in the hand like paper is held like the game's bow.
 held_item_transform | Advanced | Swing | ignore_haste
 
 # Block overlay
@@ -224,11 +230,11 @@ block_overlay | Main | Shape | full_block
 
 # Cinematic camera
 cinematic_camera | Main | Film | mode
-cinematic_camera | Main | Film | pace
+cinematic_camera | Main | Film | pace | | A bit faster in the chorus.
 cinematic_camera | Advanced | Cuts and starting | cut_on_beat
-cinematic_camera | Advanced | Cuts and starting | smooth_instrumental
+cinematic_camera | Advanced | Cuts and starting | smooth_instrumental | | In long parts without singing, the camera glides to the next shot instead of cutting.
 cinematic_camera | Main | Start | start_after
-cinematic_camera | Main | Start | stop_on_move | Stop when I move
+cinematic_camera | Main | Start | stop_on_move | Stop when moving
 cinematic_camera | Main | Look | letterbox
 cinematic_camera | Main | Look | song_info_row
 cinematic_camera | Advanced | Look | vignette
@@ -237,11 +243,18 @@ cinematic_camera | Main | Look | hide_hud
 cinematic_camera | Main | Look | handheld
 cinematic_camera | Main | Film | shots
 cinematic_camera | Main | Film | server_note
-cinematic_camera | Advanced | Keys | key.lumio.cinematic_toggle
-cinematic_camera | Advanced | Keys | key.lumio.cinematic_leave
-cinematic_camera | Advanced | Keys | key.lumio.cinematic_next
-cinematic_camera | Advanced | Keys | key.lumio.cinematic_hold
-cinematic_camera | Advanced | Keys | key.lumio.cinematic_lyrics
+cinematic_camera | Main | Keys | key.lumio.cinematic_toggle
+cinematic_camera | Main | Keys | key.lumio.cinematic_leave
+cinematic_camera | Main | Keys | key.lumio.cinematic_next
+cinematic_camera | Main | Keys | key.lumio.cinematic_hold
+cinematic_camera | Main | Keys | key.lumio.cinematic_lyrics
+
+# Camera
+camera | Main | Full Bright | full_bright
+camera | Main | Full Bright | brightness
+camera | Main | Full Bright | key.lumio.full_bright
+camera | Main | Perspective | skip_front_view | | The perspective key goes from first person to the view from behind and back.
+
 
 # Hotbar
 hotbar | Main | Look | look | Style
@@ -264,14 +277,14 @@ hotbar | Main | Appearance | look_row
 # Text above the hotbar
 action_bar_hud | Main | Text | seconds | Duration
 action_bar_hud | Main | Text | font
-action_bar_hud | Main | Hide | hide_parts | Hide what the bars show
+action_bar_hud | Main | Hide | hide_parts | Skip bar stats | Leaves out what the status bars already show.
 action_bar_hud | Main | Hide | remove_what
 action_bar_hud | Main | Appearance | look_row
 
 # Info bar
 info_bar | Main | Bar | style
 info_bar | Main | Bar | preview
-info_bar | Main | Segments | segments | Segments
+info_bar | Main | Segments | segments | Segments | Switch them on or off and drag them into order.
 info_bar | Main | Song | song_size
 info_bar | Main | Appearance | look_row
 info_bar | Advanced | Song | song_width | Exact width
@@ -291,7 +304,7 @@ boss_bars | Main | Appearance | look_row
 armor_hud | Main | Look | direction
 armor_hud | Main | Durability | wear
 armor_hud | Main | Durability | percent | In percent
-armor_hud | Main | Game | hide_vanilla | Hide the game's bar
+armor_hud | Main | Game | hide_vanilla | Hide game bar
 armor_hud | Main | Look | dividers
 armor_hud | Main | Look | empty_slots
 armor_hud | Main | Appearance | look_row
@@ -311,6 +324,8 @@ tab_list_hud | Main | Shows | info_cards
 tab_list_hud | Main | Shows | show_scores
 tab_list_hud | Main | General | ping_number
 tab_list_hud | Main | General | mark_self | Highlight me
+tab_list_hud | Main | Size | steady_size | Steady size | The list reserves room in steps and shrinks late, so it does not change its size with every player. Off: it fits what is there.
+tab_list_hud | Main | Size | shrink_after | Shrink after
 tab_list_hud | Advanced | General | column_width | Column width
 tab_list_hud | Advanced | Panel | width
 tab_list_hud | Main | Appearance | look_row
@@ -325,7 +340,6 @@ inventory_screen | Advanced | General | glow
 # Item tooltips
 item_tooltips | Main | Look | frame
 item_tooltips | Main | Look | size
-item_tooltips | Main | Look | scroll | Scroll long ones
 item_tooltips | Main | Added info | added_place
 item_tooltips | Main | Added info | added_show | Show
 
@@ -345,9 +359,31 @@ command_keybinds | Main | Keybinds | binds
 command_keybinds | Main | Keybinds | notice | Show the command
 command_keybinds | Main | Module keys | module_keys
 
-# Developer: shown from About while the debug switch is on
-debug_log | Developer | Developer | record_profile | Record a profile
-debug_log | Developer | Developer | log_colored
-debug_log | Developer | Developer | swing_trace
+# Visual Filter
+visual_filter | Main | In the world | falling_blocks
+visual_filter | Main | In the world | lightning
+visual_filter | Main | In the world | experience_orbs
+visual_filter | Main | In the world | death_animation
+visual_filter | Main | In the world | death_tags
+visual_filter | Main | In the world | explosion_particles
+visual_filter | Main | In the world | block_breaking_particles | | The bits flying off a block while it is mined and when it breaks, yours and other players'.
+visual_filter | Main | On the screen | fire
+visual_filter | Main | On the screen | fire_icon
+visual_filter | Main | On the screen | portal
+visual_filter | Main | On the screen | underwater
+visual_filter | Main | Fog | no_distance_fog | | The haze over far land and the fog at the edge of the render distance. The land still fades out over its last blocks.
+visual_filter | Main | Fog | no_thick_fog
+visual_filter | Main | Fog | no_sky_fog
 
-# Pages that stay as they are, and only take new names
+# Tooltips of pages laid out in code: names only, the layout stays.
+music | Name | - | adlibs_info_bar | | The bar has one line: an ad-lib is left out, stands small after its line, or shows alone while only it is sung.
+music | Name | - | world_placement | | Auto: in the sky while a calm piece of it is in view, around you otherwise.
+music | Name | - | world_lines_at_once | | The sung line and the older ones beside it; the oldest makes room when a new line starts.
+music | Name | - | world_group_fast | | Very short lines in a row show as one block, up to three under each other.
+music | Name | - | world_cutout_flow | | Auto scrolls while you stand still or film, and turns pages while you move.
+waypoints | Name | - | look_text_background | | Off: each group decides for itself.
+menu | Name | - | glow_colors | | 1 to 3 colors. They also color the falling stars and the block overlay.
+menu | Name | - | hud_in_menus | | Each element can choose for itself in its Look.
+menu | Name | - | restore_previous | | Puts the version before the last update back when the game closes.
+menu | Name | - | check_now | | Lumio looks once per game start, on GitHub. Nothing is downloaded until you press Update.
+menu | Name | - | debug_switch | | Writes logs/lumio-debug.log, to send with a bug report.

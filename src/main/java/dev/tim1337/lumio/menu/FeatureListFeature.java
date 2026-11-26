@@ -6,11 +6,12 @@ import dev.tim1337.lumio.api.feature.AddonPage;
 import dev.tim1337.lumio.api.setting.AddonSetting;
 import dev.tim1337.lumio.api.setting.Toggle;
 import dev.tim1337.lumio.config.Feature;
+import dev.tim1337.lumio.config.setting.ActionRowSetting;
 import dev.tim1337.lumio.config.setting.BooleanSetting;
-import dev.tim1337.lumio.config.setting.ButtonSetting;
+import dev.tim1337.lumio.config.setting.FeatureCardsSetting;
 import dev.tim1337.lumio.config.setting.FeatureGroupSetting;
 import dev.tim1337.lumio.config.setting.FeatureRowSetting;
-import dev.tim1337.lumio.config.setting.OrderedListSetting;
+import dev.tim1337.lumio.config.setting.NoteSetting;
 import dev.tim1337.lumio.config.setting.PageLinkSetting;
 import dev.tim1337.lumio.config.setting.PageTilesSetting;
 import dev.tim1337.lumio.config.setting.Setting;
@@ -31,17 +32,15 @@ import java.util.Set;
 import java.util.function.BooleanSupplier;
 
 /**
- * A page listing features in groups, each with a switch and a button that opens its settings in a separate window. Features with only one or two
- * settings show them inline under the switch instead. The page persists nothing itself; the features keep their own settings.
+ * A page listing features in groups, each with a switch and a button that opens its settings in a separate window. Features named with
+ * {@link #inline} show all of their settings under the switch instead. The page persists nothing itself; the features keep their own settings.
  */
 public class FeatureListFeature extends Feature implements AddonPage {
-	/** Maximum number of settings for a feature to be shown inline in the list. */
-	private static final int SMALL = 2;
-
 	private final Map<String, List<Feature>> categories = new LinkedHashMap<>();
 	private final Map<Feature, FeatureRowSetting> rows = new IdentityHashMap<>();
 	/** The feature rows of each group, created once. */
 	private final Map<String, FeatureGroupSetting> grids = new HashMap<>();
+	private final Map<String, FeatureCardsSetting> cardGrids = new HashMap<>();
 	private final Map<Setting<?>, String> sections = new IdentityHashMap<>();
 	/** Features that show all of their settings inline, however many there are. */
 	private final Set<Feature> everything = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -61,6 +60,32 @@ public class FeatureListFeature extends Feature implements AddonPage {
 		return direct;
 	}
 
+	/** The groups flagged as work in progress, by title; the note and the button at the top of each, made once. */
+	private final java.util.Set<String> workInProgressGroups = new java.util.HashSet<>();
+	private final Map<String, NoteSetting> workNotes = new HashMap<>();
+	private final Map<String, ActionRowSetting> workReports = new HashMap<>();
+	/** What the note at the top of such a group says, and where problems are reported (the place the README names for feedback). */
+	public static final String WORK_IN_PROGRESS_NOTE = "These features are still being tested on Hypixel. Some may be wrong or unfinished. Please report what doesn't work.";
+	private static final String REPORT_URL = "https://github.com/tim1337xd/Lumio/issues";
+
+	/**
+	 * Flags a group as work in progress: a tag after its tab's name, the note and a report button at its top, and the tag on each of its
+	 * features. One line where the page is defined; taking it out takes all of that away.
+	 */
+	@Override
+	public FeatureListFeature workInProgress(String group) {
+		workInProgressGroups.add(group);
+		for (Feature feature : categories.getOrDefault(group, List.of())) {
+			feature.workInProgress();
+		}
+		return this;
+	}
+
+	/** @return whether a group (a tab of the page) is flagged as work in progress */
+	public boolean isWorkInProgress(String group) {
+		return workInProgressGroups.contains(group);
+	}
+
 	/** Shows the page's groups as tabs, one at a time. */
 	public FeatureListFeature tabbed() {
 		tabbed = true;
@@ -68,6 +93,11 @@ public class FeatureListFeature extends Feature implements AddonPage {
 	}
 
 	public boolean isTabbed() {
+		return tabbed;
+	}
+
+	@Override
+	public boolean alwaysTabbed() {
 		return tabbed;
 	}
 
@@ -148,6 +178,7 @@ public class FeatureListFeature extends Feature implements AddonPage {
 
 	/** Adds features to a group of the list. */
 	public FeatureListFeature category(String title, Feature... features) {
+		allListed = null;
 		categories.computeIfAbsent(title, key -> new ArrayList<>()).addAll(List.of(features));
 		return this;
 	}
@@ -155,6 +186,7 @@ public class FeatureListFeature extends Feature implements AddonPage {
 	/** Adds a category of an add-on's features. */
 	@Override
 	public FeatureListFeature category(String name, AddonFeature... features) {
+		allListed = null;
 		List<Feature> own = categories.computeIfAbsent(name, key -> new ArrayList<>());
 		for (AddonFeature feature : features) {
 			own.add(Adapters.featureOf(feature));
@@ -186,6 +218,10 @@ public class FeatureListFeature extends Feature implements AddonPage {
 	private List<FeatureListFeature> subPages;
 	/** The page this one is a group of, or null. */
 	private FeatureListFeature parentPage;
+	/** Whole pages of their own listed under this one ({@link #under}), after the group pages. */
+	private final List<FeatureListFeature> adoptedPages = new ArrayList<>();
+	/** Whether this page is one of those, not made from a group. */
+	private boolean adopted;
 	/** Whether the page shows its groups as tiles leading to their pages instead of listing their features. */
 	private boolean overview;
 	private BooleanSupplier hereCheck;
@@ -234,15 +270,28 @@ public class FeatureListFeature extends Feature implements AddonPage {
 				page.parentPage = this;
 				page.master = master;
 				page.hereCheck = look.here();
-				page.category("", categories.getOrDefault(title, List.of()).toArray(new Feature[0]));
+				// a long page lists its features under the groups they declared, one under the other; a short one stays one plain list
+				List<Feature> listed = categories.getOrDefault(title, List.of());
+				Map<String, List<Feature>> groups = PageGroups.split(listed, Feature::pageGroupName);
+				if (groups == null) {
+					page.category("", listed.toArray(new Feature[0]));
+				} else {
+					groups.forEach((group, features) -> page.category(group, features.toArray(new Feature[0])));
+				}
 				String[] pageNote = pageNotes.get(title);
 				if (pageNote != null) {
 					page.note = new PageLinkSetting("page_note", pageNote[0], pageNote[1], () -> subPage(pageNote[1]));
 				}
 				subPages.add(page);
 			}
+			subPages.addAll(adoptedPages);
 		}
 		return subPages;
+	}
+
+	/** @return the page's groups in order, each with its features (a plain list has the one group "") */
+	public Map<String, List<Feature>> groups() {
+		return Collections.unmodifiableMap(categories);
 	}
 
 	/** @return the group page with the title, or null */
@@ -257,7 +306,34 @@ public class FeatureListFeature extends Feature implements AddonPage {
 
 	/** @return whether the page has group pages under it in the sidebar */
 	public boolean hasSubPages() {
-		return !pageLooks.isEmpty();
+		return !pageLooks.isEmpty() || !adoptedPages.isEmpty();
+	}
+
+	/**
+	 * Lists this page under another one in the sidebar, as the Chat page under Extras: it keeps its id, its settings and its links, and only moves.
+	 * Called before the menu first opens.
+	 */
+	@Override
+	public FeatureListFeature here(BooleanSupplier current) {
+		hereCheck = current;
+		return this;
+	}
+
+	@Override
+	public FeatureListFeature under(AddonPage parent) {
+		return under((FeatureListFeature) parent);
+	}
+
+	public FeatureListFeature under(FeatureListFeature parent) {
+		parentPage = parent;
+		adopted = true;
+		parent.adoptedPages.add(this);
+		return this;
+	}
+
+	/** @return whether the page was made from a group of its parent ({@link #page}), not listed under it with {@link #under} */
+	public boolean isGroupPage() {
+		return parentPage != null && !adopted;
 	}
 
 	/** @return the page this page is a group of, or null */
@@ -279,9 +355,20 @@ public class FeatureListFeature extends Feature implements AddonPage {
 		return all;
 	}
 
-	/** @return the features of the page's first group: all of them for a group page, which has only one */
+	/** All features the page lists, over all its groups, in order; made once and again after a group was added. */
+	private List<Feature> allListed;
+
+	/** @return every feature the page lists, in order: the one group of a plain list, or all named groups of a long page one after the other */
 	public List<Feature> firstGroup() {
-		return categories.isEmpty() ? List.of() : categories.values().iterator().next();
+		if (categories.size() == 1) {
+			return categories.values().iterator().next();
+		}
+		if (allListed == null) {
+			List<Feature> all = new ArrayList<>();
+			categories.values().forEach(all::addAll);
+			allListed = all;
+		}
+		return allListed;
 	}
 
 	/** Checks whether the player is where the page's features are used; the menu calls this once per second, not every frame. */
@@ -292,20 +379,6 @@ public class FeatureListFeature extends Feature implements AddonPage {
 	/** @return whether the player was where the page's features are used at the last check */
 	public boolean isHere() {
 		return here;
-	}
-
-	private static boolean counts(Setting<?> setting) {
-		return setting.isVisible() && !setting.isEditorOnly() && !(setting instanceof ButtonSetting) && !setting.key().equals("enabled");
-	}
-
-	private static List<Setting<?>> own(Feature feature) {
-		List<Setting<?>> list = new ArrayList<>();
-		for (Setting<?> setting : feature.settings()) {
-			if (counts(setting)) {
-				list.add(setting);
-			}
-		}
-		return list;
 	}
 
 	private static List<Setting<?>> allOf(Feature feature) {
@@ -338,35 +411,53 @@ public class FeatureListFeature extends Feature implements AddonPage {
 			return list;
 		}
 		for (Map.Entry<String, List<Feature>> category : categories.entrySet()) {
+			if (workInProgressGroups.contains(category.getKey())) {
+				// a group still being tested says so at its top, with where to report what does not work
+				for (Feature feature : category.getValue()) {
+					feature.workInProgress();
+				}
+				NoteSetting workNote = workNotes.computeIfAbsent(category.getKey(), key -> new NoteSetting(
+					"work_note_" + key.toLowerCase(Locale.ROOT).replace(' ', '_'), WORK_IN_PROGRESS_NOTE));
+				sections.put(workNote, category.getKey());
+				list.add(workNote);
+				ActionRowSetting report = workReports.computeIfAbsent(category.getKey(), key -> new ActionRowSetting(
+					"work_report_" + key.toLowerCase(Locale.ROOT).replace(' ', '_'), Component.literal("Report a problem"),
+					new ActionRowSetting.Look(() -> null, () -> -1, () -> "Report a problem", () -> "Opens the issues page in your browser, after you confirm", () -> null,
+						() -> null, () -> "Open…"),
+					() -> net.minecraft.client.gui.screens.ConfirmLinkScreen.confirmLinkNow(net.minecraft.client.Minecraft.getInstance().gui.screen(),
+						java.net.URI.create(REPORT_URL))));
+				sections.put(report, category.getKey());
+				list.add(report);
+			}
 			// the features of a group are rows on one card; each row opens the feature's settings window
 			List<Feature> cards = category.getValue().stream().filter(feature -> !everything.contains(feature)).toList();
-			if (!cards.isEmpty()) {
+			// a group whose features all chose settings for a card shows them as cards in a grid (the Dungeons page)
+			if (!cards.isEmpty() && cards.stream().allMatch(feature -> !feature.cardSettings().isEmpty())) {
+				FeatureCardsSetting grid = cardGrids.computeIfAbsent(category.getKey(), key -> new FeatureCardsSetting(
+					"cards_" + key.toLowerCase(Locale.ROOT).replace(' ', '_'), Component.literal(key), cards));
+				sections.put(grid, category.getKey());
+				list.add(grid);
+			} else if (!cards.isEmpty()) {
 				FeatureGroupSetting grid = grids.computeIfAbsent(category.getKey(), key -> new FeatureGroupSetting(
 					"grid_" + key.toLowerCase(Locale.ROOT).replace(' ', '_'), Component.literal(key), cards));
 				sections.put(grid, category.getKey());
 				list.add(grid);
 			}
+			// the features named with inline() show their switch row and all of their settings under it; the others are on the card above
 			for (Feature feature : category.getValue()) {
 				if (!everything.contains(feature)) {
 					continue;
 				}
-				boolean all = everything.contains(feature);
-				List<Setting<?>> small = all ? allOf(feature) : own(feature);
-				// ordered lists (the scoreboard lines) are too large to show inline and get their own window
-				boolean large = feature.ownWindow() || small.stream().anyMatch(setting -> setting instanceof OrderedListSetting);
-				boolean inline = all || (small.size() <= SMALL && feature.children().isEmpty() && !large);
-				FeatureRowSetting row = rows.computeIfAbsent(feature, key -> new FeatureRowSetting(key, !inline));
+				FeatureRowSetting row = rows.computeIfAbsent(feature, key -> new FeatureRowSetting(key, false));
 				// a feature whose switch is in the header gets no row of its own
 				if (feature != headerSwitch) {
 					sections.put(row, category.getKey());
 					list.add(row);
 				}
-				if (inline) {
-					for (Setting<?> setting : small) {
-						// groups defined by the feature itself keep their names
-						sections.put(setting, all && setting.section() != null ? setting.section() : category.getKey());
-						list.add(setting);
-					}
+				for (Setting<?> setting : allOf(feature)) {
+					// groups defined by the feature itself keep their names
+					sections.put(setting, setting.section() != null ? setting.section() : category.getKey());
+					list.add(setting);
 				}
 			}
 		}

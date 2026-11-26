@@ -9,16 +9,14 @@ import dev.tim1337.lumio.api.experimental.draw.TextScale;
 import dev.tim1337.lumio.api.experimental.motion.Spring;
 import dev.tim1337.lumio.api.experimental.util.ServerText;
 import dev.tim1337.lumio.api.experimental.util.TabSections;
-import dev.tim1337.lumio.config.SettingsView;
 import dev.tim1337.lumio.config.setting.BooleanSetting;
+import dev.tim1337.lumio.config.setting.EnumSetting;
 import dev.tim1337.lumio.config.setting.FloatSetting;
-import dev.tim1337.lumio.config.setting.Setting;
 import dev.tim1337.lumio.hud.HudPanelFeature;
 import dev.tim1337.lumio.mixin.accessor.PlayerTabOverlayAccessor;
 import dev.tim1337.lumio.ui.HudEditScreen;
 import dev.tim1337.lumio.ui.HudParts;
 import dev.tim1337.lumio.ui.HudStyle;
-import dev.tim1337.lumio.ui.MacScreen;
 import dev.tim1337.lumio.ui.Ui;
 
 import net.minecraft.client.Minecraft;
@@ -212,6 +210,10 @@ public class TabListHudFeature extends HudPanelFeature {
 	private final BooleanSetting showScores = add(new BooleanSetting("show_scores", Component.literal("Scores"), true), "Shows");
 	private final BooleanSetting pingNumber = add(new BooleanSetting("ping_number", Component.literal("Ping as number"), false), "General", "Off: bars");
 	private final BooleanSetting markSelf = add(new BooleanSetting("mark_self", Component.literal("Highlight yourself"), true), "General");
+	private final BooleanSetting steadySize = add(new BooleanSetting("steady_size", Component.literal("Steady size"), true), "General",
+		null);
+	private final EnumSetting<ShrinkAfter> shrinkAfter = add(new EnumSetting<>("shrink_after", Component.literal("Shrink after"), ShrinkAfter.TEN,
+		ShrinkAfter::displayName, EnumSetting.Style.SEGMENTED), "General");
 	private final FloatSetting columnWidth = add(new FloatSetting("column_width", Component.literal("Min column width"), 0f, 0f, 320f, 0), "General",
 		"0 is the standard width");
 
@@ -225,6 +227,23 @@ public class TabListHudFeature extends HudPanelFeature {
 		String shownName = "";
 		boolean present;
 		float alpha;
+	}
+
+	/** How long fewer players have to stay before the list gives a step of room back. */
+	public enum ShrinkAfter {
+		FIVE("5 s", 5_000L), TEN("10 s", 10_000L), THIRTY("30 s", 30_000L), NEVER("Never while open", TabSteady.NEVER);
+
+		private final Component displayName;
+		final long millis;
+
+		ShrinkAfter(String displayName, long millis) {
+			this.displayName = Component.literal(displayName);
+			this.millis = millis;
+		}
+
+		public Component displayName() {
+			return displayName;
+		}
 	}
 
 	/** An info card: it keeps its place while the list is open; its content updates in place, and it only ever grows. */
@@ -241,6 +260,8 @@ public class TabListHudFeature extends HudPanelFeature {
 		float[] valueRooms = new float[0];
 		int x;
 		int y;
+		/** Its fixed place among the cards (see {@link TabLayout#slotted}). */
+		int slot;
 
 		Card(String title) {
 			this.title = title;
@@ -250,6 +271,25 @@ public class TabListHudFeature extends HudPanelFeature {
 
 	private final List<Spot> spots = new ArrayList<>();
 	private final List<Card> cards = new ArrayList<>();
+	/** The cards' fixed places for this stay in a world: the same every time the list opens there, so no card changes its column. */
+	private final TabCardSlots cardSlots = new TabCardSlots();
+	private Object slotsLevel;
+	/** The card columns chosen for a screen size in this world: kept from one opening to the next, so the cards stay in their columns. */
+	private int stableCardColumns;
+	/** The steady size: the players' room in steps of rows, and the body's height (with the info side) in steps of a row's height. */
+	private static final int PLAYER_STEP = 5;
+	private final TabSteady steadyPlayers = new TabSteady(PLAYER_STEP, TabLayout.MOST_ROWS);
+	private final TabSteady steadyBody = new TabSteady(CELL_HEIGHT + CELL_GAP);
+	private boolean steadyOpened;
+	/** Whether the room just shrank a step: the list is then laid out anew, its gone players' spots given back. */
+	private boolean shrunk;
+	/** The size the glass is drawn at: it follows the list's size for a moment instead of snapping. */
+	private final Spring shownWidth = Spring.smooth(SIZE_SECONDS);
+	private final Spring shownHeight = Spring.smooth(SIZE_SECONDS);
+	private boolean sizeShown;
+	private static final float SIZE_SECONDS = 0.18f;
+	private int stableWidth;
+	private int stableHeight;
 	private List<HudText> header = List.of();
 	private List<HudText> footer = List.of();
 	private String headerKey = "";
@@ -286,11 +326,14 @@ public class TabListHudFeature extends HudPanelFeature {
 	private final Spring open = Spring.smooth(OPEN_SECONDS);
 
 	public TabListHudFeature() {
-		super("tab_list_hud", "Player list", "The list of players that is shown while you hold the key for it.", false, Anchor.CENTER, false, 0f, 14f);
+		super("tab_list_hud", "Player list", "The list of players, as a panel.", false, Anchor.CENTER, false, 0f, 14f);
 		iconRgb(SystemColors.PURPLE_RGB);
 		iconName("people");
 		summary("The player list in the style of the mod");
 		offerWidth(CELL_WIDTH * 3 + 2 * PAD);
+		pingNumber.visibleWhen(showPing::get);
+		shrinkAfter.under(steadySize);
+		glowAndDepthNeedBackground();
 	}
 
 	// ----------------------------------------------------------------------------------------------------- settings card
@@ -331,6 +374,11 @@ public class TabListHudFeature extends HudPanelFeature {
 			Component shown = client.gui.hud.getTabList().getNameForDisplay(playerInfo);
 			boolean real = isRealPlayer(playerInfo, hypixel);
 			if (!real && addonInfo) {
+				// a text entry of the server has a display name set; an entry without one is no line of the info columns (an NPC the server lists
+				// for a moment so its skin loads, under a random name): it is neither a player nor an info line
+				if (!infoLine(playerInfo.getTabListDisplayName() != null)) {
+					continue;
+				}
 				// the world's text columns become the info cards
 				info.add(shown);
 				columnHeads.put(shown, playerInfo.getSkin());
@@ -359,6 +407,11 @@ public class TabListHudFeature extends HudPanelFeature {
 		}
 		var overlay = (PlayerTabOverlayAccessor) client.gui.hud.getTabList();
 		return new Source(players, info, overlay.lumio$header(), overlay.lumio$footer());
+	}
+
+	/** @return whether a tab entry that is no real player is a line of the server's info columns: only one the server gave a display name */
+	static boolean infoLine(boolean hasDisplayName) {
+		return hasDisplayName;
 	}
 
 	/** @return the shown name split into the rank tag before the player's name and the name with what follows it */
@@ -393,12 +446,20 @@ public class TabListHudFeature extends HudPanelFeature {
 			session = true;
 			spots.clear();
 			cards.clear();
+			// another world (another island, another lobby): the cards without a place of their own are counted anew
+			if (client.level != slotsLevel) {
+				slotsLevel = client.level;
+				cardSlots.reset();
+				stableCardColumns = 0;
+			}
 			cellWidth = CELL_WIDTH;
 			cardWidth = CARD_WIDTH;
 			columns = 0;
 			rowsPerColumn = 0;
 			playerScroll = 0;
 			relayout = true;
+			steadyOpened = false;
+			sizeShown = false;
 		}
 		advanceFades();
 		long now = System.nanoTime();
@@ -417,6 +478,7 @@ public class TabListHudFeature extends HudPanelFeature {
 			updateCards(info);
 		}
 		updateHeaderFooter(source, editing);
+		updateSteady();
 		int real = 0;
 		for (Entry entry : players) {
 			real += entry.real() ? 1 : 0;
@@ -432,6 +494,49 @@ public class TabListHudFeature extends HudPanelFeature {
 
 	private boolean screenChanged(Minecraft client) {
 		return client.getWindow().getGuiScaledWidth() != layoutScreenWidth || client.getWindow().getGuiScaledHeight() != layoutScreenHeight;
+	}
+
+	/**
+	 * The steady size: the room for the players moves in steps of rows. It grows at once when they do not fit, and gives a step back only after
+	 * fewer have stayed for the chosen time; then the spots of those gone are given back and the list is laid out anew. When the list opens it
+	 * starts from the largest room used at this kind of place in this session.
+	 */
+	private void updateSteady() {
+		if (!steadySize.get()) {
+			return;
+		}
+		int present = 0;
+		for (Spot spot : spots) {
+			present += spot.present ? 1 : 0;
+		}
+		int before = steadyPlayers.reserved();
+		int now;
+		if (!steadyOpened) {
+			steadyOpened = true;
+			now = steadyPlayers.open(placeKey(), present);
+			relayout = true;
+		} else {
+			now = steadyPlayers.update(present, System.currentTimeMillis(), shrinkAfter.get().millis);
+		}
+		if (now < before) {
+			spots.removeIf(spot -> !spot.present);
+			shrunk = true;
+			relayout = true;
+		} else if (now > before && now > columns * rowsPerColumn) {
+			relayout = true;
+		}
+	}
+
+	/** @return the kind of place the list is open at, for the size remembered there: the world's dimension and what the Area card says */
+	private String placeKey() {
+		Minecraft client = Minecraft.getInstance();
+		String key = client.level == null ? "" : client.level.dimension().identifier().toString();
+		for (Card card : cards) {
+			if (card.title.equalsIgnoreCase("Area") && card.values.length > 0 && card.values[0] != null) {
+				return key + "|" + card.signature.lines().findFirst().orElse("");
+			}
+		}
+		return key;
 	}
 
 	/** Lets players that came fade in and players that left fade out, on real time, in their spots. */
@@ -561,6 +666,7 @@ public class TabListHudFeature extends HudPanelFeature {
 			}
 			if (card == null) {
 				card = new Card(read.title());
+				card.slot = cardSlots.slot(read.title(), read.slot());
 				cards.add(card);
 				relayout = true;
 			}
@@ -667,15 +773,23 @@ public class TabListHudFeature extends HudPanelFeature {
 		int roomHeight = Math.round(layoutScreenHeight * MOST_SCREEN_SHARE / size);
 		boolean withCards = !cards.isEmpty() && (infoCards.get() || HudEditScreen.isOpen());
 		int[] heights = new int[withCards ? cards.size() : 0];
+		int[] slots = new int[heights.length];
 		for (int i = 0; i < heights.length; i++) {
 			heights[i] = cards.get(i).height;
+			slots[i] = cards.get(i).slot;
 		}
 		int headerHeight = header.isEmpty() ? 0 : header.size() * HEADER_LINE + HEADER_GAP;
 		int footerHeight = footer.isEmpty() ? 0 : footer.size() * HEADER_LINE + HEADER_GAP;
 		TabLayout.Sizes sizes = new TabLayout.Sizes(PAD, cellWidth, CELL_HEIGHT, CELL_GAP, SECTION_ROW, AREA_GAP, cardWidth, CARD_GAP, headerHeight + footerHeight);
 		// while it is open the columns stay: only a player more than they hold makes them longer
-		boolean keep = sameScreen && columns > 0;
-		TabLayout.Plan plan = keep ? TabLayout.plan(spots.size(), heights, sizes, Math.round(room / keptSize), Math.round(roomHeight / keptSize), columns, rowsPerColumn) : TabLayout.planSmallest(spots.size(), heights, sizes, room, roomHeight);
+		// after a step of room was given back the list is laid out anew; else its columns stay while it is open
+		boolean keep = sameScreen && columns > 0 && !shrunk;
+		shrunk = false;
+		boolean steady = steadySize.get() && steadyOpened;
+		int playerRoom = steady ? Math.max(spots.size(), steadyPlayers.reserved()) : spots.size();
+		TabLayout.Plan plan = keep ? TabLayout.plan(playerRoom, heights, slots, sizes, Math.round(room / keptSize), Math.round(roomHeight / keptSize), columns, rowsPerColumn,
+			cardsBelow ? 0 : cardColumns) : TabLayout.planSmallest(playerRoom, heights, slots, sizes, room, roomHeight,
+			stableWidth == layoutScreenWidth && stableHeight == layoutScreenHeight ? stableCardColumns : 0);
 		if (!keep) {
 			keptSize = Math.min(1f, Math.min((float) room / (plan.contentWidth() + 2f * PAD), (float) roomHeight / (plan.bodyHeight() + headerHeight + footerHeight + 2f * PAD)));
 		}
@@ -685,18 +799,30 @@ public class TabListHudFeature extends HudPanelFeature {
 		playerScroll = Math.min(playerScroll, rowsPerColumn - visibleRows);
 		cardColumns = plan.cardColumns();
 		cardsBelow = plan.cardsBelow();
+		// the columns the cards have beside the players are kept for this screen size and world: only another size or world chooses again
+		if (cardColumns > 0 && !cardsBelow) {
+			stableCardColumns = cardColumns;
+			stableWidth = layoutScreenWidth;
+			stableHeight = layoutScreenHeight;
+		}
 		int natural = plan.contentWidth() + 2 * PAD;
 		widthLimits(CELL_WIDTH + 2 * PAD, natural);
 		width = Math.max(customWidth() ? widthOr(natural) : natural, natural);
 		contentLeft = (width - plan.contentWidth()) / 2;
 		playersTop = PAD + headerHeight;
-		height = 2 * PAD + headerHeight + plan.bodyHeight() + footerHeight;
+		// the body (the players and the info side) keeps the tallest it was at this kind of place, and gives height back late, like the players' room
+		int body = plan.bodyHeight();
+		if (steady) {
+			body = Math.max(body, keep ? steadyBody.update(body, System.currentTimeMillis(), shrinkAfter.get().millis) : steadyBody.open(placeKey(), body));
+			body = Math.min(body, Math.max(plan.bodyHeight(), Math.round(roomHeight / keptSize) - headerHeight - footerHeight - 2 * PAD));
+		}
+		height = 2 * PAD + headerHeight + body + footerHeight;
 		if (cardColumns > 0) {
 			int playersWidth = columns * cellWidth + (columns - 1) * CELL_GAP;
 			int playersHeight = SECTION_ROW + visibleRows * (CELL_HEIGHT + CELL_GAP) - CELL_GAP;
 			int cardsLeft = cardsBelow ? contentLeft : contentLeft + playersWidth + AREA_GAP;
 			int cardsTop = (cardsBelow ? playersTop + playersHeight + AREA_GAP : playersTop) + SECTION_ROW;
-			TabLayout.Masonry masonry = TabLayout.masonry(heights, cardColumns, CARD_GAP);
+			TabLayout.Masonry masonry = TabLayout.slotted(heights, slots, cardColumns, CARD_GAP);
 			for (int i = 0; i < heights.length; i++) {
 				Card card = cards.get(i);
 				card.x = cardsLeft + masonry.column()[i] * (cardWidth + CARD_GAP);
@@ -759,8 +885,29 @@ public class TabListHudFeature extends HudPanelFeature {
 		float alphaBefore = Ui.alpha();
 		Ui.setAlpha(alphaBefore * amount);
 		try {
-			drawGlass(ui, width, height, RADIUS);
-			drawContent(ui, graphics, client.font, amount);
+			// a change of size is followed for a moment instead of snapping (not when it just opened, and not without animations); the list keeps
+			// its middle, and what lies outside the glass meanwhile is not drawn
+			boolean follow = sizeShown && ModFeatures.MENU.animations();
+			float glassWidth = follow ? shownWidth.follow(width) : shownWidth.snap(width);
+			float glassHeight = follow ? shownHeight.follow(height) : shownHeight.snap(height);
+			sizeShown = true;
+			boolean settling = Math.abs(glassWidth - width) > 0.5f || Math.abs(glassHeight - height) > 0.5f;
+			if (!settling) {
+				drawGlass(ui, width, height, RADIUS);
+				drawContent(ui, graphics, client.font, amount);
+			} else {
+				int glassLeft = Math.round((width - glassWidth) / 2f);
+				pose.pushMatrix();
+				pose.translate(glassLeft, 0f);
+				drawGlass(ui, Math.round(glassWidth), Math.round(glassHeight), RADIUS);
+				pose.popMatrix();
+				graphics.enableScissor(glassLeft, 0, glassLeft + Math.round(glassWidth), Math.round(glassHeight));
+				try {
+					drawContent(ui, graphics, client.font, amount);
+				} finally {
+					graphics.disableScissor();
+				}
+			}
 		} finally {
 			Ui.setAlpha(alphaBefore);
 			pose.popMatrix();

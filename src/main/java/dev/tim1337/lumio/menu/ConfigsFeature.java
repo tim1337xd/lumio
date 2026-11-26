@@ -51,9 +51,9 @@ public class ConfigsFeature extends Feature {
 	/** The most recently loaded config, which gets the check mark. Not shared. */
 	private final StringSetting activeConfig = add(new StringSetting("active_config", Component.literal("Config in use"), "", false), "Configs");
 	/** Card colors of the player's configs, the menu colors at creation time: one "name=rrggbb,rrggbb" per line. Not shared. */
-	private final StringSetting configColors = add(new StringSetting("config_colors", Component.literal("Colors of the configs"), "", false), "Configs");
+	private final StringSetting configColors = add(new StringSetting("config_colors", Component.literal("Config colors"), "", false), "Configs");
 	/** Fingerprint of the settings right after a config was loaded: while they are unchanged, loading that config again restores them. */
-	private final StringSetting loadedPrint = add(new StringSetting("loaded_print", Component.literal("Settings when loaded"), "", false), "Configs");
+	private final StringSetting loadedPrint = add(new StringSetting("loaded_print", Component.literal("Loaded settings"), "", false), "Configs");
 
 	// the preset being tried: all settings before the trial, the preset that was in use then (or null), and the preset shown now
 	private String trialSettings;
@@ -110,7 +110,7 @@ public class ConfigsFeature extends Feature {
 	}
 
 	public ConfigsFeature() {
-		super("configs", "Configs", "Start from a preset, or save, share and load your own configs.", false, false);
+		super("configs", "Configs", "Presets, and your own configs.", false, false);
 		iconRgb(SystemColors.ORANGE_RGB);
 		iconName("layers");
 		activeConfig.visibleWhen(() -> false);
@@ -241,7 +241,7 @@ public class ConfigsFeature extends Feature {
 		if (!keybinds.isEmpty()) {
 			List<String> lines = new ArrayList<>(keybinds.size());
 			for (CommandBind bind : keybinds) {
-				lines.add(String.join(" + ", CommandKeybindsFeature.keyParts(bind.key, bind.modifiers)) + "   " + bind.command);
+				lines.add(String.join(" + ", CommandKeybindsFeature.keyParts(bind)) + "   " + bind.command);
 			}
 			Confirm.askWithOption("Load \"" + entry.name() + "\"",
 				"This config was shared by someone else. It has keybinds that send commands; they are only added to yours if you switch this on.",

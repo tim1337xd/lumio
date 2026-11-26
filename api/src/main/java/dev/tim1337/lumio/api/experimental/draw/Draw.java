@@ -49,6 +49,11 @@ public final class Draw {
 		return (a << 24) | (argb & 0xFFFFFF);
 	}
 
+	/** @return the color (its alpha ignored) with the alpha from 0 to 1 */
+	public static int argb(int rgb, float alpha) {
+		return (Math.round(Mth.clamp(alpha, 0f, 1f) * 255f) << 24) | (rgb & 0xFFFFFF);
+	}
+
 	/** @return the result of alpha-compositing {@code top} over {@code under} */
 	public static int over(int top, int under) {
 		int ta = top >>> 24;

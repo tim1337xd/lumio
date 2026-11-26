@@ -19,6 +19,38 @@ public interface EditableHud {
 
 	void hudMove(int dx, int dy);
 
+	/** @return the bounds where the player placed the element, before the auto-fit moved it; the drawn bounds for an element it never moves */
+	default int[] hudNaturalBounds() {
+		return hudBounds();
+	}
+
+	/**
+	 * @return along which edge the auto-fit may move the element ({@link dev.tim1337.lumio.hud.HudFit#ALONG_Y} and the others), or 0 for an
+	 *         element that stays where it is and that the others make room for
+	 */
+	default int hudFitAxis() {
+		return 0;
+	}
+
+	/** Sets how far the auto-fit moves the element now, in GUI units; it is never saved. */
+	default void hudSetFitShift(float dx, float dy) {
+	}
+
+	/** @return how much the auto-fit shrinks the element now so it fits its share of the screen (1: not at all) */
+	default float hudAutoFit() {
+		return 1f;
+	}
+
+	/** @return whether the auto-fit moves the element now */
+	default boolean hudFitMoved() {
+		return false;
+	}
+
+	/** Makes the fitted place and size the element's own ("Fit to screen" in the editor). @return whether anything changed */
+	default boolean hudApplyFit() {
+		return false;
+	}
+
 	/** Shortens a move to what the element can do, for elements moved together, which keep their places to each other. */
 	default void hudLimitMove(int[] move) {
 	}
@@ -44,7 +76,7 @@ public interface EditableHud {
 		hudSetScale(scale);
 	}
 
-	/** @return what the editor's chip says instead of the size, for an element whose size is not its own; null for its size */
+	/** @return what the editor's chip says instead of the size while the element is resized, for an element whose size is not its own; null for its size */
 	default String hudSizeNote() {
 		return null;
 	}
@@ -150,8 +182,25 @@ public interface EditableHud {
 	default void hudPreview(boolean on) {
 	}
 
-	/** @return what the editor's chip says while the element is dragged,
- instead of its size; empty for its size */
+	/**
+	 * @return the element that shows this one's content while it does not show itself (the info bar for a song set to show in it), or null.
+	 *         The editor's list then says where it shows instead of "not active here", and a click selects that element.
+	 */
+	default EditableHud hudShownIn() {
+		return null;
+	}
+
+	/** @return whether the element has a row of its own in the editor's list; false for one that another element's row stands for */
+	default boolean hudListed() {
+		return true;
+	}
+
+	/** @return what the editor's list says beside the element while {@link #hudShownIn} stands for it */
+	default String hudShownInNote() {
+		return "";
+	}
+
+	/** @return what the editor's note at the bottom of the screen says while the element is dragged; empty for where it is snapped */
 	default String hudDragStatus() {
 		return "";
 	}

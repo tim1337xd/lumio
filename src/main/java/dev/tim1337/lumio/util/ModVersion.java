@@ -3,7 +3,6 @@ package dev.tim1337.lumio.util;
 import dev.tim1337.lumio.Lumio;
 
 import net.fabricmc.loader.api.FabricLoader;
-import net.fabricmc.loader.api.metadata.CustomValue;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -14,7 +13,8 @@ import java.util.regex.Pattern;
  */
 public final class ModVersion {
 	private static final String UNKNOWN = "development";
-	private static final String BUILD_KEY = "lumio:build";
+	/** The custom value in a fabric.mod.json (Lumio's and its add-ons') with the jar's build number. */
+	public static final String BUILD_KEY = "lumio:build";
 
 	/** How a version reads, worked out without the game. */
 	public record Shown(String text, String build) {
@@ -45,8 +45,7 @@ public final class ModVersion {
 		Shown shown = Shown.of(metadata.map(data -> data.getVersion().getFriendlyString()).orElse(UNKNOWN));
 		SHORT = shown.text();
 		BUILD = shown.build();
-		CustomValue build = metadata.map(data -> data.getCustomValue(BUILD_KEY)).orElse(null);
-		INTERNAL_BUILD = build != null && build.getType() == CustomValue.CvType.STRING ? build.getAsString() : "";
+		INTERNAL_BUILD = metadata.map(data -> ModMeta.string(data, BUILD_KEY, "")).orElse("");
 	}
 
 	private ModVersion() {

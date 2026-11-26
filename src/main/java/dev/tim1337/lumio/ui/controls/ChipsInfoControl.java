@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.function.Supplier;
 
 /** Chips in lines, as wide as there is room, that only show. */
-public class ChipsInfoControl extends Control {
+public final class ChipsInfoControl extends Control {
 	private static final int LINE = 18;
 	private static final int GAP = 4;
 

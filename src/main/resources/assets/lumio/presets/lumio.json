@@ -151,6 +151,15 @@
     "x" : -3,
     "y" : 2
   },
+  "camera" : {
+    "brightness" : 0.9,
+    "enabled" : false,
+    "fire" : "NORMAL",
+    "full_bright" : false,
+    "portal" : "NORMAL",
+    "skip_front_view" : false,
+    "underwater" : "NORMAL"
+  },
   "chat" : {
     "accent" : {
       "color" : "#0A84FF",
@@ -261,10 +270,7 @@
     "notice" : true
   },
   "debug_log" : {
-    "enabled" : false,
-    "log_colored" : false,
-    "record_profile" : false,
-    "swing_trace" : false
+    "enabled" : false
   },
   "held_item_outline" : {
     "affects" : {
@@ -442,7 +448,6 @@
     "added_show" : "ALWAYS",
     "enabled" : true,
     "frame" : "LUMIO",
-    "scroll" : true,
     "size" : 0.85
   },
   "keep_server_packs" : {
@@ -519,14 +524,13 @@
   "menus" : {
     "background_speed" : 1,
     "background_style" : "MINECRAFT",
-    "buttons" : false,
+    "buttons" : true,
     "cards" : true,
     "enabled" : false,
     "follow_time" : true,
     "list_style" : "ENHANCED",
     "loading_style" : "ENHANCED",
     "main_menu" : "LIVING_WORLD",
-    "menu_lyrics" : false,
     "shader_background" : true,
     "song_card" : true,
     "song_cover" : true,
@@ -573,17 +577,13 @@
       "show_progress" : true
     },
     "text_width" : 150,
-    "world_distance" : 1,
-    "world_effect" : "GLOW",
     "world_font" : "CLEAN",
     "world_glow_color" : "ACCENT",
     "world_glow_custom" : "#FFB347",
     "world_linger" : "NORMAL",
     "world_lyrics" : false,
-    "world_place" : "NEAR",
     "world_placement" : "AUTO",
-    "world_reach" : 0.45,
-    "world_size" : 1,
+    "world_lyric_size" : "NORMAL",
     "world_text_color" : "WHITE",
     "world_text_custom" : "#FFF4E6"
   },

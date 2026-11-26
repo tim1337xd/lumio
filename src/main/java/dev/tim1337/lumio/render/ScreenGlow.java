@@ -266,6 +266,8 @@ public final class ScreenGlow {
 		int depthCount;
 
 		private final boolean orthographic;
+		/** The corners of the quad being added, kept: a flat item adds six quads per sprite pixel. */
+		private final int[] quadCorners = new int[4];
 
 		Shapes(Vector3f right, Vector3f up, Vector3f forward, boolean orthographic) {
 			this.right = right;
@@ -349,7 +351,11 @@ public final class ScreenGlow {
 		}
 
 		private void quad(float[][] corners, int a, int b, int c, int d) {
-			int[] indices = {a, b, c, d};
+			int[] indices = quadCorners;
+			indices[0] = a;
+			indices[1] = b;
+			indices[2] = c;
+			indices[3] = d;
 			for (int i = 0; i < 4; i++) {
 				if (!orthographic && corners[indices[i]][2] < NEAR) {
 					return; // extends behind the camera

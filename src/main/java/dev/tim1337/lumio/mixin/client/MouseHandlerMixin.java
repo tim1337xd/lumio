@@ -1,5 +1,9 @@
 package dev.tim1337.lumio.mixin.client;
 
+import dev.tim1337.lumio.features.misc.keybinds.KeyCombos;
+
+import dev.tim1337.lumio.features.misc.keybinds.KeyCombo;
+
 import dev.tim1337.lumio.api.experimental.util.CameraTurn;
 import dev.tim1337.lumio.ModFeatures;
 import dev.tim1337.lumio.features.visual.hud.InfoBarFeature;
@@ -43,6 +47,30 @@ public abstract class MouseHandlerMixin {
 	@ModifyArg(method = "turnPlayer", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/player/LocalPlayer;turn(DD)V"), index = 1)
 	private double lumio$turnUp(double up) {
 		return up * CameraTurn.scale();
+	}
+
+	/** The wheel as a key: a combination on it (Tab + wheel up) acts once per turn and the hotbar stays where it is. In the world only. */
+	@Inject(method = "onScroll", at = @At("HEAD"), cancellable = true)
+	private void lumio$wheelCombos(long window, double horizontal, double vertical, CallbackInfo ci) {
+		if (vertical == 0 || minecraft.gui.screen() != null) {
+			return;
+		}
+		boolean up = vertical > 0;
+		boolean commands = ModFeatures.COMMAND_KEYBINDS != null && ModFeatures.COMMAND_KEYBINDS.onOther(up ? KeyCombo.WHEEL_UP : KeyCombo.WHEEL_DOWN);
+		if (KeyCombos.wheel(up) || commands) {
+			ci.cancel();
+		}
+	}
+
+	/** A mouse button as a key of a command keybind (Mouse 4, or Tab + Mouse 4): the keybind takes the press. Only presses of buttons other than attack and use. */
+	@Inject(method = "onButton", at = @At("HEAD"), cancellable = true)
+	private void lumio$buttonKeybinds(long window, MouseButtonInfo button, int action, CallbackInfo ci) {
+		if (action != InputConstants.PRESS || button.button() == InputConstants.MOUSE_BUTTON_LEFT || button.button() == InputConstants.MOUSE_BUTTON_RIGHT) {
+			return;
+		}
+		if (ModFeatures.COMMAND_KEYBINDS != null && ModFeatures.COMMAND_KEYBINDS.onOther(InputConstants.Type.MOUSE.getOrCreate(button.button()).getName())) {
+			ci.cancel();
+		}
 	}
 
 	/** While the tab list is open and has more player rows than it shows, the wheel moves them, not the hotbar. It only looks: nothing is sent, and the hotbar stays where it was. */

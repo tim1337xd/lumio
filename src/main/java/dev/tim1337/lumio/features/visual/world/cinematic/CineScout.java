@@ -66,7 +66,7 @@ final class CineScout {
 	private final LevelSpace space = new LevelSpace();
 	private final CineLyricSpot.Spot spot = new CineLyricSpot.Spot();
 
-	private static final class LevelSpace implements CineLyricSpot.Space {
+	static final class LevelSpace implements CineLyricSpot.Space {
 		Level level;
 
 		@Override
@@ -327,10 +327,5 @@ final class CineScout {
 		}
 		planning = false;
 		return found;
-	}
-
-	/** @return the number of candidates tested and how many passed, for the test log */
-	int tested() {
-		return next;
 	}
 }

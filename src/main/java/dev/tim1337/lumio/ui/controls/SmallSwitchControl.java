@@ -8,7 +8,7 @@ import dev.tim1337.lumio.ui.Ui;
 import dev.tim1337.lumio.ui.UiSounds;
 
 /** A small switch with its name before it, for sharing a row with something else. A click on the name or the switch turns it over. */
-public class SmallSwitchControl extends Control {
+public final class SmallSwitchControl extends Control {
 	private static final float SCALE = 0.7f;
 	private static final int TRACK_WIDTH = Math.round(SwitchControl.TRACK_WIDTH * SCALE);
 	private static final int TRACK_HEIGHT = Math.round(SwitchControl.TRACK_HEIGHT * SCALE);

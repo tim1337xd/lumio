@@ -79,10 +79,10 @@ public final class LoadingScreenView {
 		float scale = TextScale.TITLE;
 		String before = LoadingSession.titleBefore();
 		if (change < 1f && !before.isEmpty()) {
-			ui.textAtScaledBold(before, centerX - ui.widthScaled(before, scale) / 2f, y - 6f * change, scale, Ui.withOpacity(0xFFFFFFFF, 1f - change));
+			ui.textCenteredAtScaledBold(before, centerX, y - 6f * change, scale, Ui.withOpacity(0xFFFFFFFF, 1f - change));
 		}
 		String title = LoadingSession.title();
-		ui.textAtScaledBold(title, centerX - ui.widthScaled(title, scale) / 2f, y + 6f * (1f - change), scale, Ui.withOpacity(0xFFFFFFFF, change));
+		ui.textCenteredAtScaledBold(title, centerX, y + 6f * (1f - change), scale, Ui.withOpacity(0xFFFFFFFF, change));
 	}
 
 	/** The steps on one line: finished ones dimmed, the current one bright, the coming ones in between. */

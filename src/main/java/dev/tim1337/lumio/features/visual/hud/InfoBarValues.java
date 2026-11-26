@@ -4,8 +4,10 @@ import dev.tim1337.lumio.ModFeatures;
 import dev.tim1337.lumio.addon.Addons;
 import dev.tim1337.lumio.api.InfoValueProvider;
 import dev.tim1337.lumio.api.InfoValues;
+import dev.tim1337.lumio.api.experimental.util.ServerPing;
 import dev.tim1337.lumio.features.music.MusicFeature;
 import dev.tim1337.lumio.features.music.MusicService;
+import dev.tim1337.lumio.features.visual.screen.chat.ChatRules;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.protocol.ping.ServerboundPingRequestPacket;
@@ -193,17 +195,9 @@ final class InfoBarValues {
 		if (minutes != shownMinute || twelve != shownTwelveHours) {
 			shownMinute = minutes;
 			shownTwelveHours = twelve;
-			set(InfoBarSegment.CLOCK, clockText(minutes / 60, minutes % 60, twelve), FINE);
+			set(InfoBarSegment.CLOCK, ChatRules.time(minutes / 60, minutes % 60, 0, twelve, false), FINE);
 		}
 		available[InfoBarSegment.CLOCK.ordinal()] = true;
-	}
-
-	private static String clockText(int hour, int minute, boolean twelve) {
-		if (!twelve) {
-			return (hour < 10 ? "0" : "") + hour + (minute < 10 ? ":0" : ":") + minute;
-		}
-		int h = hour % 12 == 0 ? 12 : hour % 12;
-		return h + (minute < 10 ? ":0" : ":") + minute + (hour < 12 ? " AM" : " PM");
 	}
 
 	/** The game's own frame count of the last second; the shown value changes only when it moved by a few frames or percent. */
@@ -270,11 +264,6 @@ final class InfoBarValues {
 		}
 		level[InfoBarSegment.PING.ordinal()] = state;
 		available[InfoBarSegment.PING.ordinal()] = true;
-	}
-
-	/** @return the ping shown now in milliseconds, for the signal bars */
-	int ping() {
-		return Math.max(0, shownPing);
 	}
 
 	private void readTps(boolean preview) {
@@ -471,6 +460,36 @@ final class InfoBarValues {
 
 	/** An answer to a ping request arrived, on the network thread. */
 	static void onPong(long timestamp) {
-		PING.answered(timestamp, Util.getMillis());
+		long now = Util.getMillis();
+		PING.answered(timestamp, now);
+		// for the add-ons: the average the bar shows while it measures, else the one answer an add-on asked for
+		int average = PING.average();
+		long once = now - timestamp;
+		if (average != PingMeter.NONE) {
+			ServerPing.measured(average, System.currentTimeMillis());
+		} else if (timestamp == askedAt && once >= 0 && once <= PingMeter.TIMEOUT_MILLIS) {
+			ServerPing.measured((int) once, System.currentTimeMillis());
+		}
+	}
+
+	/** The timestamp of the one request an add-on asked for, and when it went out. */
+	private static volatile long askedAt = Long.MIN_VALUE / 2;
+
+	/**
+	 * One ping request because an add-on asked for a measurement (the party command "!ping") while the bar does not measure: only on a server,
+	 * and never sooner after the last one than the bar's own requests follow each other. While the bar measures, nothing is sent here.
+	 */
+	static void askOnce() {
+		Minecraft client = Minecraft.getInstance();
+		var connection = client.getConnection();
+		if (connection == null || client.player == null || client.hasSingleplayerServer() || PING.average() != PingMeter.NONE) {
+			return;
+		}
+		long now = Util.getMillis();
+		if (now - askedAt < PingMeter.INTERVAL_MILLIS) {
+			return;
+		}
+		askedAt = now;
+		connection.send(new ServerboundPingRequestPacket(now));
 	}
 }

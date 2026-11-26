@@ -101,4 +101,64 @@ final class MusicPictures {
 		text(ui, lx, ly, lw * 0.55f, TEXT);
 		text(ui, lx + lw * 0.55f + 2f, ly, lw * 0.45f - 2f, DIM);
 	}
+
+	// ------------------------------------------------------------------------------------------------- the presets of the lyrics in the world
+
+	private static final int NIGHT_TOP = 0xFF0B1230;
+	private static final int NIGHT_BOTTOM = 0xFF27386B;
+	private static final int LAND_TOP = 0xFF18263A;
+	private static final int LAND_BOTTOM = 0xFF0C1420;
+	private static final int STAR = 0xFFFFFFFF;
+	/** The night scene of the presets' pictures: a dark sky over dark land. */
+	private static void night(Ui ui, int x, int y, int w, int h) {
+		int horizon = Math.round(h * 0.74f);
+		ui.roundedGradient(x, y, w, h, Radius.SM, NIGHT_TOP, NIGHT_BOTTOM);
+		ui.roundedGradient(x, y + horizon, w, h - horizon, Radius.SM, LAND_TOP, LAND_BOTTOM);
+		ui.fill(x, y + horizon, w, Math.round(Radius.SM), LAND_TOP);
+		// a few far stars
+		for (int i = 0; i < 7; i++) {
+			float sx = x + 4f + (w - 8f) * CutoutWords.hash(i * 7 + 1);
+			float sy = y + 3f + (horizon - 8f) * CutoutWords.hash(i * 13 + 5);
+			ui.roundedSmooth(sx, sy, 1f, 1f, 0.5f, Ui.withOpacity(STAR, 0.25f + 0.3f * CutoutWords.hash(i * 3 + 2)));
+		}
+	}
+
+	static void presetClassic(Ui ui, int x, int y, int w, int h) {
+		night(ui, x, y, w, h);
+		float lw = w * 0.5f;
+		float lx = x + (w - lw) / 2f;
+		float ly = y + h * 0.32f;
+		ui.roundedSmooth(lx - 3f, ly - 3f, lw * 0.6f + 5f, BAR + 6f, 4f, Ui.withOpacity(ui.accent, 0.3f));
+		text(ui, lx, ly, lw * 0.58f, TEXT);
+		text(ui, lx + lw * 0.58f + 2f, ly, lw * 0.42f - 2f, DIM);
+	}
+
+	/** The tones of the cut-out picture: a warm paper tone, as from a cover. */
+	private static final int CUT_WORD = 0xFFE8B79A;
+	private static final int CUT_DIM = 0x99C89A84;
+	private static final int CUT_TILE = 0xFF7A4A3E;
+	private static final int CUT_PALE = 0xFFF6E1D6;
+	private static final int CUT_ON_PALE = 0xFF8A5446;
+
+	static void presetCutout(Ui ui, int x, int y, int w, int h) {
+		night(ui, x, y, w, h);
+		float middle = x + w / 2f;
+		float top = y + h * 0.1f;
+		float unit = Math.max(3f, h * 0.085f);
+		// an older word with a small one beside it, the word being sung on a tile, and the newest on a pale tile with its symbol
+		ui.roundedSmooth(middle - unit * 1.6f, top, unit * 2.2f, unit * 1.5f, 1f, CUT_DIM);
+		ui.roundedSmooth(middle + unit * 0.9f, top, unit * 1.2f, unit * 0.7f, 0.8f, CUT_DIM);
+		var pose = ui.graphics.pose();
+		pose.pushMatrix();
+		pose.translate(middle, top + unit * 3.6f);
+		ui.roundedSmooth(-unit * 3.3f, -unit * 1.6f, unit * 6.6f, unit * 3.2f, 0.8f, CUT_TILE);
+		ui.roundedSmooth(-unit * 2.4f, -unit * 0.95f, unit * 4.8f, unit * 1.9f, 1f, CUT_WORD);
+		pose.popMatrix();
+		pose.pushMatrix();
+		pose.translate(middle + unit * 0.8f, top + unit * 6.6f);
+		ui.roundedSmooth(-unit * 2.3f, -unit * 1.05f, unit * 4.6f, unit * 2.1f, 0.8f, CUT_PALE);
+		ui.roundedSmooth(-unit * 1.7f, -unit * 0.55f, unit * 3.4f, unit * 1.1f, 0.8f, CUT_ON_PALE);
+		pose.popMatrix();
+		ui.roundedSmooth(middle - unit * 3.2f, top + unit * 6.1f, unit * 1.2f, unit * 1.0f, unit * 0.3f, CUT_WORD);
+	}
 }

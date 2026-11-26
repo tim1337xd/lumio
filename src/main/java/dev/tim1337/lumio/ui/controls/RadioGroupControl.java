@@ -8,7 +8,7 @@ import dev.tim1337.lumio.ui.UiSounds;
 import java.util.List;
 
 /** A vertical list of choices with radio buttons. */
-public class RadioGroupControl<E extends Enum<E>> extends Control {
+public final class RadioGroupControl<E extends Enum<E>> extends Control {
 	private static final int ROW = 28;
 	private static final int CIRCLE_RADIUS = 7;
 	/** The dot of the chosen row, even like the circle so it sits in its middle. */

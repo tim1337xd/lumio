@@ -23,8 +23,8 @@ final class NowPlayingControl extends Control {
 	private static final int DOT = 2;
 	/** How strongly the cover's color tints the card. */
 	private static final float TINT = 0.16f;
-	private static final String NOTHING = "Nothing plays right now";
-	private static final String NOTHING_HINT = "Play a song in your player and it shows here";
+	private static final String NOTHING = "Nothing playing";
+	private static final String NOTHING_HINT = "Play a song to see it";
 
 	private final MusicFeature music;
 	private long shownSecond = -1L;
@@ -72,13 +72,13 @@ final class NowPlayingControl extends Control {
 		int chipX = x + width - PAD - chipWidth;
 		int chipY = y + PAD + 4;
 		int green = SystemColors.GREEN;
-		ui.rounded(chipX, chipY, chipWidth, CHIP_HEIGHT, Radius.pill(CHIP_HEIGHT), Ui.withOpacity(playing ? green : palette.text(), 0.14f));
+		ui.rounded(chipX, chipY, chipWidth, CHIP_HEIGHT, Radius.box(CHIP_HEIGHT), Ui.withOpacity(playing ? green : palette.text(), 0.14f));
 		int chipTextX = chipX + CHIP_PAD;
 		if (playing) {
 			ui.circle(chipTextX + DOT, chipY + CHIP_HEIGHT / 2, DOT, green);
 			chipTextX += 2 * DOT + 4;
 		}
-		ui.textAtScaled(source, chipTextX, chipY + CHIP_HEIGHT / 2f - 3.5f, TextScale.SMALL, playing ? Ui.mix(palette.text(), green, 0.6f) : palette.textSecondary());
+		ui.textAtScaled(source, chipTextX, chipY + CHIP_HEIGHT / 2f - 3.5f, TextScale.SMALL, playing ? Ui.mix(palette.text(), green, 0.6f) : Ui.mix(palette.textSecondary(), palette.text(), 0.5f));
 		int room = chipX - 8 - textX;
 		if (track == null) {
 			ui.textAtScaledBold(ui.fit(NOTHING, room), textX, y + PAD + 6, 1f, palette.text());

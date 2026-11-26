@@ -15,7 +15,7 @@ import java.util.Random;
  * Decides when the film changes shot, following the song: a cut only exactly where a lyric line starts, or in a gap without lyrics, never while a
  * line or an adlib is sung. A shot lasts several lines by the pace (choruses at most one line less), at least 12 and at most 40 seconds. A cut can land on a
  * foreseen beat just before its line, if that is still in the gap. Long instrumental parts get a slow move instead of a cut; songs without lyrics
- * cut on the beat or every 8 to 14 seconds; without music, and in the calm mode, one slow shot blends into the next.
+ * cut on the beat or every 12 to 20 seconds; without music, and in the calm mode, one slow shot blends into the next.
  */
 final class CineDirector {
 	enum Action {
@@ -237,7 +237,7 @@ final class CineDirector {
 		return shotAge >= SHORTEST_SHOT && (linesInShot >= targetLines || shotAge >= LONGEST_SHOT);
 	}
 
-	/** Without lyrics: on every 8th or 16th beat, or every 8 to 14 seconds without a steady beat. */
+	/** Without lyrics: on every 8th or 16th beat, or every 12 to 20 seconds without a steady beat. */
 	private Action withoutLyrics(float shotAge, long at) {
 		if (shotAge < SHORTEST_SHOT) {
 			return Action.NONE;

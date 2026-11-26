@@ -15,8 +15,10 @@ import java.util.List;
  * A card row that opens something: an icon tile, the title with a line under it, and on the right either a colored state and a button, or a short
  * text and a chevron (then the whole row is the button).
  */
-public class ActionRowControl extends Control {
+public final class ActionRowControl extends Control {
 	private static final int HEIGHT = 40;
+	/** How much of its color a state's text takes: the dot beside it carries the color, the text has to read in the light theme too. */
+	private static final float STATE_TINT = 0.3f;
 	private static final int PAD = 10;
 	private static final int ICON_TILE = 20;
 	private static final int ICON = 13;
@@ -113,7 +115,7 @@ public class ActionRowControl extends Control {
 			}
 			EnumSetting.OptionState state = look.state() == null ? null : look.state().get();
 			if (state != null && !state.text().isEmpty()) {
-				int color = state.rgb() < 0 ? palette.textSecondary() : Ui.mix(palette.text(), 0xFF000000 | state.rgb(), 0.75f);
+				int color = state.rgb() < 0 ? palette.textSecondary() : Ui.mix(palette.text(), 0xFF000000 | state.rgb(), STATE_TINT);
 				String text = ui.fitScaled(state.text(), Math.max(40, (right - textX) / 2f), TextScale.SMALL);
 				float w = ui.widthScaled(text, TextScale.SMALL);
 				ui.textAtScaled(text, right - w, middle - 4f, TextScale.SMALL, color);

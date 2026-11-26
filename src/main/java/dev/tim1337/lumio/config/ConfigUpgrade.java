@@ -20,13 +20,15 @@ public final class ConfigUpgrade {
 	 * that brought it, so it never changes what a player chose after it.
 	 */
 	public static final String VERSION_KEY = "_version";
-	public static final int VERSION = 14;
+	public static final int VERSION = 16;
+	private static final String MOLTEN_GOLD = "#FF9A1F";
+	private static final String MOLTEN_ICE = "#48B4FF";
 	private static final String RADIANCE = "held_item_outline";
 	private static final String AMBIENCE = "ambience";
 	private static final String RADIANCE_MODE = "mode";
 
 	/** What changed in each version of the format, oldest first. */
-	private static final List<Step> STEPS = List.of(new Step(2, ConfigUpgrade::themeWithoutGlow), new Step(3, ConfigUpgrade::swingFactorToSpeed), new Step(4, ConfigUpgrade::blockOverlayRows), new Step(5, ConfigUpgrade::oneTrailsFeature), new Step(6, ConfigUpgrade::radianceRows), new Step(7, ConfigUpgrade::ambienceRows), new Step(8, ConfigUpgrade::skyStyles), new Step(9, ConfigUpgrade::noFlameSettings), new Step(10, ConfigUpgrade::skyStyleColors), new Step(11, ConfigUpgrade::dropLeftovers), new Step(12, ConfigUpgrade::trailStyles), new Step(13, ConfigUpgrade::radianceWithoutFlame), new Step(14, ConfigUpgrade::lightningWhen));
+	private static final List<Step> STEPS = List.of(new Step(2, ConfigUpgrade::themeWithoutGlow), new Step(3, ConfigUpgrade::swingFactorToSpeed), new Step(4, ConfigUpgrade::blockOverlayRows), new Step(5, ConfigUpgrade::oneTrailsFeature), new Step(6, ConfigUpgrade::radianceRows), new Step(7, ConfigUpgrade::ambienceRows), new Step(8, ConfigUpgrade::skyStyles), new Step(9, ConfigUpgrade::noFlameSettings), new Step(10, ConfigUpgrade::skyStyleColors), new Step(11, ConfigUpgrade::dropLeftovers), new Step(12, ConfigUpgrade::trailStyles), new Step(13, ConfigUpgrade::radianceWithoutFlame), new Step(14, ConfigUpgrade::lightningWhen), new Step(15, ConfigUpgrade::moltenPicker), new Step(16, ConfigUpgrade::skyQualityAuto));
 
 	/**
 	 * The global HUD theme came in, and a new config has its glow on. Panels had no glow by default before it, so the theme of an older config starts without one: its panels then match the theme
@@ -203,6 +205,41 @@ public final class ConfigUpgrade {
 				radiance.remove(key);
 			}
 		}
+	}
+
+	/**
+	 * The sky's quality got Auto, the new default (1.0.0 Beta 2). Medium was the default before and was hardly ever picked on purpose, so a saved Medium becomes Auto; Low and High
+	 * were picked and stay.
+	 */
+	static void skyQualityAuto(JsonObject root) {
+		if (root.get("sky") instanceof JsonObject sky && sky.get("quality") instanceof JsonPrimitive saved && "BALANCED".equals(saved.getAsString())) {
+			sky.addProperty("quality", "AUTO");
+		}
+	}
+
+	/** Molten's Gold, Menu, Ice and Custom became one color picker: each keeps its color, Menu as the picker's "Menu theme". */
+	static void moltenPicker(JsonObject root) {
+		if (!(root.get("sky") instanceof JsonObject sky)) {
+			return;
+		}
+		JsonElement custom = sky.remove("molten_custom");
+		if (!(sky.get("molten_color") instanceof JsonPrimitive saved)) {
+			return;
+		}
+		String own = MOLTEN_GOLD;
+		if (custom instanceof JsonPrimitive hex) {
+			own = hex.getAsString();
+		} else if (custom instanceof JsonObject held && held.get("color") instanceof JsonPrimitive hex) {
+			own = hex.getAsString();
+		}
+		JsonObject color = new JsonObject();
+		color.addProperty("color", switch (saved.getAsString()) {
+			case "ICE" -> MOLTEN_ICE;
+			case "CUSTOM" -> own;
+			default -> MOLTEN_GOLD;
+		});
+		color.addProperty("menu", "MENU".equals(saved.getAsString()));
+		sky.add("molten_color", color);
 	}
 
 	/**

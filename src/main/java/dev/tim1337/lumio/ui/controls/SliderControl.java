@@ -15,7 +15,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.util.Mth;
 
 /** A slider: a thin track filled up to a round knob, with the value on the right. */
-public class SliderControl extends Control {
+public final class SliderControl extends Control {
 	private static final int VALUE_WIDTH = 34;
 	private static final int KNOB_RADIUS = 7;
 	/** Number of notches on the track; a tick sound plays when the knob passes one. */
@@ -54,6 +54,11 @@ public class SliderControl extends Control {
 	@Override
 	protected int measure(Ui ui, int width) {
 		return 20;
+	}
+
+	@Override
+	public int standardNeed(Ui ui) {
+		return 0;
 	}
 
 	@Override
@@ -115,7 +120,7 @@ public class SliderControl extends Control {
 		boolean off = setting.get() == 0f && setting.min() <= 0f;
 		boolean overValue = valueContains(mouseX, mouseY);
 		float v = hover(ui, 1, overValue);
-		int valueColor = off ? Ui.withOpacity(ui.palette.textSecondary(), 0.7f) : Ui.mix(ui.palette.textSecondary(), ui.palette.text(), v);
+		int valueColor = off ? ui.palette.textSecondary() : Ui.mix(ui.palette.textSecondary(), ui.palette.text(), v);
 		String shown = off ? "Off" : setting.format(setting.get());
 		if (v > 0.02f) {
 			// clicking the number edits it; it is highlighted slightly to hint at that

@@ -50,7 +50,7 @@ public class ArmorHudFeature extends HudPanelFeature {
 		iconRgb(SystemColors.TEAL_RGB);
 		iconName("shield");
 		summary("The armor you wear, with how worn it is");
-
+		glowAndDepthNeedBackground();
 	}
 
 	public boolean hidesVanillaBar() {

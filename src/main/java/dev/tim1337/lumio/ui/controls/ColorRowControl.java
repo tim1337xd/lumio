@@ -9,7 +9,7 @@ import java.util.List;
  * Several colors of one group in one row, each as a chip with its swatch and name; a click on a chip opens its picker. A few chips sit to the
  * right of the row's name, more of them wrap onto lines below it.
  */
-public class ColorRowControl extends Control {
+public final class ColorRowControl extends Control {
 	/** Up to this many chips sit beside the row's name; more make the row a block with the chips on lines of their own. */
 	private static final int INLINE_CHIPS = 3;
 	private static final int GAP = 6;

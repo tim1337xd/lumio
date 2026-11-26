@@ -9,7 +9,7 @@ import dev.tim1337.lumio.ui.Ui;
 import net.minecraft.network.chat.Component;
 
 /** A feature's switch and the button that opens its settings, side by side, to the right of its name. */
-public class FeatureRowControl extends Control {
+public final class FeatureRowControl extends Control {
 	private static final int EDIT_WIDTH = 56;
 	private static final int SWITCH_WIDTH = 34;
 	private static final int GAP = 10;

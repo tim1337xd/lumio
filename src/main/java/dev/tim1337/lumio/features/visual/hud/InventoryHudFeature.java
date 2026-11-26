@@ -15,21 +15,6 @@ import net.minecraft.world.item.ItemStack;
 
 /** The inventory contents in the info bar style, visible without opening the inventory. */
 public class InventoryHudFeature extends HudPanelFeature {
-	public enum When {
-		ALWAYS("Always"),
-		SNEAKING("While sneaking");
-
-		private final Component displayName;
-
-		When(String displayName) {
-			this.displayName = Component.literal(displayName);
-		}
-
-		public Component displayName() {
-			return displayName;
-		}
-	}
-
 	private static final int SLOT = 18;
 	private static final int PAD = 6;
 
@@ -43,7 +28,7 @@ public class InventoryHudFeature extends HudPanelFeature {
 		iconRgb(SystemColors.ORANGE_RGB);
 		iconName("grid");
 		summary("The things in your inventory, always in view");
-
+		glowAndDepthNeedBackground();
 	}
 
 	private int rowCount() {

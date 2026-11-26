@@ -7,7 +7,7 @@ package dev.tim1337.lumio.features.music;
 public final class LyricCutFade {
 	/** The fade before a foreseen cut, and the fade in after any cut. */
 	public static final long OUT_MS = 150L;
-	public static final long IN_MS = 200L;
+	public static final long IN_MS = 300L;
 	/** No cut foreseen, or none so far. */
 	public static final long NONE = -1L;
 

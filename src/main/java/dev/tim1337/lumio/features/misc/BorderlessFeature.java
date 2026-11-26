@@ -1,13 +1,14 @@
 package dev.tim1337.lumio.features.misc;
 
 import dev.tim1337.lumio.ModFeatures;
+import dev.tim1337.lumio.api.experimental.debug.DebugCategory;
+import dev.tim1337.lumio.api.experimental.debug.DebugHooks;
 import dev.tim1337.lumio.api.experimental.draw.SystemColors;
-import dev.tim1337.lumio.api.experimental.util.Debug;
 import dev.tim1337.lumio.config.Feature;
 import dev.tim1337.lumio.config.FeatureManager;
-import dev.tim1337.lumio.config.setting.Setting;
 import dev.tim1337.lumio.config.setting.BooleanSetting;
 import dev.tim1337.lumio.config.setting.ButtonSetting;
+import dev.tim1337.lumio.config.setting.Setting;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
@@ -41,12 +42,14 @@ public class BorderlessFeature extends Feature {
 	private int checkTicks;
 
 	public BorderlessFeature() {
-		super("borderless", "Borderless fullscreen", "A fullscreen without a frame: the window is as large as the screen. The key for fullscreen (F11) goes in and out of it.", false);
+		super("borderless", "Borderless fullscreen", "Fullscreen without a frame.", false);
 		iconRgb(SystemColors.TEAL_RGB);
 		iconName("fullscreen");
-		summary("Fullscreen without a frame, switched with F11");
+		summary("Fullscreen without a frame");
 		active.visibleWhen(() -> false);
-		switchNow.setDescription("F11 does the same while this feature is on");
+		// the game's own fullscreen key, as bound now
+		switchNow.setDescription(() -> Minecraft.getInstance() == null || Minecraft.getInstance().options.keyFullscreen.isUnbound() ? "The fullscreen key does the same"
+			: Minecraft.getInstance().options.keyFullscreen.getTranslatedKeyMessage().getString() + " does the same");
 	}
 
 	/** Toggles borderless fullscreen. */
@@ -115,7 +118,9 @@ public class BorderlessFeature extends Feature {
 		if (place[0] == targetX && place[1] == targetY && place[2] == targetWidth && place[3] == targetHeight) {
 			return;
 		}
-		Debug.log("Borderless window was at {},{} {}x{}, put to {},{} {}x{}", place[0], place[1], place[2], place[3], targetX, targetY, targetWidth, targetHeight);
+		if (DebugHooks.ACTIVE) {
+			DebugHooks.log(DebugCategory.WINDOW, "Borderless window was at {},{} {}x{}, put to {},{} {}x{}", place[0], place[1], place[2], place[3], targetX, targetY, targetWidth, targetHeight);
+		}
 		BorderlessWindow.put(window, targetX, targetY, targetWidth, targetHeight);
 	}
 

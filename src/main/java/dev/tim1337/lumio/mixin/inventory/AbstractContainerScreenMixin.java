@@ -17,6 +17,8 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+import dev.tim1337.lumio.ui.PagedMenus;
+
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
@@ -47,6 +49,18 @@ public abstract class AbstractContainerScreenMixin {
 	}
 
 	/** The add-ons lay out what they draw right after init (a taken-over screen moves its slots where they are drawn). */
+	/** The next page of a server menu is a new screen: it stands in for nothing until it is known to be one (see {@link PagedMenus}). */
+	@Inject(method = "init", at = @At("HEAD"))
+	private void lumio$pageOpened(CallbackInfo ci) {
+		PagedMenus.opened((AbstractContainerScreen<?>) (Object) this);
+	}
+
+	/** A menu closed: the next one opening right after may be its next page. */
+	@Inject(method = "removed", at = @At("TAIL"))
+	private void lumio$pageClosed(CallbackInfo ci) {
+		PagedMenus.closed((AbstractContainerScreen<?>) (Object) this);
+	}
+
 	@Inject(method = "init", at = @At("TAIL"))
 	private void lumio$addonInit(CallbackInfo ci) {
 		for (ScreenHooks hooks : Addons.screenHooks()) {
@@ -92,6 +106,12 @@ public abstract class AbstractContainerScreenMixin {
 		Ui.setZoom(1f);
 		var client = Minecraft.getInstance();
 		return new Ui(graphics, client.font, HudStyle.palette(), 0xFF000000 | MenuFeature.accentRgb(), 0f, false);
+	}
+
+	/** What add-ons draw behind the items: before the slots, so over the menu's background and under every item. */
+	@Inject(method = "extractContents", at = @At("HEAD"))
+	private void lumio$slotLayerBehind(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
+		SlotLayer.drawBehind((AbstractContainerScreen<?>) (Object) this, graphics, mouseX, mouseY);
 	}
 
 	/** What add-ons draw on the slots: after the slots and before the cursor's item and the tooltip, which stay on top of it. */

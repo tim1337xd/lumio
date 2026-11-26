@@ -8,7 +8,6 @@ import dev.tim1337.lumio.api.experimental.draw.TextSelection;
 import dev.tim1337.lumio.api.experimental.motion.Spring;
 import dev.tim1337.lumio.config.ConfigPart;
 import dev.tim1337.lumio.config.ConfigStore;
-import dev.tim1337.lumio.config.Feature;
 import dev.tim1337.lumio.config.FeatureManager;
 import dev.tim1337.lumio.config.setting.BooleanSetting;
 import dev.tim1337.lumio.menu.ConfigsFeature;
@@ -39,7 +38,7 @@ import java.util.Locale;
  * tried with a click, with a bar at the bottom to keep it or go back; a feature set and a config open a small popover with their actions. Saving,
  * renaming and importing open a panel with a text field below the configs.
  */
-public class ConfigListControl extends Control {
+public final class ConfigListControl extends Control {
 	private static final int LABEL_HEIGHT = 16;
 	private static final int SECTION_GAP = 16;
 	private static final int GAP = 8;
@@ -443,7 +442,7 @@ public class ConfigListControl extends Control {
 		int pictureHeight = lookPictureHeight();
 		Presets.Preset trying = configs().trying();
 		Presets.Preset before = configs().trialBefore();
-		Presets.Preset current = trying == null ? null : null;
+		Presets.Preset current = null;
 		for (int i = 0; i < Presets.ALL.size(); i++) {
 			Presets.Preset look = Presets.ALL.get(i);
 			int cx = x + (i % columns) * (cardWidth + GAP);
@@ -785,22 +784,22 @@ public class ConfigListControl extends Control {
 		float hover = buttonHover[slot];
 		if (!enabled) {
 			// disabled: only an outline and dimmed text, never the primary or destructive color, so it clearly does nothing
-			ui.ring(bx, by, w, h, h / 2f, 1, Ui.withOpacity(palette.controlBorder(), 0.6f));
+			ui.ring(bx, by, w, h, Radius.box(h), 1, Ui.withOpacity(palette.controlBorder(), 0.6f));
 			ui.textCentered(ui.fit(label, w - 8), bx + w / 2, by + h / 2, Ui.withOpacity(palette.textSecondary(), 0.55f));
 			return;
 		}
 		boolean red = danger && confirmDelete;
 		if (primary || red) {
 			int base = red ? SystemColors.RED : ui.accent;
-			ui.rounded(bx, by, w, h, h / 2f, Ui.mix(base, 0xFFFFFFFF, 0.14f * hover));
+			ui.rounded(bx, by, w, h, Radius.box(h), Ui.mix(base, 0xFFFFFFFF, 0.14f * hover));
 		} else {
-			ui.rounded(bx, by, w, h, h / 2f, palette.control());
-			ui.ring(bx, by, w, h, h / 2f, 1, danger ? Ui.withOpacity(SystemColors.RED, 0.45f) : palette.controlBorder());
+			ui.rounded(bx, by, w, h, Radius.box(h), palette.control());
+			ui.ring(bx, by, w, h, Radius.box(h), 1, danger ? Ui.withOpacity(SystemColors.RED, 0.45f) : palette.controlBorder());
 			if (hover > 0f) {
-				ui.rounded(bx, by, w, h, h / 2f, Ui.withOpacity(palette.hover(), hover));
+				ui.rounded(bx, by, w, h, Radius.box(h), Ui.withOpacity(palette.hover(), hover));
 			}
 		}
-		int color = primary || red ? 0xFFFFFFFF : danger ? SystemColors.RED_TEXT : palette.text();
+		int color = primary || red ? 0xFFFFFFFF : danger ? palette.coloredText(SystemColors.RED_TEXT) : palette.text();
 		ui.textCentered(ui.fit(label, w - 8), bx + w / 2, by + h / 2, color);
 		target.add(bx, by, w, h, action);
 	}

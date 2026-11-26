@@ -1,6 +1,7 @@
 package dev.tim1337.lumio.ui.title;
 
 import dev.tim1337.lumio.api.experimental.util.ScreenInput;
+import dev.tim1337.lumio.api.experimental.draw.Radius;
 import dev.tim1337.lumio.api.experimental.motion.Spring;
 import dev.tim1337.lumio.render.RoundedImage;
 import dev.tim1337.lumio.ui.HudStyle;
@@ -22,7 +23,7 @@ import java.util.List;
  * with a main button, a card of rows that scrolls inside itself, and the rows' "⋯" menus. The rows and their actions come from the server or
  * world list. The parts come in one after another. Sizes are in the main menu's layout units, the pixels of its mockup.
  */
-public abstract class TitleListView {
+public abstract sealed class TitleListView permits ServerListView, WorldListView {
 	static final float LEFT = 96f;
 	static final float TOP = 132f;
 	static final float WIDTH = 460f;
@@ -209,10 +210,10 @@ public abstract class TitleListView {
 		pose.pushMatrix();
 		pose.translate((1f - in) * -SLIDE, 0f);
 		boolean overBack = mouseX >= LEFT && mouseX < LEFT + BACK_WIDTH && mouseY >= TOP && mouseY < TOP + BACK_HEIGHT;
-		HudStyle.panel(ui, Math.round(LEFT), Math.round(TOP), Math.round(BACK_WIDTH), Math.round(BACK_HEIGHT), BACK_HEIGHT / 2f, HudStyle.opacity() * in,
+		HudStyle.panel(ui, Math.round(LEFT), Math.round(TOP), Math.round(BACK_WIDTH), Math.round(BACK_HEIGHT), Radius.SM, HudStyle.opacity() * in,
 			UiGlow.Target.TITLE, in);
 		if (overBack) {
-			ui.roundedSmooth(LEFT, TOP, BACK_WIDTH, BACK_HEIGHT, BACK_HEIGHT / 2f, Ui.withOpacity(0xFFFFFFFF, 0.10f * in));
+			ui.roundedSmooth(LEFT, TOP, BACK_WIDTH, BACK_HEIGHT, Radius.SM, Ui.withOpacity(0xFFFFFFFF, 0.10f * in));
 		}
 		pose.pushMatrix();
 		pose.translate(LEFT + 16f, TOP + BACK_HEIGHT / 2f);

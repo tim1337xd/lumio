@@ -83,7 +83,7 @@ public class WalkEffectFeature extends Feature {
 	private final FloatSetting intensity = add(new FloatSetting("intensity", Component.literal("Strength"), 0.7f, 0.1f, 1f, 2), "General");
 	private final EnumSetting<Trigger> trigger = add(new EnumSetting<>("trigger", Component.literal("Shows on"), Trigger.BOTH, Trigger::displayName, EnumSetting.Style.SEGMENTED), "General");
 	private final BooleanSetting sprintOnly = add(new BooleanSetting("sprint_only", Component.literal("Sprint only"), false), "General");
-	private final BooleanSetting glow = add(new BooleanSetting("glow", Component.literal("Glow in the dark"), true), "General", "As bright at night as by day");
+	private final BooleanSetting glow = add(new BooleanSetting("glow", Component.literal("Bright at night"), true), "General", null);
 
 	private final List<Wave> waves = new ArrayList<>();
 	private double lastX;
@@ -99,10 +99,13 @@ public class WalkEffectFeature extends Feature {
 	private double airTop;
 
 	public WalkEffectFeature() {
-		super("walk_effects", "Walk effects", "Light that comes up from the ground as you walk.", false);
+		super("walk_effects", "Walk effects", "Light from the ground as you walk.", false);
 		iconRgb(SystemColors.INDIGO_RGB);
 		iconName("footsteps");
-		summary("Light that comes up from the ground as you walk");
+		summary("Light from the ground as you walk");
+		// sparks rise around the player and do not spread; sprinting only counts for steps
+		reach.visibleWhen(() -> style.get() != Style.SPARKS);
+		sprintOnly.under(trigger, () -> trigger.get() != Trigger.LANDING);
 		addResetButton();
 	}
 

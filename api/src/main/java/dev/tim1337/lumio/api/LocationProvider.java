@@ -21,6 +21,22 @@ public interface LocationProvider {
 		return "";
 	}
 
+	/**
+	 * @return the key of the place a block of that world is at, by its coordinates alone, or "" when they do not tell (most places share their
+	 *         coordinates). Waypoints use it to guess where an imported list belongs. Since 1.12.0.
+	 */
+	default String placeAt(int x, int y, int z) {
+		return "";
+	}
+
+	/**
+	 * @return an id of the player's current profile in that world (a SkyBlock profile), or "" while it is not known; things the player keeps per profile
+	 *         (such as waypoints) are kept by it. Since 1.11.0.
+	 */
+	default String profileId() {
+		return "";
+	}
+
 	/** @return whether a text is the name of an area of that world, for telling a location line by its name */
 	default boolean knownArea(String name) {
 		return false;
@@ -31,7 +47,9 @@ public interface LocationProvider {
 
 	/**
 	 * @return whether the current place has a property: "mines" (under ground), "garden", "slayer" (a slayer quest is on). For the ambience's Auto, also what fits the place now:
-	 * "ambience:snow", "ambience:fireflies" (at night), "ambience:mist", "ambience:no_leaves", "ambience:autumn", and "mood:ash", "mood:sparks", "mood:dust" and "mood:webs"
+	 * "ambience:snow", "ambience:fireflies" (at night), "ambience:mist", "ambience:no_leaves", "ambience:autumn", and "mood:ash", "mood:sparks", "mood:dust" and "mood:webs".
+	 * It is asked about once a second. (The "sky:" properties of the Sky page's Island skies, 1.9.0 to 1.29.0, are no longer asked: Island skies
+	 * were removed in 1.30.0.)
 	 */
 	boolean has(String property);
 }

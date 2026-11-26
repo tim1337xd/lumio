@@ -5,6 +5,7 @@ import dev.tim1337.lumio.api.experimental.draw.SystemColors;
 import dev.tim1337.lumio.api.experimental.motion.AnimClock;
 import dev.tim1337.lumio.api.experimental.motion.Spring;
 import dev.tim1337.lumio.features.music.MusicFeature;
+import dev.tim1337.lumio.hud.HudFit;
 import dev.tim1337.lumio.ui.HudStyle;
 import dev.tim1337.lumio.ui.Ui;
 
@@ -126,6 +127,10 @@ final class InfoBarRenderer {
 	private int measuredOptions = -1;
 	private InfoBarFeature.Style measuredStyle;
 	private float digitWidth;
+	private static final String ZERO = "0";
+	private float measuredZero = -1f;
+	/** The values' slots, held while a value narrows. */
+	private final InfoBarSlots slots = new InfoBarSlots(InfoBarSegment.MOST);
 	private float lineTop = 60f;
 	private String songPrevious = "";
 	private String songShown = "";
@@ -133,6 +138,8 @@ final class InfoBarRenderer {
 	private int lastTpsLevel;
 	private float pulse = 1f;
 	private final int[] bounds = new int[4];
+	/** How much the bar in game is shrunk to fit the screen (1: not at all). */
+	private float autoFit = 1f;
 	private float radius = BOX_RADIUS;
 
 	InfoBarRenderer(InfoBarFeature bar, InfoBarValues values) {
@@ -140,7 +147,7 @@ final class InfoBarRenderer {
 		this.values = values;
 		for (int i = 0; i < InfoBarSegment.MOST; i++) {
 			presence[i] = Spring.smooth(Spring.DEFAULT);
-			width[i] = Spring.smooth(Spring.DEFAULT);
+			width[i] = Spring.smooth(InfoBarSlots.RESIZE_SECONDS);
 			fitted[i] = "";
 			lowerUnit[i] = "";
 			rolledFrom[i] = "";
@@ -151,16 +158,21 @@ final class InfoBarRenderer {
 
 	/** @return the x on screen of the song segment's right edge as last drawn in game, or NaN when it was not drawn */
 	float songEdgeX() {
-		return Float.isNaN(songRight) ? Float.NaN : bounds[0] + songRight * bar.scale();
+		return Float.isNaN(songRight) ? Float.NaN : bounds[0] + songRight * bar.scale() * autoFit;
 	}
 
 	/** @return the width the song segment would have with its right edge at an x on screen, in the bar's own GUI pixels */
 	float songWidthTo(float x) {
-		return Float.isNaN(songLeft) ? 0f : (x - bounds[0]) / Math.max(0.01f, bar.scale()) - songLeft;
+		return Float.isNaN(songLeft) ? 0f : (x - bounds[0]) / Math.max(0.01f, bar.scale() * autoFit) - songLeft;
 	}
 
 	int[] bounds() {
 		return bounds;
+	}
+
+	/** @return how much the bar in game is shrunk now to fit the screen (1: not at all) */
+	float autoFit() {
+		return autoFit;
 	}
 
 	float radius() {
@@ -185,6 +197,11 @@ final class InfoBarRenderer {
 					bounds[3] = 0;
 				}
 				return;
+			}
+			if (hud) {
+				// never wider than 90 % of the screen: smaller on a small screen or a large GUI scale, its own size again when there is room
+				autoFit = HudFit.shrink(w * s, h * s, graphics.guiWidth(), graphics.guiHeight(), HudFit.INFO_BAR_WIDTH_SHARE, 1f);
+				s *= autoFit;
 			}
 			// kept on screen, also when its width changes in a corner
 			float left = Mth.clamp(centerX - w * s / 2f, SCREEN_MARGIN, Math.max(SCREEN_MARGIN, graphics.guiWidth() - SCREEN_MARGIN - w * s));
@@ -385,9 +402,18 @@ final class InfoBarRenderer {
 		InfoBarFeature.Style style = bar.style();
 		int options = optionsKey();
 		float zoom = Ui.zoom();
-		if (values.textVersion == measuredVersion && zoom == measuredZoom && style == measuredStyle && options == measuredOptions
-			&& bar.songWidth() == measuredSongWidth) {
+		long now = System.currentTimeMillis();
+		// the font (Inter or Minecraft) shows in the width of a digit: another font is measured again at once
+		float zero = ui.boldWidthScaled(ZERO, 1f);
+		boolean sameLook = zoom == measuredZoom && style == measuredStyle && options == measuredOptions && bar.songWidth() == measuredSongWidth
+			&& zero == measuredZero;
+		measuredZero = zero;
+		// measured again when a text changed, or when a held slot may narrow now
+		if (values.textVersion == measuredVersion && sameLook && now < slots.nextChange()) {
 			return;
+		}
+		if (!sameLook) {
+			slots.reset();
 		}
 		measuredVersion = values.textVersion;
 		measuredZoom = zoom;
@@ -407,7 +433,7 @@ final class InfoBarRenderer {
 			unitWidth[i] = unit.isEmpty() ? 0f : ui.boldWidthScaled(minimal ? lowerUnit[i] : unit, UNIT_SCALE);
 			if (tabular(segment)) {
 				rememberRoll(i, text);
-				charX[i] = layoutDigits(ui, text, i);
+				charX[i] = layoutDigits(ui, text, i, now);
 			} else if (segment == InfoBarSegment.SONG && ModFeatures.MUSIC.barLyricsShown()) {
 				// the song and its lines share one fixed width, so the bar never changes size with them
 				valueWidth[i] = style == InfoBarFeature.Style.STACKED ? stackedRoom(ui, segment) : barTextRoom(style);
@@ -421,7 +447,8 @@ final class InfoBarRenderer {
 					songFade = songPrevious.isEmpty() ? 1f : 0f;
 				}
 				fitted[i] = fit;
-				valueWidth[i] = ui.boldWidthScaled(fit, 1f);
+				// a text that gets shorter (a song, an area) keeps its room until the shorter one held
+				valueWidth[i] = slots.hold(i, ui.boldWidthScaled(fit, 1f), now);
 			}
 			contentWidth[i] = minimal ? minimalWidth(segment, i) : style == InfoBarFeature.Style.STACKED ? 0f : contentWidth(segment, i);
 		}
@@ -492,17 +519,34 @@ final class InfoBarRenderer {
 		roll[i] = 0f;
 	}
 
-	/** @return the x of every character of a number, digits in cells of the widest digit; sets its width */
-	private float[] layoutDigits(Ui ui, String text, int i) {
+	/**
+	 * @return the x of every character of a number, digits in cells of the widest digit, right-aligned in the number's slot (the room of its usual
+	 *         largest value, held while it narrows); sets its width to the slot's
+	 */
+	private float[] layoutDigits(Ui ui, String text, int i, long now) {
 		float[] at = charX[i] != null && charX[i].length >= text.length() ? charX[i] : new float[Math.max(8, text.length())];
 		float x = 0f;
 		for (int c = 0; c < text.length(); c++) {
 			char ch = text.charAt(c);
 			at[c] = x;
-			x += Character.isDigit(ch) ? digitWidth : ch < CHARS.length ? ui.boldWidthScaled(CHARS[ch], 1f) : 0f;
+			x += charWidth(ui, ch);
 		}
-		valueWidth[i] = x;
+		String template = InfoBarSlots.template(InfoBarSegment.of(i).kind, text);
+		float reserved = 0f;
+		for (int c = 0; c < template.length(); c++) {
+			reserved += charWidth(ui, template.charAt(c));
+		}
+		float slot = slots.hold(i, Math.max(x, reserved), now);
+		float shift = slot - x;
+		for (int c = 0; c < text.length(); c++) {
+			at[c] += shift;
+		}
+		valueWidth[i] = slot;
 		return at;
+	}
+
+	private float charWidth(Ui ui, char ch) {
+		return Character.isDigit(ch) ? digitWidth : ch < CHARS.length ? ui.boldWidthScaled(CHARS[ch], 1f) : 0f;
 	}
 
 	private static String fit(Ui ui, String text, float max) {
@@ -619,7 +663,7 @@ final class InfoBarRenderer {
 				float dot = Math.min(before, p);
 				String separator = "·";
 				float sx = cursor - MINIMAL_GAP / 2f - ui.boldWidthScaled(separator, UNIT_SCALE) / 2f;
-				float sy = Ui.besideTop(middle - TEXT_RISE, 1f, UNIT_SCALE);
+				float sy = Ui.unitTop(middle - TEXT_RISE, 1f, UNIT_SCALE);
 				ui.textAtScaledBold(separator, sx, sy, UNIT_SCALE, Ui.withOpacity(0xFFFFFFFF, 0.6f * dot));
 			}
 			float slot = width[i].value();
@@ -640,7 +684,7 @@ final class InfoBarRenderer {
 				float unit = unitWidth[i];
 				if (unit > 0f && (segment != InfoBarSegment.PING || bar.pingNumber())) {
 					float ux = x + valueWidth[i] + UNIT_GAP;
-					float uy = Ui.besideTop(valueTop, 1f, UNIT_SCALE);
+					float uy = Ui.unitTop(valueTop, 1f, UNIT_SCALE);
 					ui.textAtScaledBold(lowerUnit[i], ux + 0.5f, uy + 0.7f, UNIT_SCALE, Ui.withOpacity(SHADOW, alpha));
 					ui.textAtScaledBold(lowerUnit[i], ux, uy, UNIT_SCALE, Ui.withOpacity(0xFFFFFFFF, 0.6f * alpha));
 				}
@@ -788,8 +832,11 @@ final class InfoBarRenderer {
 		switch (segment.kind) {
 			case PING -> InfoBarSigns.signal(ui, centerX - InfoBarSigns.SIGNALS_WIDTH / 2f, middle, values.level[i], indicatorColor(i), alpha);
 			case TPS -> InfoBarSigns.dot(ui, centerX, middle, indicatorColor(i), alpha);
-			default -> ui.icon(segment.icon, Math.round(centerX - ICON / 2f), Math.round(middle - ICON / 2f), ICON,
-				Ui.withOpacity(iconColor(segment), alpha));
+			default -> {
+				// the icon by its drawing, as tall as the letters of the line around it (0.9 of the text's height), centered on its room
+				float height = Ui.inlineIconHeight(Ui.TEXT_HEIGHT);
+				ui.inlineIcon(segment.icon, centerX - ui.iconShapeWidth(segment.icon, height) / 2f, middle, Ui.TEXT_HEIGHT, Ui.withOpacity(iconColor(segment), alpha));
+			}
 		}
 	}
 
@@ -817,7 +864,8 @@ final class InfoBarRenderer {
 		}
 		// while a change rolls in, the characters that changed come up from below and the old ones leave upwards; a number that got longer or
 		// shorter moves as a whole, so all of it rolls
-		float in = roll[i] >= 1f ? 1f : 1f - (1f - roll[i]) * (1f - roll[i]) * (1f - roll[i]);
+		// in the game's font the new number is there at once: two half-shown numbers over each other smear with a pixel font
+		float in = roll[i] >= 1f || Ui.pixelFont() ? 1f : 1f - (1f - roll[i]) * (1f - roll[i]) * (1f - roll[i]);
 		String before = rolledFrom[i];
 		boolean sameLength = before.length() == text.length();
 		if (in < 1f && rolledFromX[i] != null) {
@@ -853,7 +901,7 @@ final class InfoBarRenderer {
 			return x;
 		}
 		float ux = x + UNIT_GAP;
-		ui.textAtScaledBold(values.unit[i], ux, Ui.besideTop(valueTop, 1f, UNIT_SCALE), UNIT_SCALE, Ui.withOpacity(HudStyle.text(), UNIT_ALPHA * alpha));
+		ui.textAtScaledBold(values.unit[i], ux, Ui.unitTop(valueTop, 1f, UNIT_SCALE), UNIT_SCALE, Ui.withOpacity(HudStyle.text(), UNIT_ALPHA * alpha));
 		return ux + unitWidth[i];
 	}
 

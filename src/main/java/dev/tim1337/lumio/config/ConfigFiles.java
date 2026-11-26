@@ -32,7 +32,8 @@ import net.fabricmc.loader.api.FabricLoader;
  * </ul>
  */
 final class ConfigFiles {
-	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+	/** The one pretty printer of the config files, shared with {@link FeatureManager}, so both write the same layout. */
+	static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 	private static final int MOST_LOGGED_CHANGES = 24;
 	private static final int MOST_VALUE_CHARS = 60;
 	/** The text of each file as this game last read or wrote it: what another game changed is told apart from it. */
@@ -130,11 +131,11 @@ final class ConfigFiles {
 				for (Map.Entry<String, JsonElement> setting : nowPart.entrySet()) {
 					JsonElement oldValue = oldPart.get(setting.getKey());
 					if (!Objects.equals(setting.getValue(), oldValue)) {
-						lines.add(part.getKey() + "." + setting.getKey() + " " + shown(setting.getKey(), oldValue) + " → " + shown(setting.getKey(), setting.getValue()));
+						lines.add(part.getKey() + "." + setting.getKey() + " " + shown(part.getKey(), setting.getKey(), oldValue) + " → " + shown(part.getKey(), setting.getKey(), setting.getValue()));
 					}
 				}
 			} else if (!Objects.equals(part.getValue(), was)) {
-				lines.add(part.getKey() + " " + shown(part.getKey(), was) + " → " + shown(part.getKey(), part.getValue()));
+				lines.add(part.getKey() + " " + shown(null, part.getKey(), was) + " → " + shown(null, part.getKey(), part.getValue()));
 			}
 		}
 		if (lines.isEmpty()) {
@@ -145,11 +146,11 @@ final class ConfigFiles {
 		return more > 0 ? text + " and " + more + " more" : text;
 	}
 
-	private static String shown(String key, JsonElement value) {
+	private static String shown(String feature, String key, JsonElement value) {
 		if (value == null) {
 			return "(none)";
 		}
-		if (FeatureManager.isPrivate(key)) {
+		if (FeatureManager.isPrivate(feature, key)) {
 			return "(private)";
 		}
 		String text = value.toString();

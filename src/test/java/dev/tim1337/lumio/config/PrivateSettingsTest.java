@@ -1,5 +1,6 @@
 package dev.tim1337.lumio.config;
 
+import dev.tim1337.lumio.config.setting.BooleanSetting;
 import dev.tim1337.lumio.config.setting.StringSetting;
 
 import com.google.gson.JsonObject;
@@ -14,66 +15,86 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Tokens, account ids and other private values never leave in a shared config, and a config from someone else can never set them. */
+/**
+ * Tokens, other players' names and other private values never leave in a shared config, and a config from someone else can never set them; a
+ * debugging tool's settings are never shared at all. Private settings are named with their feature, so the same name elsewhere is shared.
+ */
 class PrivateSettingsTest {
-	private static final String ID = "private_settings_test";
+	/** The id of the SkyBlock add-on's party commands, which the main mod's tests never make. */
+	private static final String ID = "party_commands";
+	private static final String DEBUG_ID = "debug_sample";
 
-	private static StringSetting token;
-	private static StringSetting clientId;
-	private static StringSetting carried;
+	private static StringSetting whitelist;
+	private static StringSetting blocked;
 	private static StringSetting title;
+	private static BooleanSetting tools;
 
-	/** A feature with three private values and one ordinary setting, as the music and slayer features have them. */
+	/** A feature with two private values and one ordinary setting, as the party commands have them. */
 	private static final class Sample extends Feature {
 		Sample() {
 			super(ID, "Sample", "", true);
-			token = add(new StringSetting("cider_token", Component.literal("Token"), "", true));
-			clientId = add(new StringSetting("spotify_client_id", Component.literal("Client ID"), "", false));
-			carried = add(new StringSetting("carry_name", Component.literal("Player"), "", false));
+			whitelist = add(new StringSetting("whitelist", Component.literal("Whitelist"), "", false));
+			blocked = add(new StringSetting("blocked", Component.literal("Blocked players"), "", false));
 			title = add(new StringSetting("title_text", Component.literal("Title"), "", false));
+		}
+	}
+
+	/** A debugging tool's feature: none of it is shared. */
+	private static final class DebugSample extends Feature {
+		DebugSample() {
+			super(DEBUG_ID, "Debug sample", "", false);
+			tools = add(new BooleanSetting("tools", Component.literal("Debug tools"), false));
 		}
 	}
 
 	@BeforeAll
 	static void register() {
 		FeatureManager.register(new Sample());
+		FeatureManager.register(new DebugSample());
 	}
 
 	@Test
-	void privateKeysAreKnown() {
-		for (String key : new String[]{"cider_token", "spotify_client_id", "carry_name", "last_server_ip"}) {
-			assertTrue(FeatureManager.isPrivate(key), key);
-		}
-		assertFalse(FeatureManager.isPrivate("title_text"));
+	void privateSettingsAreKnownWithTheirFeature() {
+		assertTrue(FeatureManager.isPrivate("music", "cider_token"));
+		assertTrue(FeatureManager.isPrivate("slayer_phase", "carry_name"));
+		assertTrue(FeatureManager.isPrivate("party_commands", "whitelist"));
+		assertTrue(FeatureManager.isPrivate("menus", "last_server_ip"));
+		assertTrue(FeatureManager.isPrivate("debug_general", "tools"), "every setting of a debugging tool");
+		assertTrue(FeatureManager.isPrivate("debug_log", "enabled"));
+		// the same names in another feature are ordinary settings
+		assertFalse(FeatureManager.isPrivate("item_list", "items"));
+		assertFalse(FeatureManager.isPrivate("party_commands", "title_text"));
+		assertFalse(FeatureManager.isPrivate(null, "cider_token"));
 	}
 
 	@Test
-	void exportLeavesPrivateValuesOut() {
-		token.set("secret-token");
-		clientId.set("my-client-id");
-		carried.set("SomePlayer");
+	void exportLeavesPrivateValuesAndDebugToolsOut() {
+		whitelist.set("FriendOne");
+		blocked.set("SomePlayer");
 		title.set("Hello");
+		tools.set(true);
 		String exported = FeatureManager.decode(FeatureManager.exportText());
-		assertFalse(exported.contains("secret-token"));
-		assertFalse(exported.contains("my-client-id"));
+		assertFalse(exported.contains("FriendOne"));
 		assertFalse(exported.contains("SomePlayer"));
-		JsonObject sample = JsonParser.parseString(exported).getAsJsonObject().getAsJsonObject(ID);
-		assertEquals("Hello", sample.get("title_text").getAsString());
+		JsonObject root = JsonParser.parseString(exported).getAsJsonObject();
+		assertEquals("Hello", root.getAsJsonObject(ID).get("title_text").getAsString());
+		assertNull(root.get(DEBUG_ID), "a debugging tool is never in a shared config");
 	}
 
 	@Test
-	void importNeverSetsPrivateValues() {
-		token.set("mine");
-		clientId.set("mine");
-		carried.set("");
+	void importNeverSetsPrivateValuesNorDebugTools() {
+		whitelist.set("mine");
+		blocked.set("");
 		title.set("before");
-		String foreign = "{\"" + ID + "\":{\"cider_token\":\"theirs\",\"spotify_client_id\":\"theirs\",\"carry_name\":\"Them\",\"title_text\":\"after\"}}";
+		tools.set(false);
+		String foreign = "{\"" + ID + "\":{\"whitelist\":\"theirs\",\"blocked\":\"Them\",\"title_text\":\"after\"},\"" + DEBUG_ID + "\":{\"tools\":true}}";
 		assertTrue(FeatureManager.apply(foreign, Set.of(ConfigPart.FEATURES), feature -> true, false));
-		assertEquals("mine", token.get());
-		assertEquals("mine", clientId.get());
-		assertEquals("", carried.get());
+		assertEquals("mine", whitelist.get());
+		assertEquals("", blocked.get());
 		assertEquals("after", title.get());
+		assertFalse(tools.get(), "a config cannot turn a debugging tool on");
 	}
 }

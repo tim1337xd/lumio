@@ -12,6 +12,7 @@ import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
@@ -60,12 +61,13 @@ public abstract class GuiMixin {
 	@Inject(method = "setScreen", at = @At("HEAD"))
 	private void lumio$fadeFrom(Screen next, CallbackInfo ci) {
 		if (InputTrace.on()) {
-			InputTrace.note("screen " + name(screen) + " -> " + name(next));
+			InputTrace.note("screen " + lumio$name(screen) + " -> " + lumio$name(next));
 		}
 		ScreenFade.screenChanging(screen, next);
 	}
 
-	private static String name(Screen screen) {
+	@Unique
+	private static String lumio$name(Screen screen) {
 		return screen == null ? "none" : screen.getClass().getSimpleName();
 	}
 

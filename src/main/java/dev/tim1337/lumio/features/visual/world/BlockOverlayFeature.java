@@ -41,12 +41,12 @@ public class BlockOverlayFeature extends Feature {
 	private final EnumSetting<BlockOverlayLook.Style> mode = add(new EnumSetting<>("mode", Component.literal("Style"), BlockOverlayLook.Style.OUTLINE, BlockOverlayLook.Style::displayName, EnumSetting.Style.SEGMENTED), GROUP);
 	private final EnumSetting<BlockOverlayLook.Colors> colors = add(new EnumSetting<>("color_source", Component.literal("Colors"), BlockOverlayLook.Colors.CUSTOM, BlockOverlayLook.Colors::displayName, EnumSetting.Style.SEGMENTED), GROUP);
 	private final ColorSetting color = add(new ColorSetting("color", Component.literal("Color"), 0xFFFFFF), GROUP);
-	private final FloatSetting lineWidth = add(new FloatSetting("line_width", Component.literal("Width"), 2.5f, 1f, 6f, 1), GROUP);
+	private final FloatSetting lineWidth = add(new FloatSetting("line_width", Component.literal("Line width"), 2.5f, 1f, 6f, 1), GROUP);
 	private final FloatSetting fillOpacity = add(new FloatSetting("fill_opacity", Component.literal("Fill"), 0.2f, 0f, 0.8f, 2).percent(), GROUP, "How much the faces are tinted");
 	private final FloatSetting speed = add(new FloatSetting("shader_speed", Component.literal("Speed"), 1f, 0.2f, 3f, 1), GROUP);
-	private final BooleanSetting showBreaking = add(new BooleanSetting("show_breaking", Component.literal("Show breaking progress"), true), MINING, "The faces fill as the block breaks");
-	private final BooleanSetting breakPulse = add(new BooleanSetting("break_pulse", Component.literal("Pulse when it breaks"), true), MINING);
-	private final BooleanSetting fullBlock = add(new BooleanSetting("full_block", Component.literal("Full block"), false), SHAPE, "A full cube instead of the real shape (slabs, stairs)");
+	private final BooleanSetting showBreaking = add(new BooleanSetting("show_breaking", Component.literal("Breaking progress"), true), MINING, null);
+	private final BooleanSetting breakPulse = add(new BooleanSetting("break_pulse", Component.literal("Break pulse"), true), MINING);
+	private final BooleanSetting fullBlock = add(new BooleanSetting("full_block", Component.literal("Full block"), false), SHAPE, "A cube instead of the real shape");
 
 	private long lastFrame;
 	private float frameSeconds;

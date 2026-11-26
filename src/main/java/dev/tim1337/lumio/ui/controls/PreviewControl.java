@@ -7,7 +7,7 @@ import dev.tim1337.lumio.ui.PagePreview;
 import dev.tim1337.lumio.ui.Ui;
 
 /** A live preview spanning the page's width, on the preview backdrop the page previews use, clipped to its rounded panel. */
-public class PreviewControl extends Control {
+public final class PreviewControl extends Control {
 	private final PagePreview preview;
 	private final int previewHeight;
 

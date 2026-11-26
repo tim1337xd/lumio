@@ -13,16 +13,21 @@ import java.nio.ByteBuffer;
 import java.util.BitSet;
 
 /**
- * The symbols the menu font (Inter) has no glyph for, such as the server's ✯ ✦ ❈ ☘ ⸕ ✎. Inside the menu fonts the game's own font fills in for
- * them, but at its small pixel size within a font drawn scaled down, so they came out as specks; {@link Ui} draws them in the game's font at the
- * text's size instead. Which ones are missing is read once from the font file itself, on a background thread at start; until then none is.
+ * The characters the menu font (Inter) has no glyph for: the server's symbols such as ✯ ✦ ❈ ☘ ⸕ ✎, and the private-use characters a server's
+ * resource pack draws its own icons with (Hypixel's location pin is U+E067 of its pack, its stat, skill, mob and weather icons the characters
+ * around it). Inside the menu fonts the game's own font fills in for them, but at its small pixel size within a font drawn scaled down, so they
+ * came out as specks; {@link Ui} draws them in the game's font at the text's size instead, in the text's color. Which ones are missing is read once
+ * from the font file itself, on a background thread at start; until then none is.
  */
 public final class MissingGlyphs {
 	/** The menu font; its semibold and bold faces cover the same characters. */
 	private static final String FONT = "/assets/lumio/font/inter.ttf";
-	/** The symbol ranges checked: punctuation, letterlike symbols, arrows, math, shapes, dingbats and the supplemental punctuation (⸕ ⸎). */
-	static final int FIRST = 0x2000;
-	static final int LAST = 0x2E7F;
+	/**
+	 * The characters checked: all after Latin, Greek and Cyrillic, which the font has, to the end of the basic plane. The symbols, the private-use
+	 * characters of a server's pack and the halves of an emoji are all among them.
+	 */
+	static final int FIRST = 0x0530;
+	static final int LAST = 0xFFFF;
 	/**
 	 * Symbols the mod draws itself in each of its fonts, at the capitals' height (tools/FontSymbols.java): Hypixel's location pin and its moon,
 	 * weather, star and swords, and those the game takes from Unifont, small within their box (᠅ ⸕ ❈ ❁ ☘ ✧ ⚚ ♲ ൠ ⛃ ⫽ ✯ ⏢ 〠). They stay in the
@@ -42,7 +47,7 @@ public final class MissingGlyphs {
 		thread.start();
 	}
 
-	/** @return whether the menu font has no glyph for the character; only symbols are ever missing */
+	/** @return whether the menu font has no glyph for the character */
 	public static boolean missing(char c) {
 		return c >= FIRST && c <= LAST && missing.get(c - FIRST) && OWN_GLYPHS.indexOf(c) < 0;
 	}

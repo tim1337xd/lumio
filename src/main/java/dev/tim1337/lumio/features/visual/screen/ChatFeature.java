@@ -1,41 +1,46 @@
 package dev.tim1337.lumio.features.visual.screen;
 
-import dev.tim1337.lumio.api.experimental.util.ScreenInput;
 import dev.tim1337.lumio.ModFeatures;
-import dev.tim1337.lumio.api.experimental.draw.Radius;
-import dev.tim1337.lumio.api.experimental.draw.SystemColors;
-import dev.tim1337.lumio.api.experimental.draw.TextScale;
-import dev.tim1337.lumio.api.experimental.util.TextColors;
-import dev.tim1337.lumio.config.Feature;
 import dev.tim1337.lumio.addon.Addons;
 import dev.tim1337.lumio.api.ChatTabProvider;
-import dev.tim1337.lumio.api.experimental.util.Debug;
+import dev.tim1337.lumio.api.experimental.debug.DebugCategory;
+import dev.tim1337.lumio.api.experimental.debug.DebugHooks;
+import dev.tim1337.lumio.api.experimental.draw.Radius;
+import dev.tim1337.lumio.api.experimental.draw.SystemColors;
+import dev.tim1337.lumio.api.experimental.util.ScreenInput;
+import dev.tim1337.lumio.api.experimental.util.TextColors;
 import dev.tim1337.lumio.api.setting.AddonSetting;
+import dev.tim1337.lumio.config.Feature;
 import dev.tim1337.lumio.config.SettingsView;
 import dev.tim1337.lumio.config.setting.BooleanSetting;
 import dev.tim1337.lumio.config.setting.ButtonSetting;
+import dev.tim1337.lumio.config.setting.ColorSetting;
 import dev.tim1337.lumio.config.setting.DerivedEnumSetting;
 import dev.tim1337.lumio.config.setting.EnumSetting;
+import dev.tim1337.lumio.config.setting.FloatSetting;
 import dev.tim1337.lumio.config.setting.OrderedListSetting;
 import dev.tim1337.lumio.config.setting.Setting;
 import dev.tim1337.lumio.config.setting.StringSetting;
+import dev.tim1337.lumio.features.visual.screen.chat.ChatActions;
 import dev.tim1337.lumio.features.visual.screen.chat.ChatAutoWidth;
+import dev.tim1337.lumio.features.visual.screen.chat.ChatCenteredRow;
+import dev.tim1337.lumio.features.visual.screen.chat.ChatCentering;
 import dev.tim1337.lumio.features.visual.screen.chat.ChatLayout;
 import dev.tim1337.lumio.features.visual.screen.chat.ChatRules;
 import dev.tim1337.lumio.features.visual.screen.chat.ChatSearchLook;
 import dev.tim1337.lumio.features.visual.screen.chat.ChatTabFit;
+import dev.tim1337.lumio.features.waypoints.CoordParser;
+import dev.tim1337.lumio.mixin.accessor.ChatComponentAccessor;
 import dev.tim1337.lumio.mixin.accessor.CommandSuggestionsAccessor;
 import dev.tim1337.lumio.mixin.accessor.SuggestionsListAccessor;
-import dev.tim1337.lumio.config.setting.ColorSetting;
-import dev.tim1337.lumio.config.setting.FloatSetting;
-import dev.tim1337.lumio.mixin.accessor.ChatComponentAccessor;
-import dev.tim1337.lumio.ui.PagePictures;
-import dev.tim1337.lumio.ui.PagePreview;
 import dev.tim1337.lumio.ui.Eased;
 import dev.tim1337.lumio.ui.EditableHud;
+import dev.tim1337.lumio.ui.HudEditScreen;
 import dev.tim1337.lumio.ui.HudStyle;
 import dev.tim1337.lumio.ui.MacScreen;
 import dev.tim1337.lumio.ui.MacTheme;
+import dev.tim1337.lumio.ui.PagePictures;
+import dev.tim1337.lumio.ui.PagePreview;
 import dev.tim1337.lumio.ui.PanelTheme;
 import dev.tim1337.lumio.ui.Toasts;
 import dev.tim1337.lumio.ui.Ui;
@@ -43,7 +48,6 @@ import dev.tim1337.lumio.ui.UiSounds;
 
 import com.google.gson.JsonObject;
 import com.mojang.blaze3d.platform.InputConstants;
-
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
@@ -94,8 +98,9 @@ public class ChatFeature extends Feature implements EditableHud {
 		}
 	}
 
-	/** What is known of a message, which never changes it: how it read, its channel, who wrote it, whether it mentions the player, how often it came, how wide its time is, whether it has a link and which add-on's tab it is for. */
-	record Info(String original, String plain, Channel channel, String sender, boolean mention, int count, String time, boolean link, String addonTab) {
+	/** What is known of a message, which never changes it: how it read, its channel, who wrote it, whether it mentions the player, how often it came, how wide its time is, whether it has a link and which add-on's tab it is for and the first coordinates in it, for "+ Waypoint". */
+	record Info(String original, String plain, Channel channel, String sender, boolean mention, int count, String time, boolean link, String addonTab,
+		CoordParser.Found coords) {
 	}
 
 	/** One tab: what it is called, its channel if it has one, and which messages it shows. */
@@ -121,8 +126,8 @@ public class ChatFeature extends Feature implements EditableHud {
 
 	/** How wide the chat is: as its longest line wants it, or as set. */
 	public enum WidthMode {
-		AUTO("Auto"),
-		FIXED("Fixed");
+		FIXED("Fixed"),
+		AUTO("Auto");
 
 		private final Component displayName;
 
@@ -136,6 +141,24 @@ public class ChatFeature extends Feature implements EditableHud {
 	}
 
 	/** How far lines are apart. */
+	/** What the chat does where it reaches the hotbar. */
+	public enum HotbarMode {
+		/** It keeps its place and is drawn over the hotbar and what belongs to it: the game draws the chat after them. */
+		OVER("Over the hotbar"),
+		/** It moves up above the hotbar and the status bars. */
+		MOVE_UP("Move up");
+
+		private final Component displayName;
+
+		HotbarMode(String displayName) {
+			this.displayName = Component.literal(displayName);
+		}
+
+		public Component displayName() {
+			return displayName;
+		}
+	}
+
 	public enum Spacing {
 		TIGHT("Tight", 2),
 		NORMAL("Normal", 4),
@@ -246,8 +269,10 @@ public class ChatFeature extends Feature implements EditableHud {
 			return Math.round(value) + " lines";
 		}
 	}, LOOK);
+	private final EnumSetting<HotbarMode> hotbarMode = add(new EnumSetting<>("hotbar", Component.literal("At the hotbar"), HotbarMode.OVER, HotbarMode::displayName,
+		EnumSetting.Style.SEGMENTED), LOOK, "When the chat reaches the hotbar");
 	private final EnumSetting<Spacing> spacing = add(new EnumSetting<>("line_spacing", Component.literal("Line spacing"), Spacing.NORMAL, Spacing::displayName, EnumSetting.Style.SEGMENTED), LOOK);
-	private final FloatSetting fadeAfter = add(new FloatSetting("fade_after", Component.literal("Fade after"), 10f, 3f, 60f, 0) {
+	private final FloatSetting fadeAfter = add(new FloatSetting("fade_after", Component.literal("Duration"), 10f, 3f, 60f, 0) {
 		@Override
 		public String format(float value) {
 			return Math.round(value) + " s";
@@ -262,15 +287,15 @@ public class ChatFeature extends Feature implements EditableHud {
 	private final BooleanSetting twelveHours = add(new BooleanSetting("twelve_hours", Component.literal("12 hour clock"), false));
 	private final EnumSetting<Clock> clock = add(new DerivedEnumSetting<>("clock", Component.literal("Timestamps"), Clock.H24, Clock::displayName, EnumSetting.Style.SEGMENTED,
 		() -> !this.timestamps.get() ? Clock.OFF : this.twelveHours.get() ? Clock.H12 : Clock.H24, this::setClock), ADDED);
-	private final BooleanSetting seconds = add(new BooleanSetting("seconds", Component.literal("Show seconds"), false), ADDED);
+	private final BooleanSetting seconds = add(new BooleanSetting("seconds", Component.literal("Seconds"), false), ADDED);
 	private final BooleanSetting heads = add(new BooleanSetting("heads", Component.literal("Player heads"), true), ADDED);
-	private final BooleanSetting stripe = add(new BooleanSetting("stripe", Component.literal("Channel stripe"), true), ADDED, "A thin bar for party, guild and private lines");
+	private final BooleanSetting stripe = add(new BooleanSetting("stripe", Component.literal("Channel stripe"), true), ADDED, "Party, guild and private lines");
 	private final ColorSetting partyColor = add(new ColorSetting("stripe_party", Component.literal("Party"), SystemColors.BLUE_RGB), ADDED);
 	private final ColorSetting guildColor = add(new ColorSetting("stripe_guild", Component.literal("Guild"), SystemColors.GREEN_RGB), ADDED);
 	private final ColorSetting privateColor = add(new ColorSetting("stripe_private", Component.literal("Private"), SystemColors.PINK_RGB), ADDED);
 	private final BooleanSetting highlight = add(new BooleanSetting("highlight", Component.literal("Highlight my name and words"), true), ADDED);
 	private final StringSetting highlightWords = add(new StringSetting("highlight_words", Component.literal("More words"), "", false), ADDED, "Separated by commas");
-	private final BooleanSetting compact = add(new BooleanSetting("compact", Component.literal("Collapse repeats"), true), ADDED, "A small ×3 instead of the same line again");
+	private final BooleanSetting compact = add(new BooleanSetting("compact", Component.literal("Collapse repeats"), true), ADDED, "A small ×3 instead of repeats");
 	private final BooleanSetting hoverActions = add(new BooleanSetting("hover_actions", Component.literal("Copy and Reply on hover"), true), ADDED);
 	private final BooleanSetting links = add(new BooleanSetting("links", Component.literal("Clickable links"), true), ADDED, "They open after the game's own question");
 	private final BooleanSetting copy = add(new BooleanSetting("copy", Component.literal("Right-click to copy"), true), ADDED);
@@ -284,7 +309,7 @@ public class ChatFeature extends Feature implements EditableHud {
 	private final List<EnumSetting<OwnFilter>> ownModes = new ArrayList<>();
 	private final List<StringSetting> ownTexts = new ArrayList<>();
 	private final SettingsView ownTabsView = makeOwnTabs();
-	private final ButtonSetting ownTabsButton = add(new ButtonSetting("own_tabs", Component.literal("Own tabs with a filter"), Component.literal("Edit"), false, () -> MacScreen.openEdit(ownTabsView)), TABS);
+	private final ButtonSetting ownTabsButton = add(new ButtonSetting("own_tabs", Component.literal("Custom tabs"), Component.literal("Edit"), false, () -> MacScreen.openEdit(ownTabsView)), TABS);
 	private final FloatSetting tabsSize = add(new FloatSetting("tabs_size", Component.literal("Tab size"), 1f, 0.6f, 1.5f, 2), TABS);
 	{
 		tabsSize.visibleWhen(() -> tabs.get() || search.get());
@@ -336,7 +361,7 @@ public class ChatFeature extends Feature implements EditableHud {
 	private final Eased markWidth = new Eased();
 
 	public ChatFeature() {
-		super("chat", "Chat", "Messages stay as the game sends them. Lumio adds.", false);
+		super("chat", "Chat", "Messages stay as sent.", false);
 		iconRgb(SystemColors.GREEN_RGB);
 		iconName("bubble");
 		summary("A calm panel with tabs, heads and highlights");
@@ -353,7 +378,17 @@ public class ChatFeature extends Feature implements EditableHud {
 			color.inRow("Colors");
 		}
 		highlightWords.under(highlight);
+		tabOrder.under(tabs);
+		ownTabsButton.visibleWhen(tabs::get);
+		// the glow is the open chat's panel's, which Background None does not draw
+		glow.visibleWhen(() -> background.get() != Background.NONE);
 		size.step(0.05f);
+		hotbarMode.visibleWhen(this::isEnabled);
+	}
+
+	/** @return whether the chat stays where it is over the hotbar, the status bars and what lies beside them, instead of moving up above them */
+	public boolean overHotbar() {
+		return isEnabled() && hotbarMode.get() == HotbarMode.OVER;
 	}
 
 	/** A config from before the Auto width keeps its fixed width. */
@@ -535,7 +570,10 @@ public class ChatFeature extends Feature implements EditableHud {
 			measuredLongest = 0;
 			for (int i = 0; i < perPage && scroll + i < lines.size(); i++) {
 				if (open || ChatDecor.alpha(tick, lines.get(scroll + i)) > ChatDecor.LEAST_ALPHA) {
-					measuredLongest = Math.max(measuredLongest, font.width(lines.get(scroll + i).content()));
+					GuiMessage.Line line = lines.get(scroll + i);
+					// a line with coordinates leaves room for its "+ Waypoint" after it
+					int pill = line.endOfEntry() && infoOf(line.parent()).coords() != null ? ChatDecor.pillRoom(font) : 0;
+					measuredLongest = Math.max(measuredLongest, font.width(line.content()) + pill);
 				}
 			}
 		}
@@ -554,6 +592,11 @@ public class ChatFeature extends Feature implements EditableHud {
 	/** @return the panel's width in the chat's own pixels */
 	int panelWidthInChat() {
 		return Math.round(panelWidth() / scale());
+	}
+
+	/** @return how far a row's text starts from the text's column: a centered row lies in the middle of the width the chat has now, any other at the column */
+	public int rowLeft(FormattedCharSequence row) {
+		return row instanceof ChatCenteredRow centered ? ChatCentering.left(ChatLayout.wrapWidth(panelWidthInChat(), timeColumn(), heads.get()), centered.width()) : 0;
 	}
 
 	/** @return the left of the panel on the screen, where the player moved it, always on the screen */
@@ -607,11 +650,24 @@ public class ChatFeature extends Feature implements EditableHud {
 	private static final float GAME_FADE_SECONDS = 10f;
 	private static final float TICKS_PER_SECOND = 20f;
 	private static final int MOST_REMEMBERED = 2_500;
+	/** The usual multiplier of a combined hash, as in {@code Arrays.hashCode}. */
+	private static final int HASH_STEP = 31;
+
+	/** @return a key of everything the wrapped lines depend on; built by hand every tick, as {@code Objects.hash} would box each value */
+	private int layoutKey(Minecraft client) {
+		int key = Math.round(auto() ? maxWidth.get() : chatWidth.get());
+		key = HASH_STEP * key + spacing.get().ordinal();
+		key = HASH_STEP * key + Boolean.hashCode(timestamps.get());
+		key = HASH_STEP * key + Boolean.hashCode(twelveHours.get());
+		key = HASH_STEP * key + Boolean.hashCode(seconds.get());
+		key = HASH_STEP * key + Boolean.hashCode(heads.get());
+		return HASH_STEP * key + client.getWindow().getGuiScaledWidth();
+	}
 
 	/** Called every tick: once the size changed and settled, re-wraps the lines for the new width, which is expensive, so not on every step. */
 	public void tick(Minecraft client) {
 		boolean kept = keptOut();
-		int layout = java.util.Objects.hash(Math.round(auto() ? maxWidth.get() : chatWidth.get()), spacing.get(), timestamps.get(), twelveHours.get(), seconds.get(), heads.get(), client.getWindow().getGuiScaledWidth());
+		int layout = layoutKey(client);
 		if ((kept != appliedKept || layout != appliedLayout) && client.gui != null && client.gui.hud != null) {
 			appliedKept = kept;
 			appliedLayout = layout;
@@ -649,6 +705,44 @@ public class ChatFeature extends Feature implements EditableHud {
 		int screenHeight = Minecraft.getInstance().getWindow().getGuiScaledHeight();
 		int top = panelTop(screenHeight);
 		return new int[]{panelLeft(), top, panelWidth(), panelBottom(screenHeight) - top};
+	}
+
+	@Override
+	public int[] hudNaturalBounds() {
+		int[] box = hudBounds();
+		box[1] -= appliedFitShift();
+		return box;
+	}
+
+	/** @return the open chat's panel on the screen (x, y, width, height), or null while the chat is closed or not the mod's: HUD elements under it dim (see {@link dev.tim1337.lumio.hud.HudUnderChat}) */
+	public int[] openPanel() {
+		return stylesSuggestions() ? hudBounds() : null;
+	}
+
+	/** The chat moves up or down along the left edge it is placed at. */
+	@Override
+	public int hudFitAxis() {
+		return dev.tim1337.lumio.hud.HudFit.ALONG_Y;
+	}
+
+	@Override
+	public void hudSetFitShift(float dx, float dy) {
+		fitShiftY = dy;
+	}
+
+	@Override
+	public boolean hudFitMoved() {
+		return Math.abs(fitShiftY) >= 1f;
+	}
+
+	@Override
+	public boolean hudApplyFit() {
+		if (!hudFitMoved()) {
+			return false;
+		}
+		offsetY.set(moveY() + fitShiftY);
+		fitShiftY = 0f;
+		return true;
 	}
 
 	@Override
@@ -737,8 +831,8 @@ public class ChatFeature extends Feature implements EditableHud {
 	int baseBottom(int screenHeight) {
 		var access = (ChatComponentAccessor) Minecraft.getInstance().gui.hud.getChat();
 		int bottom = screenHeight - CHAT_ABOVE_BOTTOM;
-		// by the widest it gets, so the chat does not move up and down as its width follows its lines
-		int lift = ModFeatures.STATUS == null ? 0 : ModFeatures.STATUS.chatLift(bottom, bottom - access.lumio$height(), liftWidth());
+		// by the widest it gets, so the chat does not move up and down as its width follows its lines; over the hotbar it does not move at all
+		int lift = ModFeatures.STATUS == null || overHotbar() ? 0 : ModFeatures.STATUS.chatLift(bottom, bottom - access.lumio$height(), liftWidth());
 		return bottom - lift;
 	}
 
@@ -749,7 +843,15 @@ public class ChatFeature extends Feature implements EditableHud {
 
 	/** @return where the lowest line ends on the screen */
 	int chatBottom(int screenHeight) {
-		return baseBottom(screenHeight) + Math.round(moveY());
+		return baseBottom(screenHeight) + Math.round(moveY()) + appliedFitShift();
+	}
+
+	/** How far the auto-fit moves the chat up or down now, in GUI units, off the bars and the info bar; never saved. */
+	private float fitShiftY;
+
+	/** @return the auto-fit's move as drawn: none while the player has the chat in hand in the HUD editor */
+	private int appliedFitShift() {
+		return HudEditScreen.isSelected(this) ? 0 : Math.round(fitShiftY);
 	}
 
 	boolean barShown() {
@@ -825,7 +927,7 @@ public class ChatFeature extends Feature implements EditableHud {
 	/** @return a place on the screen in the chat's own pixels */
 	double[] toChat(int screenHeight, double mouseX, double mouseY) {
 		float scale = scale();
-		return new double[]{(mouseX - left()) / scale, (mouseY - moveY()) / scale};
+		return new double[]{(mouseX - left()) / scale, (mouseY - rowsY()) / scale};
 	}
 
 	/** @return which of the chat's lines a place on the screen is on, or -1 */
@@ -833,7 +935,7 @@ public class ChatFeature extends Feature implements EditableHud {
 		ChatComponent component = Minecraft.getInstance().gui.hud.getChat();
 		var access = (ChatComponentAccessor) component;
 		float scale = scale();
-		double fromBottom = Mth.floor(baseBottom(screenHeight) / scale) - (mouseY - moveY() - scrollShift()) / scale;
+		double fromBottom = Mth.floor(baseBottom(screenHeight) / scale) - (mouseY - rowsY() - scrollShift()) / scale;
 		double across = (mouseX - left()) / scale;
 		int height = Math.max(1, access.lumio$lineHeight());
 		if (fromBottom < 0 || across < 0 || across > panelWidthInChat()) {
@@ -1012,6 +1114,11 @@ public class ChatFeature extends Feature implements EditableHud {
 		int height = above + ChatLayout.BELOW_LINES;
 		int top = ChatLayout.keepOnScreen(base - above + Math.round(offsetY.get()), height, screenHeight);
 		return top + above - base;
+	}
+
+	/** @return how far the rows and all that lies on them are moved down on the screen: with the panel, also where the auto-fit moved it off the bars */
+	public float rowsY() {
+		return moveY() + appliedFitShift();
 	}
 
 	/** @return how far up a line's text moves from where the game puts it, to lie in the middle of its row */
@@ -1262,10 +1369,25 @@ public class ChatFeature extends Feature implements EditableHud {
 				}
 			} catch (RuntimeException e) {
 				// an add-on's tab is never worth a line of the chat
-				Debug.log("The chat tab {} could not read a message: {}", provider.tabId(), e.toString());
+				if (DebugHooks.ACTIVE) {
+					DebugHooks.log(DebugCategory.CHAT, "The chat tab {} could not read a message: {}", provider.tabId(), e.toString());
+				}
 			}
 		}
-		return new Info(text, plain, classify(text), ChatRules.sender(STAMP.matcher(plain).replaceFirst("")), mention, count, time, ChatRules.link(plain) != null, addonTab);
+		return new Info(text, plain, classify(text), ChatRules.sender(STAMP.matcher(plain).replaceFirst("")), mention, count, time, ChatRules.link(plain) != null, addonTab,
+			ChatActions.of(text) == null ? coordsOf(plain) : null);
+	}
+
+	/**
+	 * @return the coordinates a player shared in a message, for its "+ Waypoint"; never in a line of the game (milestones, boss lines, rewards),
+	 *         and only in the clear formats ({@link CoordParser#inChat})
+	 */
+	private static CoordParser.Found coordsOf(String plain) {
+		if (ModFeatures.WAYPOINTS != null && !ModFeatures.WAYPOINTS.chatButtons()) {
+			return null;
+		}
+		String said = ChatRules.playerMessage(STAMP.matcher(plain).replaceFirst(""));
+		return said == null ? null : CoordParser.inChat(said);
 	}
 
 	private List<String> highlightWordsWith(String player) {
@@ -1331,7 +1453,7 @@ public class ChatFeature extends Feature implements EditableHud {
 
 	/** @return whether a right click hit a chat message, which is then copied to the clipboard as received, without the timestamp */
 	public boolean copyAt(double mouseX, double mouseY, int button) {
-		if (!isEnabled() || !copy.get() || button != 1) {
+		if (!isEnabled() || !copy.get() || button != ScreenInput.RIGHT) {
 			return false;
 		}
 		Minecraft client = Minecraft.getInstance();
@@ -1371,6 +1493,18 @@ public class ChatFeature extends Feature implements EditableHud {
 		var access = (ChatComponentAccessor) client.gui.hud.getChat();
 		GuiMessage.Line line = access.lumio$lines().get(index);
 		Info info = infoOf(line.parent());
+		double[] clicked = toChat(screenHeight, mouseX, mouseY);
+		if (info.coords() != null && decor.waypointAt(index, clicked[0], clicked[1])) {
+			ModFeatures.WAYPOINTS.addFromChat(info.coords(), info.sender());
+			return true;
+		}
+		ChatActions.Action lineAction = ChatActions.of(info.original());
+		if (lineAction != null && overWord(client, line, (mouseX - left()) / scale() - ChatLayout.textLeft(timeColumn(), heads.get()) - rowLeft(line.content()), lineAction.word())) {
+			ChatActions.used(lineAction);
+			lineAction.run().run();
+			UiSounds.click();
+			return true;
+		}
 		if (hoverActions.get()) {
 			double[] inChat = toChat(screenHeight, mouseX, mouseY);
 			int action = decor.actionAt(index, inChat[0], inChat[1]);
@@ -1385,9 +1519,20 @@ public class ChatFeature extends Feature implements EditableHud {
 				return true;
 			}
 		}
-		return links.get() && info.link() && openLink(client, line, (mouseX - left()) / scale() - ChatLayout.textLeft(timeColumn(), heads.get()));
+		return links.get() && info.link() && openLink(client, line, (mouseX - left()) / scale() - ChatLayout.textLeft(timeColumn(), heads.get()) - rowLeft(line.content()));
 	}
 
+	/** @return whether a point across a line's row is on the last place of a word in it */
+	private static boolean overWord(Minecraft client, GuiMessage.Line line, double across, String word) {
+		String text = textOf(line.content());
+		int at = text.lastIndexOf(word);
+		if (at < 0) {
+			return false;
+		}
+		int from = client.font.width(text.substring(0, at));
+		int to = from + client.font.width(word);
+		return across >= from && across < to;
+	}
 
 	/** @return whether a click on a line was on its link, which then opens after the game's own question */
 	private static boolean openLink(Minecraft client, GuiMessage.Line line, double across) {
@@ -1406,11 +1551,12 @@ public class ChatFeature extends Feature implements EditableHud {
 			URI url = URI.create(ChatRules.openable(text.substring(link[0], link[1])));
 			ConfirmLinkScreen.confirmLinkNow(client.gui.screen(), url);
 		} catch (IllegalArgumentException e) {
-			Debug.log("A link in the chat could not be read: {}", e.toString());
+			if (DebugHooks.ACTIVE) {
+				DebugHooks.log(DebugCategory.CHAT, "A link in the chat could not be read: {}", e.toString());
+			}
 		}
 		return true;
 	}
-
 
 	// ------------------------------------------------------------------------------------------------------ tabs
 
@@ -1687,7 +1833,7 @@ public class ChatFeature extends Feature implements EditableHud {
 
 	/** @return whether a tab was clicked: it is selected, and on Hypixel the chat channel switches with it */
 	public boolean clickTabs(double mouseX, double mouseY, int button) {
-		if (!isEnabled() || button != 0) {
+		if (!isEnabled() || button != ScreenInput.LEFT) {
 			return false;
 		}
 		Minecraft client = Minecraft.getInstance();
@@ -2066,7 +2212,7 @@ public class ChatFeature extends Feature implements EditableHud {
 		var pose = graphics.pose();
 		pose.pushMatrix();
 		boolean clipped = clipRows(graphics);
-		pose.translate(left(), moveY() + scrollShift());
+		pose.translate(left(), rowsY() + scrollShift());
 		pose.scale(scale, scale);
 		Ui.setZoom(scale);
 		Ui ui = new Ui(graphics, client.font, HudStyle.palette(), accentArgb(), 0f, false);
@@ -2085,6 +2231,7 @@ public class ChatFeature extends Feature implements EditableHud {
 				ui.rounded(ChatLayout.ROW_INSET, entryTop, panel - 2 * ChatLayout.ROW_INSET, entryHeight, Radius.XXS, Ui.withOpacity(ui.accent, (chosen ? 0.08f + 0.22f * flash : 0.04f)));
 				// mark the query within the line, measured with the line's styles (bold is wider)
 				var content = lines.get(index).content();
+				int textStart = textColumn + rowLeft(content);
 				StringBuilder text = new StringBuilder();
 				content.accept((position, style, codepoint) -> {
 					text.appendCodePoint(codepoint);
@@ -2101,12 +2248,12 @@ public class ChatFeature extends Feature implements EditableHud {
 					int markHeight = Math.min(entryHeight, 10);
 					if (chosen) {
 						// a full mark would hide the letters under it: they come again, white, on top of it
-						ui.ring(textColumn + x - 2, textY - 2, w + 4, markHeight + 2, 2f, 1, Ui.withOpacity(ui.accent, 0.3f));
-						ui.rounded(textColumn + x - 1, textY - 1, w + 2, markHeight, 1.5f, ui.accent);
-						graphics.text(client.font, lettersOf(content, startPoint, endPoint), textColumn + x, textY, 0xFFFFFFFF, false);
+						ui.ring(textStart + x - 2, textY - 2, w + 4, markHeight + 2, 2f, 1, Ui.withOpacity(ui.accent, 0.3f));
+						ui.rounded(textStart + x - 1, textY - 1, w + 2, markHeight, 1.5f, ui.accent);
+						graphics.text(client.font, lettersOf(content, startPoint, endPoint), textStart + x, textY, 0xFFFFFFFF, false);
 					} else {
-						ui.rounded(textColumn + x - 1, textY - 1, w + 2, markHeight, 1.5f, Ui.withOpacity(ui.accent, 0.2f));
-						ui.ring(textColumn + x - 1, textY - 1, w + 2, markHeight, 1.5f, 1, Ui.withOpacity(ui.accent, 0.53f));
+						ui.rounded(textStart + x - 1, textY - 1, w + 2, markHeight, 1.5f, Ui.withOpacity(ui.accent, 0.2f));
+						ui.ring(textStart + x - 1, textY - 1, w + 2, markHeight, 1.5f, 1, Ui.withOpacity(ui.accent, 0.53f));
 					}
 					from += needle.length();
 				}

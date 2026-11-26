@@ -60,6 +60,16 @@ public abstract class AddonPanel extends AddonFeature {
 	public void prepare(Minecraft client) {
 	}
 
+	/**
+	 * @return whether the panel is meant to be used while an inventory or another menu with slots is open (it takes clicks there, such as a
+	 *         profit panel): it then stays fully visible behind that menu, whatever the player chose for the HUD while a menu is open, unless
+	 *         the player hides this panel in menus
+	 * @since 1.26.0
+	 */
+	public boolean usedInMenus() {
+		return false;
+	}
+
 	/** @return whether the panel is shown now (outside the HUD editor) */
 	public boolean shown(Minecraft client) {
 		return true;

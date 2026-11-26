@@ -24,6 +24,28 @@ public interface Slider extends AddonSetting<Float> {
 	/** Shows the value as an amount of coins ("750k", "2.5M") and reads one typed like that. @return this */
 	Slider coins();
 
+	/**
+	 * Shows a unit after the value, so the unit stands in the value and not in the label: " s" for seconds, " ms", " blocks", " px". Only the
+	 * display; the stored value stays the number. @return this
+	 * @since 1.27.0
+	 */
+	default Slider unit(String suffix) {
+		return this;
+	}
+
+	/** Shows the lowest value, 0, as "Off", for an amount where none at all is the same as off. @return this @since 1.27.0 */
+	default Slider offAtZero() {
+		return offAtZero("Off");
+	}
+
+	/**
+	 * Shows the lowest value, 0, as a word: "Auto" where 0 leaves it to the game or the data, "Any" where 0 sets no limit. @return this
+	 * @since 1.27.0
+	 */
+	default Slider offAtZero(String shown) {
+		return this;
+	}
+
 	/** @return a value as the slider shows it */
 	String format(float value);
 }

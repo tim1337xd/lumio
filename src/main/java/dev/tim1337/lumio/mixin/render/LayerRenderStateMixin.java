@@ -47,6 +47,19 @@ public abstract class LayerRenderStateMixin implements OutlineLayer {
 	@Shadow
 	protected abstract void applyTransform(PoseStack.Pose pose);
 
+	@Shadow
+	private net.minecraft.client.resources.model.cuboid.ItemTransform itemTransform;
+
+	@Override
+	public net.minecraft.client.resources.model.cuboid.ItemTransform lumio$itemTransform() {
+		return itemTransform;
+	}
+
+	@Override
+	public void lumio$itemTransform(net.minecraft.client.resources.model.cuboid.ItemTransform transform) {
+		itemTransform = transform;
+	}
+
 	@Override
 	public void lumio$submitGlow(PoseStack pose, SubmitNodeCollector collector, OutlineStyle style) {
 		List<BakedQuad> quads = prepareQuadList();

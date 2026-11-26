@@ -6,7 +6,7 @@ import dev.tim1337.lumio.ui.Ui;
 /**
  * Draws the three dots of a break in the lyrics (see {@link LyricBreaks}), the same in the HUD and the info bar: over the break they fill one after
  * another, from dim to the lit color and a quarter larger, so the third is full just before the next line; the group breathes slowly, and at the
- * end the dots shrink and fade out before the next line comes in.
+ * end the dots shrink and fade out before the next line comes in. On top, each dot hops softly, in a wave from left to right.
  */
 final class LyricDots {
 	/** A dot's size against the line's height, the gap between dots against a dot, how much larger a full dot is, and how bright an empty one is. */
@@ -18,6 +18,10 @@ final class LyricDots {
 	private static final float BREATH = 0.08f;
 	private static final float BREATH_MS = 2_000f;
 	private static final int DOTS = 3;
+	/** The wave: each dot hops this share of its size, one wave takes this long, and each dot starts this much after the one before. */
+	static final float HOP_SHARE = 0.2f;
+	private static final float WAVE_MS = 1_100f;
+	private static final float DOT_DELAY_MS = 140f;
 
 	private LyricDots() {
 	}
@@ -31,6 +35,15 @@ final class LyricDots {
 	/** @return how large the group is now, breathing slowly between 1 and a little more, from the break's start */
 	static float breath(LyricLine line, long at) {
 		return 1f + BREATH * 0.5f * (1f - (float) Math.cos((at - line.timeMs()) / BREATH_MS * Math.PI * 2.0));
+	}
+
+	/**
+	 * @return how high a dot is in its hop now, from 0 (resting) to 1 (its top): a soft wave from left to right that keeps going while the dots
+	 *         show, smooth up and down with no stop at the bottom; the dots start one after another, so only one is at its top at a time
+	 */
+	static float hop(int index, LyricLine line, long at) {
+		float phase = (at - line.timeMs() - index * DOT_DELAY_MS) / WAVE_MS;
+		return 0.5f * (1f - (float) Math.cos(phase * Math.PI * 2.0));
 	}
 
 	/** @return how much of the group is left as the next line comes: it shrinks and fades to nothing just before it */
@@ -61,7 +74,9 @@ final class LyricDots {
 			float size = dot * (1f + FULL_GROWTH * fill) * breath * leaving;
 			float centerX = x + dot / 2f + i * step;
 			int color = Ui.withOpacity(lit | 0xFF000000, alpha * (EMPTY_ALPHA + (1f - EMPTY_ALPHA) * fill) * leaving);
-			ui.roundedSmooth(centerX - size / 2f, middleY - size / 2f, size, size, size / 2f, color);
+			// a true circle at every size, hopping on top of its fill and the group's breath
+			float lift = hop(i, line, at) * HOP_SHARE * dot * leaving;
+			ui.discAt(centerX, middleY - lift, size, color);
 		}
 	}
 }

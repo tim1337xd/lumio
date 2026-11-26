@@ -3,6 +3,7 @@ package dev.tim1337.lumio.ui;
 import dev.tim1337.lumio.api.experimental.util.ScreenInput;
 import dev.tim1337.lumio.Lumio;
 import dev.tim1337.lumio.ModFeatures;
+import dev.tim1337.lumio.menu.MenuFeature;
 import dev.tim1337.lumio.api.experimental.draw.Radius;
 import dev.tim1337.lumio.api.experimental.motion.Spring;
 import dev.tim1337.lumio.config.Feature;
@@ -55,7 +56,16 @@ public class HudEditScreen extends Screen {
 	private static final float GLOW_STRENGTH = 0.3f;
 	/** The color of the grid dots, and the size of the tile they are drawn from, in GUI pixels (a multiple of the grid). */
 	private static final int GRID_DOT = 0x38FFFFFF;
+	/** The grid shown only while dragging: fainter, as a hint of where the element snaps. */
+	private static final int GRID_DOT_DRAGGING = 0x20FFFFFF;
 	private static final int GRID_TILE = 128;
+	/** The snap guides: how strong the center line is, the "Centered" label's size and room, and the ring on a grid point. */
+	private static final float GUIDE_OPACITY = 0.85f;
+	private static final String CENTERED = "Centered";
+	private static final int GUIDE_LABEL_HEIGHT = 12;
+	private static final int GUIDE_LABEL_PAD = 5;
+	private static final int GUIDE_LABEL_GAP = 4;
+	private static final int GRID_MARK = 5;
 	/** How far the mouse must move with the button held before a drag starts, so a click still only selects. */
 	private static final int DRAG_THRESHOLD = 3;
 	/** The size range of elements in the editor, and the step sizes move in (scrolling, dragging the corner, the keys). */
@@ -66,13 +76,17 @@ public class HudEditScreen extends Screen {
 	static final float FINE_SIZE_STEP = 0.01f;
 	/** How long the size stays in view after the wheel moved it, for an element that is not selected. */
 	private static final long SIZE_SHOWN_NANOS = 1_200_000_000L;
+	private static final float FIT_TOAST_SECONDS = 2.5f;
 	private static final int CHIP_HEIGHT = 14;
+	/** The "preview" tag on example panels: its height, padding and inset from the panel's top-right corner. */
+	private static final int PREVIEW_TAG_HEIGHT = 11;
+	private static final int PREVIEW_TAG_PAD = 4;
+	private static final int PREVIEW_TAG_INSET = 3;
 	private static final int BAR_HEIGHT = 20;
 	/** How long an element picked in the list pulses on screen. */
 	private static final long PULSE_NANOS = 1_200_000_000L;
 
 	// the switches of the toolbar, kept while the game runs
-	static boolean snapOn = true;
 	static boolean gridOn;
 
 	private static boolean open;
@@ -87,6 +101,7 @@ public class HudEditScreen extends Screen {
 	final HudEditList list = new HudEditList(this);
 	final HudEditSimulate simulate = new HudEditSimulate(this);
 	final HudEditLook look = new HudEditLook(this);
+	final HudEditSnapMenu snapMenu = new HudEditSnapMenu(this);
 
 	EditableHud selected;
 	/** The elements selected together, the selected one among them, from two on. */
@@ -134,7 +149,6 @@ public class HudEditScreen extends Screen {
 	private String chipText = "";
 	private EditableHud chipElement;
 	private float chipScale = -1f;
-	private String chipSnap = "";
 	private String note = "";
 
 	public HudEditScreen() {
@@ -144,6 +158,22 @@ public class HudEditScreen extends Screen {
 	/** @return whether the editor is open; the HUD elements then show with sample content where they have none */
 	public static boolean isOpen() {
 		return open;
+	}
+
+	/** What panels asked to draw over the editor's marks this frame (their tooltips), drawn after the selection and the handles. */
+	private static final List<java.util.function.Consumer<dev.tim1337.lumio.api.draw.Canvas>> ON_TOP = new java.util.ArrayList<>();
+	/** More than this in a frame means nothing drew them (no editor frame came): the oldest are dropped. */
+	private static final int MOST_ON_TOP = 16;
+
+	/** Queues a drawing over the editor's marks for this frame; ignored while the editor is closed. */
+	public static void drawOnTop(java.util.function.Consumer<dev.tim1337.lumio.api.draw.Canvas> drawing) {
+		if (!open) {
+			return;
+		}
+		if (ON_TOP.size() >= MOST_ON_TOP) {
+			ON_TOP.clear();
+		}
+		ON_TOP.add(drawing);
 	}
 
 	/** @return whether the element is selected or dragged in the editor; elements may draw larger while selected */
@@ -167,6 +197,7 @@ public class HudEditScreen extends Screen {
 			asked = null;
 		}
 		history.finish();
+		HudEditPreview.closed();
 		open = false;
 	}
 
@@ -224,12 +255,16 @@ public class HudEditScreen extends Screen {
 			pendingAsk = null;
 		}
 		selectedNow = dragged != null ? dragged : selected;
+		HudEditPreview.noteFrame(elements, EditableHud::hudShown, HudSimulation.running() != null || asked != null);
 		Ui ui = createUi(graphics);
-		if (gridOn) {
-			drawGrid(ui);
+		drawPreviewTags(ui);
+		// the grid while it is switched on, and faintly while an element is dragged and snaps to it
+		boolean snapsToGrid = dragged != null && ModFeatures.MENU.hudSnapSetting().get() != HudSnapMode.OFF;
+		if (gridOn || snapsToGrid) {
+			drawGrid(ui, gridOn ? GRID_DOT : GRID_DOT_DRAGGING);
 		}
 		boolean overUi = toolbar.contains(mouseX, mouseY) || card.contains(mouseX, mouseY) || list.contains(mouseX, mouseY)
-			|| simulate.contains(mouseX, mouseY) || look.contains(mouseX, mouseY);
+			|| simulate.contains(mouseX, mouseY) || look.contains(mouseX, mouseY) || snapMenu.contains(mouseX, mouseY);
 		hovered = dragged == null && !overUi ? elementAt(mouseX, mouseY) : null;
 		float hover = hoverLight.follow(ui, hovered != null && hovered != selected ? 1f : 0f);
 		if (hovered != null && hovered != selected && hover > 0.01f) {
@@ -261,26 +296,51 @@ public class HudEditScreen extends Screen {
 		if (widened != null && !hasGroup() && dragged == null && widened.hudShown() && widened.hudResizableWidth()) {
 			drawWidthHandles(ui, widened, mouseX, mouseY);
 		}
-		if (dragged != null && !resizing && snapped) {
-			drawSnapNote(ui);
+		if (dragged != null && snapped) {
+			drawSnapGuides(ui, dragged);
+		}
+		if (dragged != null && !resizing) {
+			// what the element itself says while it is dragged (a bar taking a place in the stack) goes before where it is snapped
+			String status = dragged.hudDragStatus();
+			drawNote(ui, !status.isEmpty() ? status : snapped ? note : "");
 		}
 		if (selected != null && !hasGroup() && dragged == null && !overUi) {
 			drawPartChip(ui, selected, mouseX, mouseY);
 		}
+		// what panels asked to show over the marks (a tooltip), above the outline, under the editor's own bars and menus
+		for (java.util.function.Consumer<dev.tim1337.lumio.api.draw.Canvas> drawing : ON_TOP) {
+			try {
+				drawing.accept(ui);
+			} catch (RuntimeException e) {
+				// an add-on's drawing that fails is left out; the editor goes on
+				dev.tim1337.lumio.Lumio.LOGGER.warn("A drawing over the HUD editor failed and is left out", e);
+			}
+		}
+		ON_TOP.clear();
 		list.draw(ui, mouseX, mouseY);
 		card.draw(ui, mouseX, mouseY);
 		toolbar.draw(ui, mouseX, mouseY);
 		simulate.draw(ui, mouseX, mouseY);
 		look.draw(ui, mouseX, mouseY);
+		snapMenu.draw(ui, mouseX, mouseY);
 	}
 
 	/**
 	 * Draws the grid positions snap to when the grid is on: a faint dot at every position. The dots come from a small tile with many of them,
 	 * drawn a few dozen times across the screen: a dot per position every frame (thousands) made the editor stutter.
 	 */
-	private void drawGrid(Ui ui) {
-		int guiScale = Math.max(1, minecraft.getWindow().getGuiScale());
-		Identifier tile = gridTile(guiScale);
+	private void drawGrid(Ui ui, int dotColor) {
+		drawGrid(ui, width, height, dotColor);
+	}
+
+	/** The editor's grid over a screen that is not the editor (an add-on's panels being dragged), as faint as while dragging here. */
+	public static void drawDragGrid(Ui ui, int width, int height) {
+		drawGrid(ui, width, height, GRID_DOT_DRAGGING);
+	}
+
+	private static void drawGrid(Ui ui, int width, int height, int dotColor) {
+		int guiScale = Math.max(1, Minecraft.getInstance().getWindow().getGuiScale());
+		Identifier tile = gridTile(guiScale, gridStep());
 		int side = GRID_TILE * guiScale;
 		var pose = ui.graphics.pose();
 		pose.pushMatrix();
@@ -290,7 +350,7 @@ public class HudEditScreen extends Screen {
 		int down = height * guiScale;
 		for (int x = 0; x < across; x += side) {
 			for (int y = 0; y < down; y += side) {
-				ui.graphics.blit(RenderPipelines.GUI_TEXTURED, tile, x, y, 0f, 0f, side, side, side, side, side, side, GRID_DOT);
+				ui.graphics.blit(RenderPipelines.GUI_TEXTURED, tile, x, y, 0f, 0f, side, side, side, side, side, side, dotColor);
 			}
 		}
 		pose.popMatrix();
@@ -299,19 +359,21 @@ public class HudEditScreen extends Screen {
 	/** The tile of grid dots, made for one GUI scale and made again when it changes. */
 	private static Identifier gridTile;
 	private static int gridTileScale;
+	private static int gridTileStep;
 
-	private static Identifier gridTile(int guiScale) {
-		if (gridTile == null || gridTileScale != guiScale) {
+	private static Identifier gridTile(int guiScale, int step) {
+		if (gridTile == null || gridTileScale != guiScale || gridTileStep != step) {
 			var textures = Minecraft.getInstance().getTextureManager();
 			Identifier id = Lumio.id("hud_edit_grid");
 			if (gridTile != null) {
 				textures.release(id);
 			}
 			int side = GRID_TILE * guiScale;
-			NativeImage image = new NativeImage(NativeImage.Format.RGBA, side, side, false);
+			// cleared first: a new image holds whatever memory it got, which showed as garbled pictures between the dots
+			NativeImage image = new NativeImage(NativeImage.Format.RGBA, side, side, true);
 			// a white dot, one GUI pixel large, at every grid position inside the tile; the color is given when it is drawn
-			for (int x = 0; x < side; x += HudEditSnap.GRID * guiScale) {
-				for (int y = 0; y < side; y += HudEditSnap.GRID * guiScale) {
+			for (int x = 0; x < side; x += step * guiScale) {
+				for (int y = 0; y < side; y += step * guiScale) {
 					for (int dx = 0; dx < guiScale; dx++) {
 						for (int dy = 0; dy < guiScale; dy++) {
 							image.setPixelABGR(x + dx, y + dy, 0xFFFFFFFF);
@@ -322,6 +384,7 @@ public class HudEditScreen extends Screen {
 			textures.register(id, new DynamicTexture(() -> "Lumio HUD editor grid", image));
 			gridTile = id;
 			gridTileScale = guiScale;
+			gridTileStep = step;
 		}
 		return gridTile;
 	}
@@ -365,30 +428,61 @@ public class HudEditScreen extends Screen {
 	private EditableHud sizeShown;
 	private long sizeShownUntil;
 
-	/** Draws the chip above the element: its name and size, or where it is snapped while dragged. */
+	/** Draws the chip above the element: its name, and its size while it is resized (by its corner, or by the wheel a moment ago). */
 	private void drawChip(Ui ui, EditableHud element, int x, int y, int w, int h, float lit) {
-		String status = dragged == element ? element.hudDragStatus() : "";
-		String snapText = !status.isEmpty() ? status : dragged == element && !resizing && snapped ? chipSnap : "";
-		if (element != chipElement || element.hudScale() != chipScale || !snapText.equals(chipShown)) {
+		boolean sizing = dragged == element && resizing || sizeShown == element && System.nanoTime() <= sizeShownUntil;
+		if (element != chipElement || element.hudScale() != chipScale || sizing != chipSizing || element.hudAutoFit() != chipFit
+			|| element.hudFitMoved() != chipMoved) {
+			chipFit = element.hudAutoFit();
+			chipMoved = element.hudFitMoved();
 			chipElement = element;
 			chipScale = element.hudScale();
-			chipShown = snapText;
+			chipSizing = sizing;
 			String note = element.hudSizeNote();
-			chipText = element.hudName() + "  ·  " + (!snapText.isEmpty() ? snapText : note != null ? note : sizeText(chipScale));
+			chipText = HudEditLabel.text(element.hudName(), sizing, note != null ? note : sizeText(chipScale) + fitNote(element));
 		}
 		int chipWidth = ui.width(chipText) + 16;
 		int chipX = Mth.clamp(x + w / 2 - chipWidth / 2, 4, width - chipWidth - 4);
 		boolean above = y >= CHIP_HEIGHT + 10;
 		int chipY = above ? y - CHIP_HEIGHT - 6 : y + h + 6;
-		ui.rounded(chipX, chipY, chipWidth, CHIP_HEIGHT, Radius.pill(CHIP_HEIGHT), Ui.withOpacity(ui.accent, lit));
+		ui.rounded(chipX, chipY, chipWidth, CHIP_HEIGHT, Radius.box(CHIP_HEIGHT), Ui.withOpacity(ui.accent, lit));
 		ui.textMiddle(chipText, chipX + 8, chipY + CHIP_HEIGHT / 2, Ui.withOpacity(0xFFFFFFFF, lit));
 	}
 
-	private String chipShown = "";
+	private boolean chipSizing;
+	private float chipFit = 1f;
+	private boolean chipMoved;
+
+	/** @return the chip's note when the auto-fit shrinks or moves the element on this screen: "  ·  fitted 0.72×", "  ·  moved to fit" */
+	private static String fitNote(EditableHud element) {
+		boolean shrunk = element.hudAutoFit() < dev.tim1337.lumio.hud.HudFit.KEPT;
+		if (!shrunk && !element.hudFitMoved()) {
+			return "";
+		}
+		return "  ·  " + (shrunk ? "fitted " + sizeText(element.hudScale() * element.hudAutoFit()) : "") + (shrunk && element.hudFitMoved() ? ", " : "")
+			+ (element.hudFitMoved() ? "moved to fit" : "");
+	}
 
 	/** @return a size as the editor shows it: "1.10×" */
 	static String sizeText(float scale) {
 		return String.format(Locale.ROOT, "%.2f×", scale);
+	}
+
+	/** The small "preview" tag on every panel that shows example data only because the editor asked for it (All panels, Simulate, the list). */
+	private void drawPreviewTags(Ui ui) {
+		for (int i = 0; i < elements.size(); i++) {
+			EditableHud element = elements.get(i);
+			if (!HudEditPreview.preview(element, element.hudShown())) {
+				continue;
+			}
+			int[] box = element.hudBounds();
+			int tagWidth = ui.width(HudEditPreview.TAG) + 2 * PREVIEW_TAG_PAD;
+			int tagX = Mth.clamp(box[0] + box[2] - tagWidth - PREVIEW_TAG_INSET, 2, width - tagWidth - 2);
+			int tagY = Mth.clamp(box[1] + PREVIEW_TAG_INSET, 2, height - PREVIEW_TAG_HEIGHT - 2);
+			ui.rounded(tagX, tagY, tagWidth, PREVIEW_TAG_HEIGHT, Radius.box(PREVIEW_TAG_HEIGHT), Ui.withOpacity(ui.palette.popup(), 0.9f));
+			ui.ring(tagX, tagY, tagWidth, PREVIEW_TAG_HEIGHT, Radius.box(PREVIEW_TAG_HEIGHT), 1, Ui.withOpacity(ui.accent, 0.8f));
+			ui.textMiddle(HudEditPreview.TAG, tagX + PREVIEW_TAG_PAD, tagY + PREVIEW_TAG_HEIGHT / 2, ui.palette.text());
+		}
 	}
 
 	/** Draws a soft pulse around the element picked in the list, so it is found on screen. */
@@ -453,7 +547,7 @@ public class HudEditScreen extends Screen {
 			int labelWidth = ui.width(widthLabel) + 2 * EDGE_LABEL_PAD;
 			int left = Mth.clamp(Math.round(edge - labelWidth / 2f), 2, width - labelWidth - 2);
 			int top = box[1] + box[3] + EDGE_INSET + 2;
-			ui.rounded(left, top, labelWidth, EDGE_LABEL_HEIGHT, EDGE_LABEL_HEIGHT / 2f, Ui.withOpacity(ui.accent, 0.95f));
+			ui.rounded(left, top, labelWidth, EDGE_LABEL_HEIGHT, Radius.box(EDGE_LABEL_HEIGHT), Ui.withOpacity(ui.accent, 0.95f));
 			ui.textCentered(widthLabel, left + labelWidth / 2, top + EDGE_LABEL_HEIGHT / 2, 0xFFFFFFFF);
 		}
 	}
@@ -480,7 +574,7 @@ public class HudEditScreen extends Screen {
 		if (chipY < 4) {
 			chipY = Math.round(box[1] + box[3]) + PART_CHIP_GAP;
 		}
-		ui.rounded(chipX, chipY, chipWidth, PART_CHIP_HEIGHT, Radius.pill(PART_CHIP_HEIGHT), ui.accent);
+		ui.rounded(chipX, chipY, chipWidth, PART_CHIP_HEIGHT, Radius.box(PART_CHIP_HEIGHT), ui.accent);
 		ui.textCentered(PART_CHIP, chipX + chipWidth / 2, chipY + PART_CHIP_HEIGHT / 2, 0xFFFFFFFF);
 	}
 
@@ -510,13 +604,13 @@ public class HudEditScreen extends Screen {
 		FeatureManager.saveSoon();
 	}
 
-	/** Draws the note about what the dragged element is snapped to, at the bottom of the screen. The editor draws no lines. */
-	private void drawSnapNote(Ui ui) {
+	/** Draws a note about the dragged element at the bottom of the screen: what it is snapped to, or what it says itself. */
+	private void drawNote(Ui ui, String note) {
 		if (!note.isEmpty()) {
 			int noteWidth = Math.min(ui.width(note) + 20, width - 16);
 			int noteX = (width - noteWidth) / 2;
 			int noteY = height - BAR_HEIGHT - 8;
-			surface(ui, noteX, noteY, noteWidth, BAR_HEIGHT, Radius.pill(BAR_HEIGHT), 1f);
+			surface(ui, noteX, noteY, noteWidth, BAR_HEIGHT, Radius.box(BAR_HEIGHT), 1f);
 			ui.textMiddle(ui.fit(note, noteWidth - 20), noteX + 10, noteY + BAR_HEIGHT / 2, ui.palette.text());
 		}
 	}
@@ -574,7 +668,7 @@ public class HudEditScreen extends Screen {
 			int width = ui.width(edgeLabel) + 2 * EDGE_LABEL_PAD;
 			int left = Math.round(edge - width / 2f);
 			int top = box[1] + box[3] + EDGE_INSET;
-			ui.rounded(left, top, width, EDGE_LABEL_HEIGHT, EDGE_LABEL_HEIGHT / 2f, Ui.withOpacity(ui.accent, 0.95f));
+			ui.rounded(left, top, width, EDGE_LABEL_HEIGHT, Radius.box(EDGE_LABEL_HEIGHT), Ui.withOpacity(ui.accent, 0.95f));
 			ui.textCentered(edgeLabel, Math.round(edge), top + EDGE_LABEL_HEIGHT / 2, 0xFFFFFFFF);
 		}
 	}
@@ -689,7 +783,7 @@ public class HudEditScreen extends Screen {
 		int chipWidth = ui.width(text) + 12;
 		int chipX = Mth.clamp(all[0] + (all[2] - chipWidth) / 2, 2, Math.max(2, width - chipWidth - 2));
 		int chipY = all[1] - 22 < 2 ? all[1] + all[3] + 8 : all[1] - 22;
-		ui.rounded(chipX, chipY, chipWidth, 14, Radius.pill(14), Ui.withOpacity(ui.accent, lit));
+		ui.rounded(chipX, chipY, chipWidth, 14, Radius.box(14), Ui.withOpacity(ui.accent, lit));
 		ui.textMiddle(text, chipX + 6, chipY + 7, 0xFFFFFFFF);
 	}
 
@@ -757,6 +851,24 @@ public class HudEditScreen extends Screen {
 		FeatureManager.saveSoon();
 		sizeShown = element;
 		sizeShownUntil = System.nanoTime() + SIZE_SHOWN_NANOS;
+	}
+
+	/**
+	 * "Fit to screen": makes the auto-fit's places and sizes of every element the player's own, as one undo step, so the layout fits this screen
+	 * without the fit having to move anything.
+	 */
+	void fitToScreen() {
+		Feature[] features = elements.stream().map(EditableHud::hudFeature).filter(java.util.Objects::nonNull).distinct().toArray(Feature[]::new);
+		history.begin(features);
+		int changed = 0;
+		for (EditableHud element : elements) {
+			changed += element.hudApplyFit() ? 1 : 0;
+		}
+		history.finish();
+		dev.tim1337.lumio.hud.HudAutoFit.invalidate();
+		FeatureManager.saveSoon();
+		Toasts.brief("sliders", "Fit to screen", changed == 0 ? "Everything already fits this screen"
+			: changed == 1 ? "1 element now fits this screen" : changed + " elements now fit this screen", FIT_TOAST_SECONDS);
 	}
 
 	/** Puts every element back to its place, size and look, as one undo step; asked first. */
@@ -828,6 +940,12 @@ public class HudEditScreen extends Screen {
 		double mouseY = event.y();
 		int button = ScreenInput.button(event);
 		// the open menus and panels come first, top to bottom
+		if (snapMenu.isOpen()) {
+			if (snapMenu.click(mouseX, mouseY, button)) {
+				return true;
+			}
+			snapMenu.close();
+		}
 		if (look.isOpen()) {
 			if (look.click(mouseX, mouseY, button)) {
 				return true;
@@ -948,13 +1066,16 @@ public class HudEditScreen extends Screen {
 			resizeStartScale = dragged.hudScale();
 			resizeAnchorX = dragged.hudAnchorX(box);
 			resizeGrabX = (float) pressX;
+			resizeBaseWidth = box[2] / Math.max(0.01f, dragged.hudScale());
+			resizeFromCenter = resizeAnchorX != box[0];
+			startSnap(java.util.Set.of(dragged));
 		} else {
 			dragged.hudDragStart();
 			freeX = box[0];
 			freeY = box[1];
 			movedX = box[0];
 			movedY = box[1];
-			snap.start(elements, dragged, width, height);
+			startSnap(java.util.Set.of(dragged));
 		}
 		lastMouseX = pressX;
 		lastMouseY = pressY;
@@ -988,7 +1109,7 @@ public class HudEditScreen extends Screen {
 		freeY = all[1];
 		movedX = all[0];
 		movedY = all[1];
-		snap.start(elements, group, width, height);
+		startSnap(group);
 		lastMouseX = pressX;
 		lastMouseY = pressY;
 		snapped = false;
@@ -999,7 +1120,7 @@ public class HudEditScreen extends Screen {
 	public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
 		double mouseX = event.x();
 		double mouseY = event.y();
-		if (look.drag(mouseX, mouseY) || toolbar.drag(mouseX, mouseY) || card.drag(mouseX, mouseY) || list.drag(mouseX, mouseY)) {
+		if (look.drag(mouseX, mouseY) || snapMenu.drag(mouseX, mouseY) || toolbar.drag(mouseX, mouseY) || card.drag(mouseX, mouseY) || list.drag(mouseX, mouseY)) {
 			return true;
 		}
 		if (widthDragged != null) {
@@ -1027,6 +1148,16 @@ public class HudEditScreen extends Screen {
 			float now = Math.max(1f, (float) mouseX - resizeAnchorX);
 			float wanted = resizeStartScale * now / start;
 			wanted = Math.round(wanted / SIZE_STEP) * SIZE_STEP;
+			// the edge being pulled snaps like a dragged element's: to the center line, the grid, the screen's edge
+			boolean freeSize = (ScreenInput.modifiers(event.modifiers()) & ScreenInput.SHIFT) != 0 || !dragged.hudSnaps();
+			float reach = resizeBaseWidth * (resizeFromCenter ? 0.5f : 1f);
+			int[] now0 = dragged.hudBounds();
+			int end = Math.round(resizeAnchorX + reach * wanted);
+			int snappedEnd = snap.snapEnd(end, now0[1], now0[3], freeSize);
+			if (snappedEnd != end && reach > 0f) {
+				wanted = (snappedEnd - resizeAnchorX) / reach;
+			}
+			snapped = snappedEnd != end;
 			wanted = clampSize(dragged, wanted);
 			if (wanted != dragged.hudScale()) {
 				dragged.hudSetScale(wanted);
@@ -1039,14 +1170,16 @@ public class HudEditScreen extends Screen {
 		lastMouseY = mouseY;
 		// the group keeps its size from the start of the drag: an element held at the edge of the screen must not make it look smaller, so that the others would go on
 		int[] box = hasGroup() ? groupDragBox : dragged.hudBounds();
-		boolean free = (ScreenInput.modifiers(event.modifiers()) & ScreenInput.SHIFT) != 0 || !snapOn || !dragged.hudSnaps();
-		boolean nowSnapped = snap.snap(Math.round(freeX), Math.round(freeY), box[2], box[3], free, gridOn && !free, width, height);
-		if (nowSnapped && (snap.held(0) != heldBefore[0] || snap.held(1) != heldBefore[1])) {
+		boolean free = (ScreenInput.modifiers(event.modifiers()) & ScreenInput.SHIFT) != 0 || !dragged.hudSnaps();
+		boolean nowSnapped = snap.snap(Math.round(freeX), Math.round(freeY), box[2], box[3], free, width, height);
+		if (nowSnapped && (snap.heldKind(0) != heldBefore[0] || snap.heldKind(1) != heldBefore[1] || snap.heldAt(0) != heldAtBefore[0] || snap.heldAt(1) != heldAtBefore[1])) {
 			snapFeedback();
 			describeSnap();
 		}
-		heldBefore[0] = snap.held(0);
-		heldBefore[1] = snap.held(1);
+		heldBefore[0] = snap.heldKind(0);
+		heldBefore[1] = snap.heldKind(1);
+		heldAtBefore[0] = snap.heldAt(0);
+		heldAtBefore[1] = snap.heldAt(1);
 		snapped = nowSnapped;
 		int x = snap.snapped[0];
 		int y = snap.snapped[1];
@@ -1063,13 +1196,66 @@ public class HudEditScreen extends Screen {
 	}
 
 	private final int[] heldBefore = {-1, -1};
+	private final int[] heldAtBefore = new int[2];
+	/** The width of the resized element at size 1, and whether it grows from its center, for snapping the pulled edge. */
+	private float resizeBaseWidth;
+	private boolean resizeFromCenter;
 
-	/** Builds the chip and the note for the current snap, once per change: "centered", "Snapped to the screen center and the top edge". */
+	/** Gathers the snap targets for a drag or resize, as the Snap menu sets them. */
+	private void startSnap(java.util.Collection<EditableHud> moving) {
+		MenuFeature menu = ModFeatures.MENU;
+		snap.start(elements, moving, width, height, menu.hudSnapSetting().get(), gridStep(), menu.hudSnapElementsSetting().get());
+	}
+
+	/** @return the grid's spacing in GUI units, as the Snap menu sets it */
+	static int gridStep() {
+		return ModFeatures.MENU.hudGridSizeSetting().get().step();
+	}
+
+	/**
+	 * Shows what the dragged element snapped to: an accent line across the whole screen on a center line, with a short "Centered" label where
+	 * the element's own center is on it, and a ring on the grid point its corner or center sits on.
+	 */
+	private void drawSnapGuides(Ui ui, EditableHud element) {
+		int line = Ui.withOpacity(ui.accent, GUIDE_OPACITY);
+		int[] box = element.hudBounds();
+		if (snap.heldKind(0) == HudEditSnap.CENTER) {
+			int x = snap.heldAt(0);
+			ui.fill(x, 0, 1, height, line);
+			if (snap.centered(0)) {
+				// below the element, where the element's own chip above it leaves room
+				guideLabel(ui, x - guideLabelWidth(ui) / 2, Math.min(height - GUIDE_LABEL_HEIGHT - GUIDE_LABEL_GAP, box[1] + box[3] + GUIDE_LABEL_GAP));
+			}
+		}
+		if (snap.heldKind(1) == HudEditSnap.CENTER) {
+			int y = snap.heldAt(1);
+			ui.fill(0, y, width, 1, line);
+			if (snap.centered(1)) {
+				guideLabel(ui, Math.max(GUIDE_LABEL_GAP, box[0] - guideLabelWidth(ui) - GUIDE_LABEL_GAP), y + GUIDE_LABEL_GAP);
+			}
+		}
+		if (snap.onGridPoint()) {
+			int x = snap.heldAt(0);
+			int y = snap.heldAt(1);
+			ui.ring(x - GRID_MARK, y - GRID_MARK, 2 * GRID_MARK, 2 * GRID_MARK, GRID_MARK, 1, ui.accent);
+			ui.fill(x, y, 1, 1, ui.accent);
+		}
+	}
+
+	/** Draws the short "Centered" label at a place. */
+	private static void guideLabel(Ui ui, int x, int y) {
+		ui.rounded(x, y, guideLabelWidth(ui), GUIDE_LABEL_HEIGHT, Radius.XS, ui.accent);
+		ui.textMiddle(CENTERED, x + GUIDE_LABEL_PAD, y + GUIDE_LABEL_HEIGHT / 2, 0xFFFFFFFF);
+	}
+
+	private static int guideLabelWidth(Ui ui) {
+		return ui.width(CENTERED) + 2 * GUIDE_LABEL_PAD;
+	}
+
+	/** Builds the note for the current snap, once per change: "Snapped to the screen center and the top edge". */
 	private void describeSnap() {
 		String across = snap.describe(0);
 		String down = snap.describe(1);
-		chipSnap = snap.centered(0) && snap.centered(1) ? "centered" : snap.centered(0) ? "centered across" : snap.centered(1) ? "centered down"
-			: across != null ? "at " + across : down != null ? "at " + down : "";
 		String both = across != null && down != null ? (across.equals(down) ? across : across + " and " + down) : across != null ? across : down;
 		note = both == null ? "" : "Snapped to " + both + "  ·  Shift without snapping";
 	}
@@ -1086,6 +1272,7 @@ public class HudEditScreen extends Screen {
 	@Override
 	public boolean mouseReleased(MouseButtonEvent event) {
 		look.release(event.x(), event.y());
+		snapMenu.release(event.x(), event.y());
 		toolbar.release();
 		card.release();
 		list.release();
@@ -1132,7 +1319,8 @@ public class HudEditScreen extends Screen {
 		if (scrollY == 0.0) {
 			return false;
 		}
-		if (list.scroll(mouseX, mouseY, scrollY) || simulate.contains(mouseX, mouseY) || look.contains(mouseX, mouseY) || card.contains(mouseX, mouseY)) {
+		if (list.scroll(mouseX, mouseY, scrollY) || simulate.contains(mouseX, mouseY) || look.contains(mouseX, mouseY) || snapMenu.contains(mouseX, mouseY)
+			|| card.contains(mouseX, mouseY)) {
 			return true;
 		}
 		EditableHud target = dragged != null ? dragged : elementAt(mouseX, mouseY);
@@ -1169,7 +1357,9 @@ public class HudEditScreen extends Screen {
 		}
 		if (key == InputConstants.KEY_ESCAPE) {
 			// the open card, menu or panel first; with nothing open, the editor closes like Done
-			if (look.isOpen()) {
+			if (snapMenu.isOpen()) {
+				snapMenu.close();
+			} else if (look.isOpen()) {
 				look.close();
 			} else if (simulate.isOpen()) {
 				simulate.close();
@@ -1185,7 +1375,7 @@ public class HudEditScreen extends Screen {
 			return true;
 		}
 		if (hasGroup()) {
-			int step = shift ? 10 : 1;
+			int step = shift ? gridStep() : 1;
 			int dx = key == InputConstants.KEY_LEFT ? -step : key == InputConstants.KEY_RIGHT ? step : 0;
 			int dy = key == InputConstants.KEY_UP ? -step : key == InputConstants.KEY_DOWN ? step : 0;
 			if (dx != 0 || dy != 0) {
@@ -1199,7 +1389,7 @@ public class HudEditScreen extends Screen {
 				return true;
 			}
 		} else if (selected != null && selected.hudShown() && selected.hudMovable()) {
-			int step = shift ? 10 : 1;
+			int step = shift ? gridStep() : 1;
 			int dx = key == InputConstants.KEY_LEFT ? -step : key == InputConstants.KEY_RIGHT ? step : 0;
 			int dy = key == InputConstants.KEY_UP ? -step : key == InputConstants.KEY_DOWN ? step : 0;
 			if (dx != 0 || dy != 0) {

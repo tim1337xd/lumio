@@ -1,6 +1,7 @@
 package dev.tim1337.lumio.mixin.world;
 
 import dev.tim1337.lumio.render.CustomSky;
+import dev.tim1337.lumio.render.LyricOverlay;
 import dev.tim1337.lumio.render.WetGround;
 
 import org.spongepowered.asm.mixin.Mixin;
@@ -26,5 +27,6 @@ public abstract class LevelRendererCloudsMixin {
 		RenderTarget main = Minecraft.getInstance().gameRenderer.mainRenderTarget();
 		WetGround.draw(main);
 		CustomSky.drawClouds(main);
+		LyricOverlay.draw(main);
 	}
 }

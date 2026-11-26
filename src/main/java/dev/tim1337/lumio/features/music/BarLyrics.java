@@ -46,9 +46,6 @@ public final class BarLyrics {
 	private static final float BOX_ABOVE = 2.5f;
 	private static final float BOX_HEIGHT = 13f;
 	private static final float BOX_RADIUS = 4f;
-	/** Along a line without word timing the box reaches this share of an average word to each side of the sung point, at least this many characters. */
-	private static final float GLIDE_WORD_SHARE = 0.75f;
-	private static final float GLIDE_LEAST_CHARS = 2f;
 	private static final int PAUSE_ICON = 7;
 	private static final float PAUSE_GAP = 4f;
 	private static final float ARTIST_GAP = 5f;
@@ -86,6 +83,9 @@ public final class BarLyrics {
 		/** The word the box is on, by where it starts, and how much of a long word it is, worked out once per word; the box then fills it up. */
 		int fillWord = -1;
 		float longWord;
+		/** Where the fill inside the box of a long word ends, in line units; and how much the box shows (it fades once the line is over). */
+		float fillTo;
+		float boxShown = 1f;
 		// as a line ahead: where it starts from the sung line's start and where it is going, how bright and how visible it is
 		float offset;
 		float target;
@@ -405,6 +405,7 @@ public final class BarLyrics {
 		view.adlibRoom = 0f;
 		view.fillWord = -1;
 		view.longWord = 0f;
+		view.boxShown = 1f;
 		// the new line's box grows in on its first word
 		view.box.reset();
 		if (line == null) {
@@ -433,7 +434,7 @@ public final class BarLyrics {
 		view.glyphX[view.count] = cursor;
 		view.width = cursor;
 		// room for the line's adlibs, kept from the start: an adlib appearing or leaving never moves the line
-		if (music.adlibsShown()) {
+		if (BarAdlibs.keepsRoom(music.barAdlibMode(), music.adlibsShown())) {
 			for (Background part : line.backgrounds()) {
 				view.adlibRoom = Math.max(view.adlibRoom, adlibOffset() + ui.widthScaled(part.text(), AdlibLayout.SCALE));
 			}
@@ -450,7 +451,7 @@ public final class BarLyrics {
 		float total = totalWidth(view);
 		float sungX = sungX(view, view.sung);
 		if (view == current && music.highlightBox.get()) {
-			followBox(view, dt, animated);
+			followBox(view, at, dt, animated);
 		}
 		// the scroll keeps the word's box in the middle; without the box it follows the sung point
 		boolean boxed = view == current && music.highlightBox.get();
@@ -469,51 +470,64 @@ public final class BarLyrics {
 		if (at >= end) {
 			return view.count;
 		}
-		if (!view.line.words().isEmpty()) {
-			return MusicFeature.sungChars(view.line, at);
-		}
-		return view.count * Math.min(1f, Math.max(0f, (at - view.line.timeMs()) / (float) Math.max(1L, end - view.line.timeMs())));
+		// with word timings exactly, without by the estimated ones, as everywhere (see LyricSweep)
+		return MusicFeature.sungChars(view.line, at);
 	}
 
 	/**
-	 * Moves the highlight box to the word being sung; along a line without word timing it glides evenly around the sung point instead, only
-	 * forward, as the sung part only moves forward.
+	 * Moves the highlight box to the word being sung. It always frames a whole word, from the word's left edge to its right, and moves from word
+	 * to word; a long word fills up inside its box. Once the line is over or the
+	 * song is paused the box stays on the last word a moment, then fades, and the line rests in its normal color.
 	 */
-	private void followBox(View view, float dt, boolean animated) {
-		float from;
-		float to;
-		boolean glide = view.line.words().isEmpty() && view.count > 0;
-		if (glide) {
-			float slack = Math.max(GLIDE_LEAST_CHARS, view.count / (float) words(view.line.text()) * GLIDE_WORD_SHARE);
-			from = sungX(view, view.sung - slack) - BOX_PAD;
-			to = sungX(view, view.sung + slack) + BOX_PAD;
-		} else if (view.count > 0) {
-			int at = Math.max(0, Math.min(view.count - 1, (int) view.sung));
-			// between two words the box stays on the one sung last
-			if (at > 0 && Character.isWhitespace(view.line.text().charAt(at))) {
-				at--;
-			}
-			int wordStart = HighlightBox.wordStart(view.line.text(), at);
-			int wordEnd = HighlightBox.wordEnd(view.line.text(), at);
+	private void followBox(View view, long at, float dt, boolean animated) {
+		boolean timed = !view.line.words().isEmpty();
+		float from = -BOX_PAD;
+		float to = -BOX_PAD;
+		if (view.count > 0) {
+			int[] word = LyricBoxRest.word(view.line.text(), view.sung);
+			int wordStart = Math.min(word[0], view.count);
+			int wordEnd = Math.min(word[1], view.count);
 			if (wordStart != view.fillWord) {
 				view.fillWord = wordStart;
-				view.longWord = HighlightBox.longWord(wordMillis(view.line, wordStart, wordEnd));
+				// only a word with a timing of its own fills up: without one the pace through it is a guess
+				view.longWord = timed ? HighlightBox.longWord(wordMillis(view.line, wordStart, wordEnd)) : 0f;
 			}
 			from = view.glyphX[wordStart] - BOX_PAD;
 			to = view.glyphX[wordEnd] + BOX_PAD;
-			if (view.longWord > 0f) {
-				// a long word fills up: the box's end stands where the singing is in the word, so it grows over the word's sung time
-				float filled = Math.max(view.glyphX[wordStart], sungX(view, Math.min(view.sung, wordEnd))) + BOX_PAD;
-				to += (filled - to) * view.longWord;
-			}
-		} else {
-			from = -BOX_PAD;
-			to = view.width + BOX_PAD;
+			view.fillTo = view.glyphX[wordStart] + (view.glyphX[wordEnd] - view.glyphX[wordStart]) * LyricBoxRest.fill(wordStart, wordEnd, view.sung) + BOX_PAD;
 		}
+		long now = System.currentTimeMillis();
+		if (MusicService.isPlaying()) {
+			pausedSince = 0L;
+		} else if (pausedSince == 0L) {
+			pausedSince = now;
+		}
+		boolean shows = LyricBoxRest.shows(at - lineOverAt(view), pausedSince == 0L ? -1L : now - pausedSince);
+		view.boxShown = animated ? view.boxShown + ((shows ? 1f : 0f) - view.boxShown) * (1f - (float) Math.exp(-dt * BOX_FADE_RATE)) : shows ? 1f : 0f;
 		boxFrom = from;
 		boxTo = to;
-		view.box.follow(view.key, from, to, dt, animated, glide);
+		view.box.follow(view.key, from, to, dt, animated, false);
 	}
+
+	/** @return when a view's line is over, by the lyrics' clock: its last word's end, or without word timings its last estimated word's */
+	private static long lineOverAt(View view) {
+		LyricLine line = view.line;
+		if (!line.words().isEmpty()) {
+			long end = line.timeMs();
+			for (MusicService.Word word : line.words()) {
+				end = Math.max(end, word.endMs());
+			}
+			return end;
+		}
+		return line.timeMs() + LyricSweep.duration(line.text(), line.timeMs(), MusicService.nextLineStart(line));
+	}
+
+	/** When the song was paused, by the system clock; 0 while it plays. */
+	private long pausedSince;
+	/** How quickly the box fades once its line is over, per second. */
+	private static final float BOX_FADE_RATE = 7f;
+	/** The fill inside a long word's box: a lighter part of the box that grows through the word. */
+	private static final float FILL_LIGHT = 0.22f;
 
 	/** @return how long a word of a line is sung, from the first timed part in it to the end of the last one: one word can be timed in several parts */
 	private static long wordMillis(LyricLine line, int from, int to) {
@@ -560,21 +574,36 @@ public final class BarLyrics {
 	}
 
 	private void updateAdlib(long at, float dt, boolean animated) {
-		boolean on = music.adlibsShown() && (current.line != null || previous.line != null);
+		BarAdlibs.Mode mode = music.barAdlibMode();
+		boolean on = music.adlibsShown() && mode != BarAdlibs.Mode.HIDE && (current.line != null || previous.line != null);
 		Background part = on ? MusicService.backgroundAt(at) : null;
+		// "Instead of the line": only while no word of the main line is sung; an ad-lib over the line's own words waits, the line keeps its place
+		boolean mainActive = current.line != null && !LyricBreaks.is(current.line) && BarAdlibs.mainActive(at, current.line.words());
+		BarAdlibs.Shows shows = BarAdlibs.shows(mode, on, part != null, mainActive);
+		if (mode == BarAdlibs.Mode.INSTEAD && shows != BarAdlibs.Shows.ADLIB_ALONE) {
+			part = null;
+		}
+		float aloneTarget = shows == BarAdlibs.Shows.ADLIB_ALONE ? 1f : 0f;
+		alone = animated ? (alone < aloneTarget ? Math.min(aloneTarget, alone + dt / AdlibTimes.IN_SECONDS) : Math.max(aloneTarget, alone - dt / AdlibTimes.OUT_SECONDS))
+			: aloneTarget;
 		if (part != null && part != adlibPart) {
 			adlibPart = part;
 			adlibSince = at;
 		}
 		// a short adlib (a quick "hey") stays a moment after its own time, so it is seen at all
-		boolean showing = part != null || on && adlibPart != null && AdlibTimes.shown(adlibPart.startMs(), adlibPart.endMs(), adlibSince, at);
+		boolean showing = part != null
+			|| on && mode == BarAdlibs.Mode.AFTER && adlibPart != null && AdlibTimes.shown(adlibPart.startMs(), adlibPart.endMs(), adlibSince, at);
 		float target = showing ? 1f : 0f;
 		adlib = animated ? (adlib < target ? Math.min(target, adlib + dt / AdlibTimes.IN_SECONDS) : Math.max(target, adlib - dt / AdlibTimes.OUT_SECONDS)) : target;
 		if (adlib <= 0f) {
 			adlibPart = null;
 			adlibSince = AdlibTimes.NOT_SHOWN;
+			alone = 0f;
 		}
 	}
+
+	/** How far the ad-lib has taken the line's place ("Instead of the line"), from 0 to 1: the line fades as the ad-lib comes, and back. */
+	private float alone;
 
 	/**
 	 * @return whether the adlib sung now stands with a view: with the line it belongs to, by the lyrics; one sung in a gap stays with the line still
@@ -619,6 +648,14 @@ public final class BarLyrics {
 			drawSong(ui, track, view.key == PAUSED, x, top, room, alpha, color, shadow);
 			return;
 		}
+		if (alone > 0f && adlib > 0f && adlibWith(view)) {
+			// the ad-lib alone, where the line stands: the two never show in the same place, the line fades out as the ad-lib fades in
+			drawAdlibAlone(ui, x, top, room, alpha * alone * adlib, color);
+			alpha *= 1f - alone;
+			if (alpha <= 0.005f) {
+				return;
+			}
+		}
 		float total = totalWidth(view);
 		boolean cutLeft = view.scroll > 0.5f;
 		boolean cutRight = total - view.scroll > room + 0.5f;
@@ -627,7 +664,12 @@ public final class BarLyrics {
 		// a break has no box: only its dots show, in the lyrics' color
 		if (boxed && !LyricBreaks.is(view.line)) {
 			// each line has its own box: the old one fades with its line where it stood, never over the new one
-			view.box.drawWithin(ui, x - view.scroll, top - BOX_ABOVE, BOX_HEIGHT, BOX_RADIUS, lyricColor, alpha, view.scroll - BOX_PAD, view.scroll + room);
+			view.box.drawWithin(ui, x - view.scroll, top - BOX_ABOVE, BOX_HEIGHT, BOX_RADIUS, lyricColor, alpha * view.boxShown, view.scroll - BOX_PAD, view.scroll + room);
+			if (view.longWord > 0f) {
+				// a long word fills up inside its box: a lighter part from the box's start to where the singing is, never a shorter box
+				view.box.drawWithin(ui, x - view.scroll, top - BOX_ABOVE, BOX_HEIGHT, BOX_RADIUS, 0xFFFFFFFF, FILL_LIGHT * alpha * view.boxShown * view.longWord,
+					view.scroll - BOX_PAD, Math.min(view.scroll + room, view.fillTo));
+			}
 		}
 		// without the box the sung words take the lyrics color; on the box they are white or dark, whichever reads on it
 		int lit = Ui.withOpacity(boxed ? color : lyricColor, alpha);
@@ -652,12 +694,8 @@ public final class BarLyrics {
 			float sung = Math.max(0f, Math.min(1f, view.sung - i));
 			boolean onIt = boxed && view.box.covers(view.glyphX[i] + gw / 2f);
 			int before = Ui.mix(dim, lit, sung);
-			int shownColor = onIt ? onBox : before;
-			if (boxed && view.longWord > 0f && view.box.left() <= view.glyphX[i] && view.box.right() < view.glyphX[i + 1] + BOX_PAD) {
-				// at the end of a long word's box the color turns with the box's edge, not all at once per letter
-				float under = Math.max(0f, Math.min(1f, (view.box.right() - view.glyphX[i]) / Math.max(1f, gw)));
-				shownColor = Ui.mix(before, onBox, under);
-			}
+			// on the box the glyphs take its text color, as much as the box shows: once it has faded the word is as the rest of the sung line
+			int shownColor = onIt ? Ui.mix(before, onBox, view.boxShown) : before;
 			if (i >= view.limit) {
 				// the words left out while this line was ahead, coming in as it moves up
 				shownColor = Ui.withOpacity(shownColor, slideIn);
@@ -668,7 +706,7 @@ public final class BarLyrics {
 			}
 			ui.textAtScaledBold(glyph, gx, top, 1f, glyphColor);
 		}
-		if (adlib > 0f && adlibWith(view)) {
+		if (adlib > 0f && alone <= 0f && music.barAdlibMode() == BarAdlibs.Mode.AFTER && adlibWith(view)) {
 			if (adlibPart != adlibLaid) {
 				layAdlib(ui, adlibPart);
 			}
@@ -686,6 +724,24 @@ public final class BarLyrics {
 		}
 	}
 
+	/** The ad-lib sung now from the line's left, smaller and dimmer than a line, cut with the bar's fade where it is longer than the room. */
+	private void drawAdlibAlone(Ui ui, float x, float top, float room, float alpha, int color) {
+		if (adlibPart != adlibLaid) {
+			layAdlib(ui, adlibPart);
+		}
+		boolean cutRight = adlibX[adlibCount] > room + 0.5f;
+		float ay = Ui.besideTop(top, 1f, AdlibLayout.SCALE) + ADLIB_RISE;
+		for (int i = 0; i < adlibCount; i++) {
+			float gx = x + adlibX[i];
+			float gw = adlibX[i + 1] - adlibX[i];
+			if (gx > x + room) {
+				break;
+			}
+			float edge = edgeAlpha(gx + gw / 2f - x, room, false, cutRight);
+			ui.textAtScaled(adlibGlyphs[i], gx, ay, AdlibLayout.SCALE, Ui.withOpacity(color, alpha * AdlibLayout.ALPHA * edge));
+		}
+	}
+
 	/** @return how visible a glyph is at a place in the room: fading out towards an edge where the line is cut */
 	private static float edgeAlpha(float at, float room, boolean cutLeft, boolean cutRight) {
 		float alpha = 1f;
@@ -698,7 +754,7 @@ public final class BarLyrics {
 		return alpha;
 	}
 
-	/** Draws the song: a pause icon when paused, the title, and the artist dimmer after it as far as there is room. */
+	/** Draws the song: a pause icon when paused, the title, and the artist dimmer after it where both fit; else the title alone, scrolling if it is longer than the room. */
 	private void drawSong(Ui ui, MusicService.Track track, boolean paused, float x, float top, float room, float alpha, int color, boolean shadow) {
 		float cursor = x;
 		if (paused) {
@@ -708,10 +764,15 @@ public final class BarLyrics {
 		measureSong(ui, track);
 		float room2 = room - (cursor - x);
 		if (songWidth <= room2 + 0.5f) {
-			drawSongText(ui, cursor, top, alpha, color, shadow);
+			drawSongText(ui, cursor, top, alpha, color, shadow, true);
 			return;
 		}
-		// too long for the room: it moves slowly to the left and comes round again, after a rest at the start, never shortened
+		if (titleWidth <= room2 + 0.5f) {
+			// shortened before it scrolls: the title alone fits, so the artist is left out rather than cut
+			drawSongText(ui, cursor, top, alpha, color, shadow, false);
+			return;
+		}
+		// the title alone too long for the room: it moves slowly to the left and comes round again, after a rest at the start, never cut off
 		float loop = songWidth + MARQUEE_GAP;
 		float cycle = MARQUEE_REST_SECONDS + loop / MARQUEE_SPEED;
 		long cycleNanos = Math.max(1L, (long) (cycle * NANOS_PER_SECOND));
@@ -719,19 +780,19 @@ public final class BarLyrics {
 		float offset = at < MARQUEE_REST_SECONDS ? 0f : (at - MARQUEE_REST_SECONDS) * MARQUEE_SPEED;
 		ui.graphics.enableScissor(Math.round(cursor), Math.round(top) - CLIP_ABOVE, Math.round(cursor + room2), Math.round(top) + CLIP_BELOW);
 		try {
-			drawSongText(ui, cursor - offset, top, alpha, color, shadow);
-			drawSongText(ui, cursor - offset + loop, top, alpha, color, shadow);
+			drawSongText(ui, cursor - offset, top, alpha, color, shadow, true);
+			drawSongText(ui, cursor - offset + loop, top, alpha, color, shadow, true);
 		} finally {
 			ui.graphics.disableScissor();
 		}
 	}
 
-	private void drawSongText(Ui ui, float x, float top, float alpha, int color, boolean shadow) {
+	private void drawSongText(Ui ui, float x, float top, float alpha, int color, boolean shadow, boolean withArtist) {
 		if (shadow) {
 			ui.textAtScaledBold(title, x + 0.5f, top + 0.7f, 1f, Ui.withOpacity(SHADOW, alpha));
 		}
 		ui.textAtScaledBold(title, x, top, 1f, Ui.withOpacity(color, alpha));
-		if (!artist.isEmpty()) {
+		if (withArtist && !artist.isEmpty()) {
 			ui.textAtScaled(artist, x + titleWidth + ARTIST_GAP, top, 1f, Ui.withOpacity(color, alpha * ARTIST_ALPHA));
 		}
 	}

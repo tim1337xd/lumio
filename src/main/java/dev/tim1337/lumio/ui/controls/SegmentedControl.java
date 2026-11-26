@@ -15,7 +15,7 @@ import java.util.List;
  * in bold, as the selected one is drawn, so nothing moves when the selection changes. Choices that do not fit turn into a dropdown instead of
  * being squeezed.
  */
-public class SegmentedControl<E extends Enum<E>> extends Control {
+public final class SegmentedControl<E extends Enum<E>> extends Control {
 	private static final int HEIGHT = 22;
 	private static final int PADDING = 8;
 	private static final int LEAST_PADDING = 4;
@@ -23,6 +23,8 @@ public class SegmentedControl<E extends Enum<E>> extends Control {
 
 	private final EnumSetting<E> setting;
 	private final Runnable onChanged;
+	/** How strong the name of a choice that cannot be made now is. */
+	private static final float UNAVAILABLE_OPACITY = 0.4f;
 	private final List<E> choices;
 	private final int[] textWidths;
 	private final int[] edges;
@@ -59,7 +61,7 @@ public class SegmentedControl<E extends Enum<E>> extends Control {
 	protected int measure(Ui ui, int width) {
 		measureTexts(ui);
 		boolean wasCollapsed = collapsed;
-		collapsed = !SegmentFit.fits(width, textWidths, INSET, LEAST_PADDING);
+		collapsed = SegmentFit.evenWidth(textWidths, INSET, LEAST_PADDING) > width;
 		if (collapsed) {
 			dropdown.place(ui, x, y, width);
 		} else if (wasCollapsed) {
@@ -71,6 +73,12 @@ public class SegmentedControl<E extends Enum<E>> extends Control {
 	@Override
 	public boolean keepsWidth() {
 		return true;
+	}
+
+	@Override
+	public int standardNeed(Ui ui) {
+		measureTexts(ui);
+		return SegmentFit.evenWidth(textWidths, INSET, LEAST_PADDING);
 	}
 
 	@Override
@@ -87,7 +95,8 @@ public class SegmentedControl<E extends Enum<E>> extends Control {
 			return;
 		}
 		measureTexts(ui);
-		SegmentFit.edges(x, width, textWidths, INSET, edges);
+		// even cells, every option centered in its own: a choice of four is the same box as one of three, with narrower cells
+		SegmentFit.evenEdges(x, width, textWidths.length, INSET, edges);
 		edgesKnown = true;
 		int selected = choices.indexOf(setting.get());
 
@@ -111,6 +120,9 @@ public class SegmentedControl<E extends Enum<E>> extends Control {
 			float h = hover(ui, i, mouseX >= edges[i] && mouseX < edges[i + 1] && mouseY >= y && mouseY < y + height);
 			if (i == selected) {
 				ui.textCenteredBold(name, (edges[i] + edges[i + 1]) / 2f, middleY, ui.palette.onPill());
+			} else if (setting.unavailable(choices.get(i))) {
+				// a choice that cannot be made here stays in its place, faint, and does not light up
+				ui.textCentered(name, (edges[i] + edges[i + 1]) / 2, middleY, Ui.withOpacity(ui.palette.textSecondary(), UNAVAILABLE_OPACITY));
 			} else {
 				ui.textCentered(name, (edges[i] + edges[i + 1]) / 2, middleY, Ui.mix(ui.palette.textSecondary(), ui.palette.text(), h));
 			}
@@ -163,7 +175,7 @@ public class SegmentedControl<E extends Enum<E>> extends Control {
 		// use the edges of the last frame, the only time they were measured with the font
 		for (int i = 0; edgesKnown && i < choices.size(); i++) {
 			if (mouseX < edges[i + 1]) {
-				if (choices.get(i) != setting.get()) {
+				if (choices.get(i) != setting.get() && !setting.unavailable(choices.get(i))) {
 					setting.set(choices.get(i));
 					UiSounds.tick((float) i / Math.max(1, choices.size() - 1));
 					onChanged.run();

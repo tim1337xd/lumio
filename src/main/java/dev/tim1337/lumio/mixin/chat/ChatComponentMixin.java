@@ -97,7 +97,7 @@ public abstract class ChatComponentMixin {
 	/** The game's rows while it draws come from its spacing option, not from {@link #getLineHeight}: they get the same height, so the text lies in the rows all else goes by. */
 	@ModifyExpressionValue(method = "extractRenderState(Lnet/minecraft/client/gui/components/ChatComponent$ChatGraphicsAccess;IILnet/minecraft/client/gui/components/ChatComponent$DisplayMode;)V",
 		at = @At(value = "INVOKE", target = "Ljava/lang/Double;doubleValue()D"))
-	private double lumio$rows(double spacing) {
+	private double lumio$rowSpacing(double spacing) {
 		ChatFeature chat = ModFeatures.CHAT;
 		return chat == null || !chat.isEnabled() ? spacing : ChatLayout.gameSpacing(getLineHeight());
 	}
@@ -115,7 +115,7 @@ public abstract class ChatComponentMixin {
 		at = @At("HEAD"), argsOnly = true)
 	private ChatComponent.ChatGraphicsAccess lumio$look(ChatComponent.ChatGraphicsAccess access) {
 		ChatFeature chat = ModFeatures.CHAT;
-		return chat == null || !chat.isEnabled() ? access : new ChatLookAccess(access, chat.moveX(), chat.moveY() + chat.scrollShift(), chat.textLift());
+		return chat == null || !chat.isEnabled() ? access : new ChatLookAccess(access, chat.moveX(), chat.rowsY() + chat.scrollShift(), chat.textLift(), chat::rowLeft);
 	}
 
 	/** The game moved its counter of lines scrolled, as it does for a new line while the player is scrolled up. */
@@ -144,7 +144,7 @@ public abstract class ChatComponentMixin {
 
 	/** While the lines stand between two places, the row coming into view is drawn too. */
 	@ModifyExpressionValue(method = "forEachLine", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/components/ChatComponent;getLinesPerPage()I"))
-	private int lumio$rows(int perPage) {
+	private int lumio$rowsDrawn(int perPage) {
 		ChatFeature chat = ModFeatures.CHAT;
 		return chat == null || !chat.isEnabled() ? perPage : chat.rowsDrawn(perPage);
 	}
@@ -160,17 +160,18 @@ public abstract class ChatComponentMixin {
 
 	/**
 	 * The chat is laid out from the screen height passed here (40 above it). Where the mod's status bars are in the way, a smaller height is passed
-	 * so the chat sits above them. Rendering and click handling both go through this method, so lines are clicked where they are shown.
+	 * so the chat sits above them, unless the player chose to have the chat over the hotbar. Rendering and click handling both go through this
+	 * method, so lines are clicked where they are shown.
 	 */
 	@ModifyVariable(method = "extractRenderState(Lnet/minecraft/client/gui/components/ChatComponent$ChatGraphicsAccess;IILnet/minecraft/client/gui/components/ChatComponent$DisplayMode;)V",
 		at = @At("HEAD"), argsOnly = true, ordinal = 0)
 	private int lumio$aboveBars(int screenHeight) {
 		StatusBarsHudFeature bars = ModFeatures.STATUS;
-		if (bars == null) {
+		ChatFeature chat = ModFeatures.CHAT;
+		if (bars == null || chat != null && chat.overHotbar()) {
 			return screenHeight;
 		}
 		int bottom = screenHeight - 40;
-		ChatFeature chat = ModFeatures.CHAT;
 		return screenHeight - bars.chatLift(bottom, bottom - getHeight(), chat != null && chat.isEnabled() ? chat.liftWidth() : getWidth() + 8);
 	}
 

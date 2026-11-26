@@ -38,20 +38,12 @@ public final class RadianceLook {
 	private static final long SHORTEST_ECHO_NANOS = 90_000_000L;
 	private static final long LONGEST_ECHO_NANOS = 220_000_000L;
 
-	/** What is left of a swing's fan is made from the first part of the swing only, so it is gone before the arm is back. */
-	private static final float FAN_SHARE = 0.6f;
-
 	private RadianceLook() {
 	}
 
 	/** @return how far back an echo of a length (0 to 1) reaches */
 	public static long echoSpanNanos(float length) {
 		return SHORTEST_ECHO_NANOS + (long) ((LONGEST_ECHO_NANOS - SHORTEST_ECHO_NANOS) * Mth.clamp(length, 0f, 1f));
-	}
-
-	/** @return for how long after a swing starts it leaves copies; each of them is then gone within the span */
-	public static long fanNanos(float length) {
-		return (long) (echoSpanNanos(length) * FAN_SHARE);
 	}
 
 	/** Changes of style: the old one fades out, then the new one fades in. */

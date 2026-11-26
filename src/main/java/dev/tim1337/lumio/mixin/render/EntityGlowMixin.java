@@ -2,6 +2,7 @@ package dev.tim1337.lumio.mixin.render;
 
 import dev.tim1337.lumio.addon.Addons;
 import dev.tim1337.lumio.api.EntityHighlighter;
+import dev.tim1337.lumio.render.HighlightOutlines;
 
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -21,6 +22,8 @@ public abstract class EntityGlowMixin {
 	private void lumio$addonGlow(Entity entity, CallbackInfoReturnable<Boolean> cir) {
 		for (EntityHighlighter highlighter : Addons.highlighters()) {
 			if (highlighter.glows(entity)) {
+				// asked while the frame is extracted, before its outlines are drawn: whether they are Lumio's this frame, and how wide
+				HighlightOutlines.ask(highlighter.outlineWidth(entity), highlighter.glowWidth(entity));
 				cir.setReturnValue(true);
 				return;
 			}

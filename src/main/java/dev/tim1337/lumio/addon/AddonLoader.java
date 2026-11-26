@@ -5,11 +5,12 @@ import dev.tim1337.lumio.api.AddonInfo;
 import dev.tim1337.lumio.api.LumioAddon;
 import dev.tim1337.lumio.api.LumioApi;
 import dev.tim1337.lumio.api.experimental.util.Logs;
+import dev.tim1337.lumio.util.ModMeta;
+import dev.tim1337.lumio.util.ModVersion;
 
 import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.loader.api.ModContainer;
 import net.fabricmc.loader.api.entrypoint.EntrypointContainer;
-import net.fabricmc.loader.api.metadata.CustomValue;
 import net.fabricmc.loader.api.metadata.ModMetadata;
 
 import java.util.ArrayList;
@@ -80,8 +81,8 @@ public final class AddonLoader {
 
 	/** @return the jar's build number for the log, or nothing */
 	private static String buildOf(ModMetadata meta) {
-		CustomValue build = meta.getCustomValue("lumio:build");
-		return build != null && build.getType() == CustomValue.CvType.STRING ? " (build " + build.getAsString() + ")" : "";
+		String build = ModMeta.string(meta, ModVersion.BUILD_KEY, null);
+		return build == null ? "" : " (build " + build + ")";
 	}
 
 	/** @return the add-on's own description, or the one of the mod that brings it */
@@ -91,8 +92,7 @@ public final class AddonLoader {
 			return own;
 		}
 		ModMetadata meta = provider.getMetadata();
-		CustomValue range = meta.getCustomValue(API_RANGE_KEY);
-		String apiRange = range != null && range.getType() == CustomValue.CvType.STRING ? range.getAsString() : "*";
+		String apiRange = ModMeta.string(meta, API_RANGE_KEY, "*");
 		return new AddonInfo(meta.getId(), meta.getName(), meta.getVersion().getFriendlyString(), apiRange, meta.getDescription());
 	}
 }

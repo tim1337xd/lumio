@@ -73,14 +73,99 @@ class TabLayoutTest {
 	}
 
 	@Test
-	void masonryPutsEachCardInTheShortestColumn() {
+	void aCardsColumnComesFromItsSlotNotFromHeights() {
+		// "shortest column first" put the fourth card under the second; by slot each card has its own column, whatever the heights
 		TabLayout.Masonry masonry = TabLayout.masonry(new int[]{100, 40, 40, 40}, 2, 5);
 		assertEquals(0, masonry.column()[0]);
 		assertEquals(1, masonry.column()[1]);
-		assertEquals(1, masonry.column()[2]);
-		assertEquals(45, masonry.top()[2]);
+		assertEquals(0, masonry.column()[2]);
+		assertEquals(105, masonry.top()[2]);
 		assertEquals(1, masonry.column()[3]);
-		assertEquals(130, masonry.height());
+		assertEquals(45, masonry.top()[3]);
+		assertEquals(145, masonry.height());
+	}
+
+	@Test
+	void cardsStayInTheirColumnsWhenCardsAppearDisappearGrowAndShrink() {
+		// Area 0, Profile 1, Pet 2, Dungeons 3, Essence 4, Party 6: three columns
+		int[] slots = {0, 1, 2, 3, 4, 6};
+		int[] heights = {40, 60, 30, 50, 30, 80};
+		TabLayout.Masonry all = TabLayout.slotted(heights, slots, 3, 5);
+		assertEquals(0, all.column()[0]);
+		assertEquals(1, all.column()[1]);
+		assertEquals(2, all.column()[2]);
+		assertEquals(0, all.column()[3]);
+		assertEquals(1, all.column()[4]);
+		assertEquals(0, all.column()[5]);
+		// Dungeons is gone (another island): Party moves up in its column, never to another one
+		TabLayout.Masonry without = TabLayout.slotted(new int[]{40, 60, 30, 30, 80}, new int[]{0, 1, 2, 4, 6}, 3, 5);
+		assertEquals(0, without.column()[4]);
+		assertEquals(45, without.top()[4]);
+		assertEquals(1, without.column()[3]);
+		// a card grows: only the cards below it in its column move
+		int[] grown = heights.clone();
+		grown[0] = 90;
+		TabLayout.Masonry after = TabLayout.slotted(grown, slots, 3, 5);
+		for (int i = 0; i < slots.length; i++) {
+			assertEquals(all.column()[i], after.column()[i]);
+		}
+		assertEquals(all.top()[3] + 50, after.top()[3]);
+		assertEquals(all.top()[5] + 50, after.top()[5]);
+		assertEquals(all.top()[1], after.top()[1]);
+		assertEquals(all.top()[4], after.top()[4]);
+		assertEquals(all.top()[2], after.top()[2]);
+		// it shrinks again: back where they were
+		TabLayout.Masonry back = TabLayout.slotted(heights, slots, 3, 5);
+		assertEquals(all.top()[5], back.top()[5]);
+		// a card that appears later (RNG Meter, slot 5) takes its own place and moves no other card to another column
+		TabLayout.Masonry more = TabLayout.slotted(new int[]{40, 60, 30, 50, 30, 80, 20}, new int[]{0, 1, 2, 3, 4, 6, 5}, 3, 5);
+		assertEquals(2, more.column()[6]);
+		for (int i = 0; i < slots.length; i++) {
+			assertEquals(all.column()[i], more.column()[i]);
+			assertEquals(all.top()[i], more.top()[i]);
+		}
+		// the order the cards are read in does not matter
+		TabLayout.Masonry shuffled = TabLayout.slotted(new int[]{80, 30, 40}, new int[]{6, 4, 0}, 3, 5);
+		assertEquals(0, shuffled.column()[0]);
+		assertEquals(45, shuffled.top()[0]);
+		assertEquals(0, shuffled.top()[2]);
+	}
+
+	@Test
+	void theCardColumnsStayWhileTheScreenDoes() {
+		int[] slots = TabLayout.inOrder(MANY.length);
+		TabLayout.Plan first = TabLayout.plan(20, MANY, slots, SIZES, WIDE, TALL, 0, 0, 0);
+		assertFalse(first.cardsBelow());
+		// the cards got much taller: with the columns kept, none is added or taken away
+		int[] taller = MANY.clone();
+		for (int i = 0; i < taller.length; i++) {
+			taller[i] *= 3;
+		}
+		TabLayout.Plan kept = TabLayout.plan(20, taller, slots, SIZES, WIDE, TALL, 0, 0, first.cardColumns());
+		assertEquals(first.cardColumns(), kept.cardColumns());
+	}
+
+	@Test
+	void cardsWithoutAPlaceGetOneAfterTheKnownOnesAndKeepIt() {
+		TabCardSlots slots = new TabCardSlots();
+		assertEquals(2, slots.slot("Pet", 2));
+		int mystery = slots.slot("Mystery", -1);
+		int other = slots.slot("Other", -1);
+		assertEquals(TabCardSlots.UNKNOWN_FROM, mystery);
+		assertEquals(TabCardSlots.UNKNOWN_FROM + 1, other);
+		// seen again, in another order, after other cards came and went: the same places
+		assertEquals(other, slots.slot("Other", -1));
+		assertEquals(mystery, slots.slot("Mystery", -1));
+		// another world counts anew
+		slots.reset();
+		assertEquals(TabCardSlots.UNKNOWN_FROM, slots.slot("Other", -1));
+	}
+
+	@Test
+	void anEntryWithoutADisplayNameIsNoInfoLine() {
+		// an NPC the server lists for a moment under a random name ("9jcuiw4ny4") has none; the info columns' lines all have one
+		assertFalse(TabListHudFeature.infoLine(false));
+		assertTrue(TabListHudFeature.infoLine(true));
 	}
 
 	@Test

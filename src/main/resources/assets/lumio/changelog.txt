@@ -1,4 +1,33 @@
-## 1.0.0 Beta
+## 1.0.0-beta.2 | 2026-11-25
+> ! Coming from Beta 1? Install this one by hand once: replace the old jar. From Beta 2 on, Lumio tells you about new versions itself.
+> Second beta: waypoints, a new way to show lyrics in the world, the Molten sky and verified updates.
+# highlight
++ Waypoints: mark places, plan routes and share lists @waypoints
+# highlight
++ Cut-out lyrics in the world: word by word, like paper cut-outs @music
+# highlight
++ Molten, a new sky style with glowing lines by day and night @sky
++ Camera and Visual Filter: full bright, less clutter and fog @visual_filter
+# highlight
++ Updates are checked at every start and verified with a signature; nothing downloads without your click
++ What is new: a window of what changed; a dot on Home shows when something is new
+* Lyrics in the world stay in place, turn to face you and fit their size to the room
+* Cut-out: a box only on a line's key word, and a glow you can turn off @music
+* Sky: layered clouds, a new aurora and calmer stars @sky
+* Menu: a top bar, back buttons and history; settings show only what applies
+* Chat: a wide chat keeps its place over the hotbar instead of moving up; moving up is still a choice @chat
+* The game's own screens get Lumio's boxes, sliders and switches
+* A fresh install starts with a new look and default settings; yours stay as they are
+* Better performance for the menu and its glass on weaker graphics cards
+! Lyrics in the world no longer disappear when you turn, walk or the cinematic camera cuts, and sung lines leave instead of piling up
+! Lyrics in the world no longer skip words when a line repeats
+! Songs with only line timings move word by word again
+! Bows are held like bows; Rejoin and quick play start clean
+! Paged menus (Wardrobe, storage, Auction House) no longer flicker when you turn a page
+! The sky no longer pops or vanishes under an overhang or on the Crimson Isle; server icons fit the text
+! Smaller fixes for the HUD theme, chat, clouds, lyrics, menu, scoreboard and loading screen
+
+## 1.0.0-beta.1 | 2026-11-07
 + 3D clouds, aurora and shooting stars that never jump
 + Fireflies at night, rain with wet ground
 + Trails, a glow on the held item, its size, a block overlay

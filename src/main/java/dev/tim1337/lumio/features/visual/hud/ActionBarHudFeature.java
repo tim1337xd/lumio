@@ -42,15 +42,15 @@ public class ActionBarHudFeature extends HudPanelFeature {
 	private static final float DOCK_REACH = 24f;
 	private static final int MAX_TEXT = 360;
 
-	private final FloatSetting seconds = add(new FloatSetting("seconds", Component.literal("Display time"), 3f, 1f, 8f, 1), "General", "In seconds, after the last text");
+	private final FloatSetting seconds = add(new FloatSetting("seconds", Component.literal("Duration"), 3f, 1f, 8f, 1).unit(" s"), "General", "After the last text");
 	private final EnumSetting<BarFont> font = add(new EnumSetting<>("font", Component.literal("Font"), BarFont.MENU,
 		BarFont::displayName, EnumSetting.Style.SEGMENTED), "General");
 
 	/** Whether the text sits in the stack above the hotbar, above the item name (otherwise where it was placed in the editor). */
 	private final BooleanSetting docked = add(new BooleanSetting("docked", Component.literal("Above the hotbar"), true), "General");
 
-	private final BooleanSetting hideText = add(new BooleanSetting("hide_parts", Component.literal("Hide duplicate stats"), true), "Content",
-		"Leaves out what the status bars show");
+	private final BooleanSetting hideText = add(new BooleanSetting("hide_parts", Component.literal("Skip bar stats"), true), "Content",
+		null);
 	private final BooleanSetting removeHealth = new BooleanSetting("remove_health", Component.literal("Health"), true, BooleanSetting.Style.CHECKBOX);
 	private final BooleanSetting removeMana = new BooleanSetting("remove_mana", Component.literal("Mana"), true, BooleanSetting.Style.CHECKBOX);
 	private final BooleanSetting removeDefense = new BooleanSetting("remove_defense", Component.literal("Defense"), true, BooleanSetting.Style.CHECKBOX);
@@ -136,12 +136,15 @@ public class ActionBarHudFeature extends HudPanelFeature {
 	private float visible;
 
 	public ActionBarHudFeature() {
-		super("action_bar_hud", "Text above the hotbar", "What the server writes above the hotbar, as a panel that moves and is animated.", false, Anchor.CENTER, true, 0f, 94f);
+		super("action_bar_hud", "Text above the hotbar", "The text above the hotbar, as a panel.", false, Anchor.CENTER, true, 0f, 94f);
 		iconRgb(SystemColors.TEAL_RGB);
 		iconName("text");
-		summary("What the server writes above the hotbar, as a panel");
+		summary("The text above the hotbar, as a panel");
 		removeWhat.under(hideText);
 		docked.visibleWhen(() -> false);
+		glowAndDepthNeedBackground();
+		// the pill has an opacity of its own and does not use the panels' see-through
+		seeThrough.visibleWhen(() -> false);
 	}
 
 	@Override

@@ -7,59 +7,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
-/** What Auto picks and when it may change, and that the sky stays steady through walking, warps and jumps of time. */
+/** That the sky stays steady through walking, warps and jumps of time. */
 class SkyRulesTest {
 	private static final float DAY = 0.8f;
 	private static final float NIGHT = -0.8f;
-
-	@Test
-	void dayHasCloudsAndAClearNightTheLights() {
-		SkyLook.AutoPick pick = new SkyLook.AutoPick();
-		assertEquals(SkyLook.Pick.CLOUDS, pick.update(DAY, 0f));
-		SkyLook.Pick night = pick.update(NIGHT, 0f);
-		assertTrue(night == SkyLook.Pick.AURORA || night == SkyLook.Pick.STARS);
-	}
-
-	@Test
-	void rainHasClouds() {
-		SkyLook.AutoPick pick = new SkyLook.AutoPick();
-		pick.update(NIGHT, 0f);
-		assertEquals(SkyLook.Pick.CLOUDS, pick.update(NIGHT, 1f));
-	}
-
-	@Test
-	void theNightSkiesTakeTurns() {
-		SkyLook.AutoPick pick = new SkyLook.AutoPick();
-		pick.update(DAY, 0f);
-		SkyLook.Pick first = pick.update(NIGHT, 0f);
-		pick.update(DAY, 0f);
-		SkyLook.Pick second = pick.update(NIGHT, 0f);
-		assertNotEquals(first, second);
-	}
-
-	@Test
-	void autoStaysThroughTheNightAndTheDay() {
-		SkyLook.AutoPick pick = new SkyLook.AutoPick();
-		pick.update(DAY, 0f);
-		SkyLook.Pick night = pick.update(NIGHT, 0f);
-		for (float sun = -0.8f; sun < -0.1f; sun += 0.01f) {
-			assertEquals(night, pick.update(sun, 0f));
-		}
-		pick.update(DAY, 0f);
-		for (float sun = 0.1f; sun < 1f; sun += 0.01f) {
-			assertEquals(SkyLook.Pick.CLOUDS, pick.update(sun, 0.1f));
-		}
-	}
-
-	@Test
-	void hoveringAroundDuskOrALittleRainDoesNotFlip() {
-		SkyLook.AutoPick pick = new SkyLook.AutoPick();
-		pick.update(NIGHT, 0f);
-		SkyLook.Pick night = pick.update(-0.06f, 0f);
-		for (int i = 0; i < 200; i++) {
-			assertEquals(night, pick.update(i % 2 == 0 ? 0.04f : -0.04f, i % 2 == 0 ? 0.3f : 0.4f));
-		}
-	}
 
 	@Test
 	void walkingMovesTheEyeWithTheCamera() {
@@ -100,7 +51,7 @@ class SkyRulesTest {
 		eye.update(0, 170, 0, 0.0);
 		assertEquals(70.0, eye.y(), 0.001);
 		double before = eye.y();
-		for (int i = 0; i < 400; i++) {
+		for (int i = 0; i < 1600; i++) {
 			eye.update(0, 170, 0, 0.05);
 			assertTrue(Math.abs(eye.y() - before) < 2.0, "step " + i);
 			before = eye.y();
@@ -117,7 +68,7 @@ class SkyRulesTest {
 		assertTrue(clock.settled());
 		// a jump: the old places stay while it fades out, then the new ones come at once, never one between
 		float shown = 1f;
-		for (int i = 0; i < 4; i++) {
+		for (int i = 0; i < Math.round(SkyLook.SkyClock.FADE_SECONDS / 0.05f) - 1; i++) {
 			clock.update(3f, 4f, 3f, 7, 0.05f);
 			assertEquals(1.0003f, clock.sun(), 1e-6f);
 			assertTrue(clock.shown() < shown);
@@ -127,11 +78,35 @@ class SkyRulesTest {
 		assertEquals(3f, clock.sun(), 1e-6f);
 		assertEquals(4f, clock.moon(), 1e-6f);
 		assertEquals(3f, clock.stars(), 1e-6f);
-		for (int i = 0; i < 6; i++) {
+		for (int i = 0; i <= Math.round(SkyLook.SkyClock.FADE_SECONDS / 0.05f); i++) {
 			clock.update(3f, 4f, 3f, 7, 0.05f);
 		}
 		assertEquals(1f, clock.shown(), 1e-6f);
 		assertTrue(clock.settled());
+	}
+
+	@Test
+	void theLightOfTheSkyGlidesThroughAJump() {
+		SkyLook.SkyClock clock = new SkyLook.SkyClock();
+		clock.update(1f, 2f, 1f, 7, 0.05f);
+		float before = clock.lightSun();
+		float biggest = 0f;
+		for (int i = 0; i < 1600; i++) {
+			clock.update(3f, 4f, 3f, 7, 0.016f);
+			biggest = Math.max(biggest, Math.abs(clock.lightSun() - before));
+			before = clock.lightSun();
+		}
+		assertTrue(biggest < 0.03f, "no frame moves it far: " + biggest);
+		assertEquals(3f, clock.lightSun(), 0.01f, "and it arrives");
+	}
+
+	@Test
+	void aSmallCorrectionOfTheServerGlides() {
+		SkyLook.SkyClock clock = new SkyLook.SkyClock();
+		clock.update(1f, 2f, 1f, 7, 0.016f);
+		clock.update(1.01f, 2.01f, 1.01f, 7, 0.016f);
+		assertTrue(clock.settled(), "no jump to hide");
+		assertTrue(clock.sun() > 1f && clock.sun() < 1.002f, "the sun does not hop: " + clock.sun());
 	}
 
 	@Test
@@ -152,13 +127,112 @@ class SkyRulesTest {
 		assertTrue(clock.settled());
 	}
 
+	/** An island world of the Nether's kind: no bedrock in the top layer anywhere, whatever is built below it. */
+	private static final SkyLook.TopLayer ISLAND = new SkyLook.TopLayer() {
+		@Override
+		public boolean loaded(int chunkX, int chunkZ) {
+			return true;
+		}
+
+		@Override
+		public boolean bedrock(int x, int z) {
+			return false;
+		}
+	};
+
+	/** The vanilla Nether: its top layer is bedrock everywhere. */
+	private static final SkyLook.TopLayer NETHER = new SkyLook.TopLayer() {
+		@Override
+		public boolean loaded(int chunkX, int chunkZ) {
+			return true;
+		}
+
+		@Override
+		public boolean bedrock(int x, int z) {
+			return true;
+		}
+	};
+
 	@Test
-	void theNetherIsOpenOnlyWithNothingAbove() {
-		assertTrue(SkyLook.openOverNether(0, 0), "an island: nothing above");
-		assertTrue(SkyLook.openOverNether(-20, 4));
-		assertTrue(SkyLook.openOverNether(4, 2), "a small roof: open around");
-		assertFalse(SkyLook.openOverNether(60, 0), "the roof of the Nether");
-		assertFalse(SkyLook.openOverNether(3, 1));
+	void noPlaceOnAnIslandWithoutACeilingTurnsTheSkyOff() {
+		SkyLook.Ceiling ceiling = new SkyLook.Ceiling();
+		Object island = new Object();
+		for (int chunkX = -40; chunkX <= 40; chunkX += 3) {
+			for (int chunkZ = -40; chunkZ <= 40; chunkZ += 3) {
+				ceiling.look(island, chunkX, chunkZ, ISLAND);
+				assertTrue(ceiling.hasSky(), "the sky at chunk " + chunkX + ", " + chunkZ);
+			}
+		}
+	}
+
+	@Test
+	void theVanillaNetherHasNoSky() {
+		SkyLook.Ceiling ceiling = new SkyLook.Ceiling();
+		Object nether = new Object();
+		ceiling.look(nether, 0, 0, NETHER);
+		assertTrue(ceiling.decided());
+		assertFalse(ceiling.hasSky());
+		ceiling.look(nether, 30, -12, NETHER);
+		assertFalse(ceiling.hasSky(), "anywhere in it");
+	}
+
+	@Test
+	void aFewBedrockColumnsAreNoCeiling() {
+		SkyLook.Ceiling ceiling = new SkyLook.Ceiling();
+		// bedrock in the top layer of one chunk in five, such as a build of a server's island
+		ceiling.look(new Object(), 0, 0, new SkyLook.TopLayer() {
+			@Override
+			public boolean loaded(int chunkX, int chunkZ) {
+				return true;
+			}
+
+			@Override
+			public boolean bedrock(int x, int z) {
+				return Math.floorMod(x >> 4, 5) == 0;
+			}
+		});
+		assertTrue(ceiling.hasSky());
+	}
+
+	@Test
+	void theDecisionIsMadeOncePerWorld() {
+		SkyLook.Ceiling ceiling = new SkyLook.Ceiling();
+		Object island = new Object();
+		ceiling.look(island, 0, 0, ISLAND);
+		assertTrue(ceiling.decidedFor(island));
+		// in the same world nothing changes it, not even bedrock above wherever the player goes next
+		ceiling.look(island, 5, 5, NETHER);
+		assertTrue(ceiling.hasSky(), "kept until the player leaves the world");
+		// another world is looked at anew
+		Object nether = new Object();
+		assertFalse(ceiling.decidedFor(nether));
+		ceiling.look(nether, 0, 0, NETHER);
+		assertFalse(ceiling.hasSky());
+		ceiling.look(nether, 0, 0, ISLAND);
+		assertFalse(ceiling.hasSky(), "kept in that world too");
+	}
+
+	@Test
+	void theSkyWaitsUntilEnoughIsLoaded() {
+		SkyLook.Ceiling ceiling = new SkyLook.Ceiling();
+		Object world = new Object();
+		// only the player's chunk: no decision yet, and no sky, so the vanilla Nether never flashes one
+		SkyLook.TopLayer onlyHere = new SkyLook.TopLayer() {
+			@Override
+			public boolean loaded(int chunkX, int chunkZ) {
+				return chunkX == 0 && chunkZ == 0;
+			}
+
+			@Override
+			public boolean bedrock(int x, int z) {
+				return false;
+			}
+		};
+		ceiling.look(world, 0, 0, onlyHere);
+		assertFalse(ceiling.decided());
+		assertFalse(ceiling.hasSky());
+		ceiling.look(world, 0, 0, ISLAND);
+		assertTrue(ceiling.hasSky());
 	}
 
 	@Test
@@ -220,19 +294,37 @@ class SkyRulesTest {
 	}
 
 	@Test
-	void nearOnesPassHighAndFarOnesFallDown() {
+	void allFlyOneWayAFewDegreesApart() {
 		SkyMeteors meteors = new SkyMeteors();
-		float steepest = 0f;
-		float flattest = 1f;
-		for (int i = 0; i < 400; i++) {
-			meteors.update(0.05f, 1f, 1f, true, false);
+		java.util.Set<Long> ways = new java.util.HashSet<>();
+		int seen = 0;
+		for (int i = 0; i < 4000; i++) {
+			meteors.update(0.05f, 1f, 1f, true, true);
 			for (int m = 0; m < meteors.count(); m++) {
-				steepest = Math.max(steepest, -meteors.dy[m]);
-				flattest = Math.min(flattest, -meteors.dy[m]);
+				float across = (float) Math.sqrt(meteors.dx[m] * meteors.dx[m] + meteors.dz[m] * meteors.dz[m]);
+				float heading = (float) Math.atan2(meteors.dz[m], meteors.dx[m]);
+				assertEquals(SkyMeteors.HEADING, heading, SkyMeteors.HEADING_SPREAD + 1e-4f, "one heading across the world");
+				float descent = -meteors.dy[m] / across;
+				assertTrue(descent > 0f, "they go down");
+				assertTrue(descent <= SkyMeteors.DESCENT + SkyMeteors.DESCENT_SPREAD + 1e-4f, "not steeper than the shared diagonal: " + descent);
+				ways.add((long) Math.round(heading * 10000f));
+				seen++;
 			}
 		}
-		assertTrue(steepest > 0.4f, "far ones go down");
-		assertTrue(flattest < 0.4f, "near ones go across");
+		assertTrue(seen > 100);
+		assertTrue(ways.size() > 20, "each a little off the shared way, so they do not look copied");
+	}
+
+	@Test
+	void theyFlyAtSixtyPercentOfTheirOldSpeedWithStreaksAsLongAsBefore() {
+		SkyMeteors meteors = new SkyMeteors();
+		while (meteors.count() == 0) {
+			meteors.update(0.05f, 1f, 1f, true, false);
+		}
+		assertEquals(0.6f, SkyMeteors.PACE);
+		assertTrue(meteors.speed[0] <= 170f * 1.4f * SkyMeteors.PACE + 1e-3f, "slowed: " + meteors.speed[0]);
+		// the streak covers as many blocks as before: its seconds grow by what the speed lost
+		assertEquals(0.3f, SkyMeteors.streakSeconds(0.3f) * SkyMeteors.PACE, 1e-5f);
 	}
 
 	@Test
@@ -282,18 +374,16 @@ class SkyRulesTest {
 	}
 
 	@Test
-	void underTheOpenSkyTheCloudsShow() {
-		assertFalse(SkyLook.underCover(15, -3), "on open land");
-		assertFalse(SkyLook.underCover(13, 6), "under a tree");
-		assertFalse(SkyLook.underCover(10, 40), "deep in a cave, near its opening");
+	void aRoofNeverTakesTheCloudsAway() {
+		// in a house, a cave or under a tree the clouds show wherever the sky does on the screen: nothing about the camera's place hides them
+		assertFalse(SkyLook.underCover(false, false), "any world nobody knows more about");
+		assertFalse(SkyLook.underCover(true, false), "a known world under the open sky");
+		assertFalse(SkyLook.underCover(false, true));
 	}
 
 	@Test
-	void underCoverTheyGo() {
-		assertTrue(SkyLook.underCover(0, 3), "no sky light: a cave or the mines");
-		assertTrue(SkyLook.underCover(0, -5), "no sky light even if nothing is above");
-		assertTrue(SkyLook.underCover(4, SkyLook.HIGH_CEILING_BLOCKS + 1), "a high ceiling with a little light from an opening");
-		assertFalse(SkyLook.underCover(4, SkyLook.HIGH_CEILING_BLOCKS), "a lower ceiling with that light is a cave mouth");
+	void aWorldUndergroundHasNoClouds() {
+		assertTrue(SkyLook.underCover(true, true), "the mines");
 	}
 
 	@Test

@@ -16,9 +16,10 @@ import net.minecraft.client.renderer.fog.FogRenderer;
 /** Fog color and density from the custom sky and the ambience; the result is kept for the world lyrics. */
 @Mixin(FogRenderer.class)
 public abstract class FogRendererMixin {
-	/** Tints the fog with the mod sky's horizon color; the ambience then thickens it. */
+	/** The Visual Filter keeps the edge of the loaded world clear first; then the fog is tinted with the mod sky's horizon color. */
 	@ModifyReturnValue(method = "setupFog", at = @At("RETURN"))
 	private FogData lumio$changeFog(FogData fog, Camera camera, int renderDistance, DeltaTracker tracker, float partialTick, ClientLevel level) {
+		ModFeatures.VISUAL_FILTER.clearEdge(fog);
 		ModFeatures.SKY.apply(fog);
 		FogState.capture(fog);
 		return fog;

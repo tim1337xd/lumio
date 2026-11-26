@@ -6,7 +6,6 @@ import org.joml.Matrix3x2f;
 
 import com.mojang.blaze3d.GpuFormat;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
-import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.gui.GuiGraphicsExtractor;

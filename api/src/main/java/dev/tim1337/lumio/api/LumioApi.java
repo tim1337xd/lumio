@@ -6,7 +6,7 @@ import dev.tim1337.lumio.api.spi.Backend;
 /** The add-on API of Lumio: its version, so an add-on can use newer parts only when they are there. */
 public final class LumioApi {
 	/** The version of this API; see API.md for the rules of how it changes. */
-	public static final String VERSION = "1.8.0";
+	public static final String VERSION = "1.31.0";
 	/** The Fabric entrypoint add-ons are registered under, in their fabric.mod.json. */
 	public static final String ENTRYPOINT = "lumio";
 	/** The mod id of Lumio: the namespace of its textures and the name of its config folder. */

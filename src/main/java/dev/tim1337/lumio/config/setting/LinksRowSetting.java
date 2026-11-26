@@ -15,10 +15,17 @@ public class LinksRowSetting extends Setting<Void> {
 	private final String right;
 	private final Runnable rightAction;
 	private boolean confirmRight;
+	private java.util.function.BooleanSupplier leftShown = () -> true;
 
 	/** Makes the right link ask before an action that cannot be undone, such as a reset. */
 	public LinksRowSetting confirmRight() {
 		confirmRight = true;
+		return this;
+	}
+
+	/** Shows the left link only while the condition is true: not while what it opens holds nothing that applies. */
+	public LinksRowSetting leftShownWhen(java.util.function.BooleanSupplier condition) {
+		leftShown = condition;
 		return this;
 	}
 
@@ -42,6 +49,6 @@ public class LinksRowSetting extends Setting<Void> {
 
 	@Override
 	public Control createControl(Runnable onChanged) {
-		return new LinksRowControl(icon, left, leftAction, right, rightAction).confirmRight(confirmRight);
+		return new LinksRowControl(icon, left, leftAction, right, rightAction).confirmRight(confirmRight).leftShownWhen(leftShown);
 	}
 }

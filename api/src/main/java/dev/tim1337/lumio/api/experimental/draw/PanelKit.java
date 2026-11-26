@@ -50,8 +50,8 @@ public final class PanelKit {
 	 */
 	public static void searchField(Canvas ui, int[] box, String text, String placeholder, String right, boolean focused, int mouseX, int mouseY) {
 		boolean over = inside(box, mouseX, mouseY);
-		// a glass pill, ringed in the accent with a soft glow while it has focus
-		float radius = box[3] / 2f;
+		// a glass box with small corners, ringed in the accent with a soft glow while it has focus
+		float radius = Math.min(Radius.SM, box[3] / 2f);
 		if (focused) {
 			ui.softLight(box[0] + box[2] / 2f, box[1] + box[3] / 2f, box[2] / 2f + 6f, box[3], Draw.withOpacity(ui.accent(), 0.25f));
 		}
@@ -109,24 +109,34 @@ public final class PanelKit {
 	 * @param boxes filled with each part's box, for clicks
 	 */
 	public static void segmented(Canvas ui, int x, int y, String[] labels, int selected, int mouseX, int mouseY, int[][] boxes) {
-		int width = segmentedWidth(ui, labels);
+		segmented(ui, x, y, segmentedWidth(ui, labels), labels, selected, mouseX, mouseY, boxes);
+	}
+
+	/**
+	 * Draws a segmented control of a given width: its parts share the width evenly, each label centered in its part, so the controls of a page
+	 * line up at one width whatever their labels.
+	 *
+	 * @param boxes filled with each part's box, for clicks
+	 */
+	public static void segmented(Canvas ui, int x, int y, int width, String[] labels, int selected, int mouseX, int mouseY, int[][] boxes) {
 		ui.rounded(x, y, width, SEGMENT_HEIGHT, Radius.MD, Draw.withOpacity(HudTheme.text(), 0.07f));
-		int cursor = x + 2;
+		int inner = width - 4;
 		for (int i = 0; i < labels.length; i++) {
-			int part = Math.round(ui.widthScaled(labels[i], TextScale.SMALL)) + 2 * SEGMENT_PAD;
-			boxes[i] = new int[]{cursor, y + 2, part, SEGMENT_HEIGHT - 4};
+			int from = x + 2 + inner * i / labels.length;
+			int part = x + 2 + inner * (i + 1) / labels.length - from;
+			boxes[i] = new int[]{from, y + 2, part, SEGMENT_HEIGHT - 4};
 			boolean on = i == selected;
 			if (on) {
-				ui.rounded(cursor, y + 2, part, SEGMENT_HEIGHT - 4, Radius.SM, Draw.withOpacity(HudTheme.text(), 0.16f));
+				ui.rounded(from, y + 2, part, SEGMENT_HEIGHT - 4, Radius.SM, Draw.withOpacity(HudTheme.text(), 0.16f));
 			} else if (inside(boxes[i], mouseX, mouseY)) {
-				ui.rounded(cursor, y + 2, part, SEGMENT_HEIGHT - 4, Radius.SM, Draw.withOpacity(HudTheme.text(), 0.07f));
+				ui.rounded(from, y + 2, part, SEGMENT_HEIGHT - 4, Radius.SM, Draw.withOpacity(HudTheme.text(), 0.07f));
 			}
+			float textX = from + (part - (on ? ui.boldWidthScaled(labels[i], TextScale.SMALL) : ui.widthScaled(labels[i], TextScale.SMALL))) / 2f;
 			if (on) {
-				ui.textAtScaledBold(labels[i], cursor + SEGMENT_PAD, y + SEGMENT_HEIGHT / 2f - 3.5f, TextScale.SMALL, HudTheme.text());
+				ui.textAtScaledBold(labels[i], textX, y + SEGMENT_HEIGHT / 2f - 3.5f, TextScale.SMALL, HudTheme.text());
 			} else {
-				ui.textAtScaled(labels[i], cursor + SEGMENT_PAD, y + SEGMENT_HEIGHT / 2f - 3.5f, TextScale.SMALL, HudTheme.secondary());
+				ui.textAtScaled(labels[i], textX, y + SEGMENT_HEIGHT / 2f - 3.5f, TextScale.SMALL, HudTheme.secondary());
 			}
-			cursor += part;
 		}
 	}
 
@@ -139,11 +149,12 @@ public final class PanelKit {
 		boolean over = inside(box, mouseX, mouseY);
 		float fill = selected ? 0.2f : over ? 0.12f : 0.07f;
 		ui.rounded(box[0], box[1], box[2], box[3], Radius.SM, Draw.withOpacity(HudTheme.text(), fill));
+		// centered: a chip as wide as its label has its padding on both sides, a wider one (a page's standard width) its label in the middle
 		float y = box[1] + box[3] / 2f - 3.5f;
 		if (selected) {
-			ui.textAtScaledBold(label, box[0] + CHIP_PAD, y, TextScale.SMALL, HudTheme.text());
+			ui.textAtScaledBold(label, box[0] + (box[2] - ui.boldWidthScaled(label, TextScale.SMALL)) / 2f, y, TextScale.SMALL, HudTheme.text());
 		} else {
-			ui.textAtScaled(label, box[0] + CHIP_PAD, y, TextScale.SMALL, over ? HudTheme.text() : HudTheme.secondary());
+			ui.textAtScaled(label, box[0] + (box[2] - ui.widthScaled(label, TextScale.SMALL)) / 2f, y, TextScale.SMALL, over ? HudTheme.text() : HudTheme.secondary());
 		}
 	}
 
@@ -204,7 +215,12 @@ public final class PanelKit {
 			return value / 1_000_000 + "m";
 		}
 		if (value >= 1_000) {
-			return value >= 10_000 ? value / 1_000 + "k" : String.format(java.util.Locale.ROOT, "%.1fk", value / 1000.0);
+			if (value >= 10_000) {
+				return value / 1_000 + "k";
+			}
+			// tenths of a thousand, rounded half up as the formatter did, without String.format in this per-frame text
+			long tenths = (value + 50) / 100;
+			return tenths / 10 + "." + tenths % 10 + "k";
 		}
 		return String.valueOf(value);
 	}
@@ -248,7 +264,6 @@ public final class PanelKit {
 	public static final int RED_TEXT = 0xFFFF6257;
 	public static final int GOLD = 0xFFFFC93C;
 	public static final int ORANGE = SystemColors.ORANGE;
-	public static final int ORANGE_TEXT = 0xFFFFC56B;
 	public static final int BLUE = 0xFF0A84FF;
 	public static final int CYAN = 0xFF64D2FF;
 
@@ -261,8 +276,6 @@ public final class PanelKit {
 	public static final int[] TILE_SEA = {0xFF40C8E0, 0xFF0A6CFF};
 	public static final int[] TILE_SLAYER = {0xFFFF5A4E, 0xFFB3121F};
 	public static final int[] TILE_GARDEN = {0xFF7EE06A, 0xFF2E9E3A};
-	public static final int[] TILE_PURPLE = {0xFFBF5AF2, 0xFF7D2AE8};
-	public static final int[] TILE_GRAY = {0xFF8E8E93, 0xFF48484A};
 
 	/** @return a color readable on the panel's theme */
 	public static int readable(int argb) {

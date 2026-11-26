@@ -7,10 +7,18 @@ import java.util.List;
  *
  * @param title the card's heading ("Skills"), or "" for none
  * @param rows  its rows, in order
+ * @param slot  the card's fixed place among the cards by its kind, from 0 on, the same whichever other cards there are: the list gives each card
+ *              its column by it, so cards do not jump between columns; -1 for a card without one, which comes after those that have one, in
+ *              the order it was first seen
  */
-public record TabCard(String title, List<Row> rows) {
+public record TabCard(String title, List<Row> rows, int slot) {
 	public TabCard {
 		rows = List.copyOf(rows);
+	}
+
+	/** A card without a fixed place. */
+	public TabCard(String title, List<Row> rows) {
+		this(title, rows, -1);
 	}
 
 	/**

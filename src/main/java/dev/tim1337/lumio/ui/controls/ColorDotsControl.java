@@ -12,7 +12,7 @@ import java.util.List;
  * Color dots in a row, one per option in its color right now; the chosen one sits in a ring. The custom option is a "+" in a ring until it is
  * chosen, then a dot in the custom color. Hovering a dot grows it a little.
  */
-public class ColorDotsControl<E extends Enum<E>> extends Control {
+public final class ColorDotsControl<E extends Enum<E>> extends Control {
 	private static final int DOT = 14;
 	private static final int GAP = 8;
 	/** The ring around the chosen dot: its distance from the dot and its width. */

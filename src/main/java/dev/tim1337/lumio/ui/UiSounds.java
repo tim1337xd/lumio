@@ -2,6 +2,7 @@ package dev.tim1337.lumio.ui;
 
 import dev.tim1337.lumio.ModFeatures;
 import dev.tim1337.lumio.api.experimental.util.Logs;
+import dev.tim1337.lumio.api.experimental.util.Threads;
 import dev.tim1337.lumio.menu.MenuFeature;
 
 import net.minecraft.client.Minecraft;
@@ -11,7 +12,6 @@ import net.minecraft.sounds.SoundSource;
 
 import java.util.Random;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.Clip;
@@ -50,11 +50,7 @@ public final class UiSounds {
 	private static final int PITCHES = 12;
 	private static final int VOICES = 3;
 
-	private static final ExecutorService WORKER = Executors.newSingleThreadExecutor(runnable -> {
-		Thread thread = new Thread(runnable, "Lumio sounds");
-		thread.setDaemon(true);
-		return thread;
-	});
+	private static final ExecutorService WORKER = Threads.daemonExecutor("Lumio sounds");
 	private static final Clip[][] CLIPS = new Clip[Cue.values().length + PITCHES][];
 	private static final long[] STAMPS = new long[CLIPS.length];
 	private static final int[] NEXT = new int[CLIPS.length];

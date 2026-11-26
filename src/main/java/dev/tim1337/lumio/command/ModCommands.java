@@ -1,5 +1,6 @@
 package dev.tim1337.lumio.command;
 
+import dev.tim1337.lumio.api.LumioChat;
 import dev.tim1337.lumio.Lumio;
 import dev.tim1337.lumio.addon.Addons;
 import dev.tim1337.lumio.api.experimental.util.Logs;
@@ -53,10 +54,10 @@ public final class ModCommands {
 		try {
 			ClientCommands.getActiveDispatcher().execute(command, source);
 		} catch (CommandSyntaxException error) {
-			source.sendError(Component.literal(error.getMessage()));
+			source.sendError(LumioChat.prefixed(Component.literal(error.getMessage())));
 		} catch (RuntimeException error) {
 			Logs.warn("The command /{} failed", command, error);
-			source.sendError(Component.literal("That did not work. The log says why."));
+			source.sendError(LumioChat.prefixed(Component.literal("That did not work. The log says why.")));
 		}
 	}
 
@@ -69,7 +70,7 @@ public final class ModCommands {
 				.then(ClientCommands.literal("list").executes(context -> {
 					for (Feature feature : FeatureManager.features()) {
 						if (!feature.isChild() && !(feature instanceof MenuFeature) && !(feature instanceof HomeFeature)) {
-							context.getSource().sendFeedback(Component.literal(feature.id() + (feature.isSwitchable() ? (isOn(feature) ? "  on" : "  off") : "")));
+							context.getSource().sendFeedback(LumioChat.prefixed(Component.literal(feature.id() + (feature.isSwitchable() ? (isOn(feature) ? "  on" : "  off") : ""))));
 						}
 					}
 					return 1;
@@ -89,18 +90,18 @@ public final class ModCommands {
 							if (feature.id().equalsIgnoreCase(id) && feature.isSwitchable()) {
 								boolean on = feature.toggle();
 								FeatureManager.save();
-								context.getSource().sendFeedback(Component.literal(feature.name().getString() + (on ? " is on" : " is off")));
+								context.getSource().sendFeedback(LumioChat.prefixed(Component.literal(feature.name().getString() + (on ? " is on" : " is off"))));
 								return 1;
 							}
 						}
-						context.getSource().sendError(Component.literal("There is no feature called " + id + ". /" + Lumio.MOD_ID + " list shows them."));
+						context.getSource().sendError(LumioChat.prefixed(Component.literal("There is no feature called " + id + ". /" + Lumio.MOD_ID + " list shows them.")));
 						return 0;
 					}))));
 			// what the add-ons describe, as more words of the same command
 			for (var diagnostic : Addons.diagnostics().entrySet()) {
 				dispatcher.register(ClientCommands.literal(Lumio.MOD_ID).then(ClientCommands.literal(diagnostic.getKey()).executes(context -> {
 					for (String line : diagnostic.getValue().get()) {
-						context.getSource().sendFeedback(Component.literal(line));
+						context.getSource().sendFeedback(LumioChat.prefixed(Component.literal(line)));
 					}
 					return 1;
 				})));

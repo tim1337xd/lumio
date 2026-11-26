@@ -20,6 +20,24 @@ public final class HudEditor {
 		return Backend.get().hudEditorOpen();
 	}
 
+	/**
+	 * Draws something above the editor's own marks (the selection outline, the handles) this frame, in GUI pixels, such as a panel's tooltip: a
+	 * panel is drawn under them, so what has to stay readable over it goes here. Only while the editor is open; call it while drawing the panel.
+	 */
+	public static void drawOnTop(java.util.function.Consumer<dev.tim1337.lumio.api.draw.Canvas> drawing) {
+		Backend.get().hudDrawOnTop(drawing);
+	}
+
+	/** @return a snapper with the editor's grid and logic (the grid's lines and the screen's center lines), for panels an add-on lets the player move */
+	public static GridSnap gridSnap() {
+		return Backend.get().gridSnap();
+	}
+
+	/** Draws the editor's grid over a screen, faintly, as the editor shows it while an element is dragged: one dot per grid position. */
+	public static void drawGrid(dev.tim1337.lumio.api.draw.Canvas canvas, int screenWidth, int screenHeight) {
+		Backend.get().drawHudGrid(canvas, screenWidth, screenHeight);
+	}
+
 	/** Starts simulating one of a simulator's activities in the HUD editor, as its Simulate menu does; nothing happens for an unknown one. */
 	public static void simulate(HudSimulator simulator, String simulationId, int option) {
 		Backend.get().simulate(simulator, simulationId, option);

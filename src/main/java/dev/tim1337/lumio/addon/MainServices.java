@@ -34,10 +34,6 @@ public final class MainServices implements Services {
 	public MainServices() {
 	}
 
-	@Override
-	public boolean debugOn() {
-		return ModFeatures.DEBUG != null && ModFeatures.DEBUG.isEnabled();
-	}
 
 	@Override
 	public SettingFactory settings() {
@@ -52,6 +48,11 @@ public final class MainServices implements Services {
 	@Override
 	public WorldDraw.Provider world() {
 		return MainWorldDraw.INSTANCE;
+	}
+
+	@Override
+	public dev.tim1337.lumio.api.experimental.ui.SettingRows.Provider rows() {
+		return dev.tim1337.lumio.config.setting.ButtonsRowSetting.PROVIDER;
 	}
 
 	@Override
@@ -85,6 +86,17 @@ public final class MainServices implements Services {
 	}
 
 	@Override
+	public void visualFilter(String key, String label, String description, String section, boolean on,
+		dev.tim1337.lumio.api.experimental.filter.VisualFilters.Rule rule) {
+		ModFeatures.VISUAL_FILTER.addRule(key, label, description, section, on, rule);
+	}
+
+	@Override
+	public int[] chatNameColors() {
+		return MenuFeature.chatNameColors();
+	}
+
+	@Override
 	public boolean inventoryStyled() {
 		return ModFeatures.INVENTORY_SCREEN != null && ModFeatures.INVENTORY_SCREEN.isEnabled();
 	}
@@ -114,6 +126,15 @@ public final class MainServices implements Services {
 	}
 
 	@Override
+	public void openKeybinds() {
+		dev.tim1337.lumio.ui.MacScreen.showPage(dev.tim1337.lumio.ModFeatures.KEYBINDS_PAGE);
+		var client = net.minecraft.client.Minecraft.getInstance();
+		if (!(client.gui.screen() instanceof dev.tim1337.lumio.ui.MacScreen)) {
+			client.gui.setScreen(new dev.tim1337.lumio.ui.MacScreen());
+		}
+	}
+
+	@Override
 	public void click() {
 		UiSounds.click();
 	}
@@ -134,6 +155,16 @@ public final class MainServices implements Services {
 	}
 
 	@Override
+	public net.minecraft.client.KeyMapping waypointPlaceKey() {
+		return dev.tim1337.lumio.ModFeatures.WAYPOINTS.placeKey();
+	}
+
+	@Override
+	public String keyText(net.minecraft.client.KeyMapping mapping) {
+		return dev.tim1337.lumio.features.misc.keybinds.KeyCombos.shown(mapping);
+	}
+
+	@Override
 	public java.util.List<int[]> hudBoxes() {
 		java.util.List<int[]> boxes = new java.util.ArrayList<>();
 		for (dev.tim1337.lumio.ui.EditableHud element : dev.tim1337.lumio.ModFeatures.editableHuds()) {
@@ -147,6 +178,27 @@ public final class MainServices implements Services {
 	@Override
 	public boolean hudEditorOpen() {
 		return HudEditScreen.isOpen();
+	}
+
+	@Override
+	public void hudDrawOnTop(java.util.function.Consumer<dev.tim1337.lumio.api.draw.Canvas> drawing) {
+		HudEditScreen.drawOnTop(drawing);
+	}
+
+	@Override
+	public dev.tim1337.lumio.api.experimental.hud.GridSnap gridSnap() {
+		return new dev.tim1337.lumio.ui.HudGridSnap();
+	}
+
+	@Override
+	public void drawHudGrid(Canvas canvas, int screenWidth, int screenHeight) {
+		HudEditScreen.drawDragGrid((Ui) canvas, screenWidth, screenHeight);
+	}
+
+	@Override
+	public dev.tim1337.lumio.api.experimental.waypoint.WaypointStyle waypointStyle() {
+		return dev.tim1337.lumio.ModFeatures.WAYPOINTS == null ? dev.tim1337.lumio.api.experimental.waypoint.WaypointStyle.DEFAULT
+			: dev.tim1337.lumio.ModFeatures.WAYPOINTS.look().style();
 	}
 
 	/** The HUD panels' look, from the main mod's panel style. */

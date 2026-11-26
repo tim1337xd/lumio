@@ -1,12 +1,14 @@
 package dev.tim1337.lumio.features.visual.world;
 
+import com.google.gson.JsonObject;
+
 import net.minecraft.network.chat.Component;
 
-/** The sky's choices, what Auto picks, and what keeps the sky steady: nothing in it jumps when the player warps or the server changes the time. Plain, so that it is unit tested. */
+/** The sky's choices, and what keeps the sky steady: nothing in it jumps when the player warps or the server changes the time. Plain, so that it is unit tested. */
 public final class SkyLook {
 	/** The page's style. */
 	public enum Style {
-		AUTO("Auto"), CLOUDS("Clouds"), AURORA("Aurora"), STARS("Stars");
+		CLOUDS("Clouds"), AURORA("Aurora"), STARS("Night sky"), MOLTEN("Molten");
 
 		private final Component name;
 
@@ -82,13 +84,21 @@ public final class SkyLook {
 		return raised + (Math.max(raised, STORM_COVER) - raised) * storm;
 	}
 
-	/** How the cloud sky looks, whatever the real weather: clear, overcast or a storm. Only the look; the game's weather stays as it is. */
-	public enum WeatherLook {
-		CLEAR("Clear"), CLOUDY("Cloudy"), STORM("Storm");
+	/**
+	 * @return whether a saved sky is from before the cloud shadows started off: it has the sky's settings but none for the shadows, which were on then,
+	 *         so they stay on
+	 */
+	static boolean shadowsFromBefore(JsonObject saved) {
+		return saved.has("style") && !saved.has("cloud_shadows");
+	}
+
+	/** How the clouds are drawn: the game's blocky cells, shaded and spaced, or soft clouds in three layers. */
+	public enum CloudStyle {
+		GAME("Game"), NATURAL("Natural");
 
 		private final Component name;
 
-		WeatherLook(String name) {
+		CloudStyle(String name) {
 			this.name = Component.literal(name);
 		}
 
@@ -162,46 +172,7 @@ public final class SkyLook {
 		}
 	}
 
-	/** What Auto has picked. */
-	public enum Pick {
-		CLOUDS, AURORA, STARS
-	}
-
-	private static final float DAY_FROM = 0.05f;
-	private static final float NIGHT_FROM = -0.05f;
-	private static final float RAIN_FROM = 0.5f;
-	private static final float DRY_FROM = 0.2f;
-
 	private SkyLook() {
-	}
-
-	/**
-	 * Auto's pick. It changes only when it gets dark or light or when the weather turns, never for where the player is. A clear night has the aurora or the stars, in turn; day and rain have the clouds.
-	 */
-	public static final class AutoPick {
-		private Pick pick = Pick.CLOUDS;
-		private boolean night;
-		private boolean raining;
-		private boolean started;
-		private boolean auroraNext = true;
-
-		/** Looks at the moment. @return the pick */
-		public Pick update(float sunHeight, float rain) {
-			boolean nowNight = night ? sunHeight < DAY_FROM : sunHeight < NIGHT_FROM;
-			boolean nowRaining = raining ? rain > DRY_FROM : rain > RAIN_FROM;
-			if (!started || nowNight != night || nowRaining != raining) {
-				started = true;
-				night = nowNight;
-				raining = nowRaining;
-				if (raining || !night) {
-					pick = Pick.CLOUDS;
-				} else {
-					pick = auroraNext ? Pick.AURORA : Pick.STARS;
-					auroraNext = !auroraNext;
-				}
-			}
-			return pick;
-		}
 	}
 
 	/**
@@ -255,22 +226,31 @@ public final class SkyLook {
 	/**
 	 * Where the sun, the moon and the stars stand, by the time of day. With the time they run as the game's do, too slowly to see. At a jump of the time (a
 	 * warp, a new world, a time the server sets) they are never seen to turn or slide: they fade out where they are, take their new places at once and
-	 * fade back in. A new world takes them at once, as nothing was seen before it.
+	 * fade back in; a small correction by the server glides. A new world takes them at once, as nothing was seen before it. What the rest of the sky goes
+	 * by (the light on the clouds, the day and night colors, the turn of its own stars) has an angle of its own that always glides, so a paused or jumping
+	 * time of the server never makes it change at once.
 	 */
 	public static final class SkyClock {
 		private static final float TAU = (float) (Math.PI * 2.0);
 		/** A change between two frames larger than this is a jump; the time itself turns the sky by about a thousandth of this per frame. */
 		static final float JUMP_RADIANS = 0.02f;
 		/** How long the fade out takes, and the fade back in. */
-		static final float FADE_SECONDS = 0.25f;
+		static final float FADE_SECONDS = 0.7f;
 		/** Below this the sky counts as faded out: the steps of the fade need not add up exactly. */
 		private static final float HIDDEN = 0.001f;
+		/** A change up to this is the time going on, taken at once; a larger one glides over about this many seconds. */
+		private static final float RUNNING_RADIANS = 0.002f;
+		private static final float GLIDE_SECONDS = 0.4f;
+		/** How long the light of the sky takes to follow, as a time constant. */
+		static final float LIGHT_SECONDS = 3f;
 
 		private boolean started;
 		private int world;
 		private float sun;
 		private float moon;
 		private float stars;
+		private float lightSun;
+		private float lightStars;
 		private float shown = 1f;
 		private boolean hiding;
 
@@ -282,8 +262,12 @@ public final class SkyLook {
 				hiding = false;
 				shown = 1f;
 				take(wantedSun, wantedMoon, wantedStars);
+				lightSun = wantedSun;
+				lightStars = wantedStars;
 				return;
 			}
+			lightSun = follow(lightSun, wantedSun, seconds, LIGHT_SECONDS);
+			lightStars = follow(lightStars, wantedStars, seconds, LIGHT_SECONDS);
 			if (!hiding && (jumps(sun, wantedSun) || jumps(moon, wantedMoon) || jumps(stars, wantedStars))) {
 				hiding = true;
 			}
@@ -294,10 +278,33 @@ public final class SkyLook {
 				}
 				shown = 0f;
 				hiding = false;
-			} else {
-				shown = Math.min(1f, shown + seconds / FADE_SECONDS);
+				take(wantedSun, wantedMoon, wantedStars);
+				return;
 			}
-			take(wantedSun, wantedMoon, wantedStars);
+			shown = Math.min(1f, shown + seconds / FADE_SECONDS);
+			sun = follow(sun, wantedSun, seconds, GLIDE_SECONDS);
+			moon = follow(moon, wantedMoon, seconds, GLIDE_SECONDS);
+			stars = follow(stars, wantedStars, seconds, GLIDE_SECONDS);
+		}
+
+		/** @return an angle moved on toward another, the short way round: at once for the running of the time, softly for more */
+		private static float follow(float from, float to, float seconds, float timeConstant) {
+			float difference = to - from;
+			difference -= TAU * Math.round(difference / TAU);
+			if (Math.abs(difference) <= RUNNING_RADIANS) {
+				return to;
+			}
+			return from + difference * (1f - (float) Math.exp(-seconds / timeConstant));
+		}
+
+		/** @return the sun's angle the light of the sky goes by, always gliding */
+		public float lightSun() {
+			return lightSun;
+		}
+
+		/** @return the turn of the sky's own stars and lights, always gliding */
+		public float lightStars() {
+			return lightStars;
 		}
 
 		/** Lets the game's angles through again from the next frame, and shows everything: while the sky is off. */
@@ -342,27 +349,101 @@ public final class SkyLook {
 		}
 	}
 
-	/** A ceiling this far above the camera covers it where only a little sky light comes in (the Dwarven Mines, the Crystal Hollows). */
-	static final int HIGH_CEILING_BLOCKS = 24;
-	static final int DIM_SKY_LIGHT = 8;
-
 	/**
-	 * @param skyLight    the sky light where the camera is, 0 to 15
-	 * @param blocksAbove how far the highest block over the camera is above it
-	 * @return whether the camera has no view of the sky worth clouds: no sky light at all, or a high ceiling with only a little light from an opening
+	 * Whether a world has no sky for clouds. Never because of a roof over the camera: under a roof the clouds show wherever the sky does on the
+	 * screen, through a doorway, a window or a skylight, as they do outside (the sky light where the camera stands once took them away, also in
+	 * a house, far from its door). Only a world that is known to lie underground has none.
+	 *
+	 * @param knownWorld  whether an add-on knows the world the player is in
+	 * @param underground whether that world lies underground (the Dwarven Mines, the Crystal Hollows)
 	 */
-	public static boolean underCover(int skyLight, int blocksAbove) {
-		return skyLight <= 0 || blocksAbove > HIGH_CEILING_BLOCKS && skyLight < DIM_SKY_LIGHT;
+	public static boolean underCover(boolean knownWorld, boolean underground) {
+		return knownWorld && underground;
+	}
+
+	/** The top layer of a world's build height, as {@link Ceiling} looks at it: which chunks are loaded, and where bedrock lies in that layer. */
+	public interface TopLayer {
+		boolean loaded(int chunkX, int chunkZ);
+
+		/** @return whether the block at this column in the top layer of the build height is bedrock */
+		boolean bedrock(int x, int z);
 	}
 
 	/**
-	 * @param aboveHere  how far the highest block over the camera is above it, in a world of the Nether's kind (its roof is one)
-	 * @param openAround at how many of four places around the camera nothing is above it
-	 * @return whether the camera is under the open sky, as on an island of the Nether: nothing straight above, or open in most places around, so a
-	 * small roof does not take the sky away
+	 * Whether a world of the Nether's kind has a solid bedrock ceiling (the vanilla Nether) and so no sky. Decided once per world, from the top
+	 * layer of the build height in the chunks loaded around the player, and kept until the player leaves that world: nothing where the camera
+	 * stands, nor any later place, changes it. A world without such a ceiling (Hypixel's islands of the Nether's kind) has the sky everywhere;
+	 * blocks cover it where they stand on the screen. Until it is decided the sky waits, so the vanilla Nether never flashes one.
 	 */
-	public static boolean openOverNether(int aboveHere, int openAround) {
-		return aboveHere <= 0 || openAround >= 2;
+	public static final class Ceiling {
+		/** The chunks looked at around the player's: this many each way. */
+		static final int RADIUS_CHUNKS = 2;
+		/** How many of them must be loaded before the decision is made. */
+		static final int MIN_CHUNKS = 9;
+		/** The columns looked at in each chunk: every this many blocks each way. */
+		static final int STEP_BLOCKS = 4;
+		/** The share of the columns looked at that must be bedrock for a ceiling: the vanilla Nether's top layer is bedrock everywhere. */
+		static final float SOLID_SHARE = 0.9f;
+
+		private Object world;
+		private boolean decided;
+		private boolean ceiling;
+
+		/**
+		 * Looks at the top layer around the player once per world: a new world forgets the last decision; once decided, this does nothing.
+		 *
+		 * @param world   the world the player is in (a new object when the player joins or changes to another)
+		 * @param chunkX  the chunk the player is in
+		 * @param chunkZ  the chunk the player is in
+		 * @param top     the top layer of that world's build height
+		 */
+		public void look(Object world, int chunkX, int chunkZ, TopLayer top) {
+			if (world != this.world) {
+				this.world = world;
+				decided = false;
+				ceiling = false;
+			}
+			if (decided) {
+				return;
+			}
+			int chunks = 0;
+			int columns = 0;
+			int bedrock = 0;
+			for (int cx = chunkX - RADIUS_CHUNKS; cx <= chunkX + RADIUS_CHUNKS; cx++) {
+				for (int cz = chunkZ - RADIUS_CHUNKS; cz <= chunkZ + RADIUS_CHUNKS; cz++) {
+					if (!top.loaded(cx, cz)) {
+						continue;
+					}
+					chunks++;
+					for (int x = 0; x < 16; x += STEP_BLOCKS) {
+						for (int z = 0; z < 16; z += STEP_BLOCKS) {
+							columns++;
+							bedrock += top.bedrock(cx * 16 + x, cz * 16 + z) ? 1 : 0;
+						}
+					}
+				}
+			}
+			if (chunks < MIN_CHUNKS) {
+				return;
+			}
+			decided = true;
+			ceiling = bedrock >= columns * SOLID_SHARE;
+		}
+
+		/** @return whether the decision for the current world is made */
+		public boolean decided() {
+			return decided;
+		}
+
+		/** @return whether the decision for this world is made: then there is nothing more to look at */
+		public boolean decidedFor(Object world) {
+			return decided && world == this.world;
+		}
+
+		/** @return whether the current world has the sky: decided, and without a bedrock ceiling */
+		public boolean hasSky() {
+			return decided && !ceiling;
+		}
 	}
 
 	public static final class Slew {

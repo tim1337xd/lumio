@@ -29,6 +29,13 @@ public interface AddonSetting<T> {
 	/** Sets the gray line under its label; null or blank for none. */
 	void setDescription(String description);
 
+	/**
+	 * Sets a longer explanation shown when the pointer rests on its name (a small mark after the name says there is one); null or blank for none.
+	 * For what the name and its one-line description cannot say. @since 1.28.0
+	 */
+	default void setTooltip(String tooltip) {
+	}
+
 	/** Shows it only while the condition holds. */
 	void visibleWhen(BooleanSupplier condition);
 

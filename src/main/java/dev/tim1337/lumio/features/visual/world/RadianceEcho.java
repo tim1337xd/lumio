@@ -398,10 +398,6 @@ final class RadianceEcho {
 		}
 	}
 
-	private static float lerp(float from, float to, float share) {
-		return from + (to - from) * share;
-	}
-
 	/** @return how much of its light a streak keeps, by how far its point moved against the farthest: the outer ones keep it, the inner ones little */
 	static float share(float pixels, float farthest) {
 		if (farthest <= 0f) {

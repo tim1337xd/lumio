@@ -5,7 +5,8 @@
 // A pane of glass over the screen. See GlassPanes for what it is made of. The quad gives the number of the pane (in the texture
 // coordinate) and how much of it there is (the opacity of its color); everything else is read from the texture of the parameters:
 //   texels 0 to 63: the colors of the glow along the edge, from the start of the top edge, clockwise, with how bright it is as their alpha
-//   texels 64 to 127: how bright the glow of the Colored theme is at those places, as their alpha
+//   texels 64 to 127: how bright the glow of the Colored theme is at those places, as their alpha; the red of texel 64 says whether panes of the
+//      Colored theme glow in its colors (1) or in the glow colors above, like every other pane (0)
 //   texel 128: not used
 //   11 texels per pane, after them:
 //   0: where the pane is, in pixels of the screen from the bottom left corner, two numbers of 16 bits, each moved up by 32768
@@ -20,7 +21,7 @@
 //      colors of the Colored theme lie over the world, and how much film grain lies over them (in any other pane, how saturated what is behind it is)
 //   9: the width and height of the screen, 16 bits each
 //   10: up to four panes whose glows reach into this one's, 255 for none
-// The quad gives which part it draws in its second texture coordinate: all of the pane, what lies outside of its edge (in the pass behind all elements), or the pane itself.
+// The quad gives which part it draws in its second texture coordinate: all of the pane, what lies outside of its edge (in the pass behind all elements), the pane itself, or only the blurred picture, as it is (in place of the game's blur behind the menu).
 
 uniform sampler2D Sampler0;  // the screen as it was before the panes, sharp; for a pane of the Colored theme, its colors over the whole screen
 uniform sampler2D Sampler1;  // the same, blurred and small
@@ -42,6 +43,7 @@ const int FLAG_READABLE = 128;
 
 const float PART_OUTSIDE = 1.0;
 const float PART_INSIDE = 2.0;
+const float PART_BACKDROP = 3.0;
 const int PANE_TEXELS = 13;
 const int COLORED_BRIGHTNESS_TEXEL = 64;
 const int FIRST_PANE_TEXEL = 129;
@@ -65,6 +67,8 @@ const float GLOW_CORE_STRENGTH = 0.7;
 const float GLOW_BLOOM_STRENGTH = 0.42;
 // the refraction and color fringes stay in this share of the edge's depth
 const float BEND_BAND = 0.6;
+// how deep the line on the edge reaches into a pane, in pixels
+const float RIM_DEPTH = 1.9;
 
 // a fixed noise per screen pixel, from 0 to 1
 float hash(vec2 p) {
@@ -106,6 +110,11 @@ vec4 glowAt(float place) {
     vec4 ca = texelFetch(Sampler2, ivec2(a, 0), 0);
     vec4 cb = texelFetch(Sampler2, ivec2(b, 0), 0);
     return vec4(toScreen(mix(toLinear(ca.rgb), toLinear(cb.rgb), f)), mix(ca.a, cb.a, f));
+}
+
+// Whether panes of the Colored theme glow in its own colors ("Color from: Theme colors"), or in the glow colors like every other pane.
+bool themeGlow() {
+    return texelFetch(Sampler2, ivec2(COLORED_BRIGHTNESS_TEXEL, 0), 0).r > 0.5;
 }
 
 // How bright the glow of the Colored theme is at a place of the edge.
@@ -170,6 +179,19 @@ vec3 flowForGlow(vec2 edgePoint, int base) {
     return texture(Sampler0, flowPlace(edgePoint, base)).rgb;
 }
 
+// The glow's color at a pixel of this pane, with how bright it is as its alpha: the Colored theme's field at the nearest point of the edge, or the glow
+// colors at that place of the edge. It takes an arc tangent and a few powers, so it is only asked for where some glow is seen.
+vec4 glowColorAt(vec2 p, float dist, vec2 normal, vec2 origin, vec2 size, float radius, int base, bool colored) {
+    // where on the edge the pixel is, with the top left corner as the origin, and y going down
+    float place = edgePlace(vec2(p.x - origin.x, (origin.y + size.y) - p.y), size, radius);
+    // what fills a pane of the Colored theme is what lights its edge and glows around it, at the same moment; outside of the pane, the glow has the
+    // color of the fill at the nearest point of the edge
+    if (colored && themeGlow()) {
+        return vec4(flowForGlow(p - normal * max(dist, 0.0), base), coloredBrightnessAt(place));
+    }
+    return glowAt(place);
+}
+
 // The soft fall of a light or a shadow from an edge, as the halos of the menu have it.
 float falloff(float t) {
     t = clamp(t, 0.0, 1.0);
@@ -193,10 +215,11 @@ float glowOfPane(int pane, vec2 p, vec2 screen, out vec3 color) {
     float spread = t5.g;
     float core = falloff(d / max(1.5, spread * GLOW_CORE)) * GLOW_CORE_STRENGTH;
     float bloom = falloff(d / max(spread, 1.0)) * GLOW_BLOOM_STRENGTH;
-    bool colored = (int(t5.a + 0.5) & FLAG_COLORED) != 0;
+    // a pane of the Colored theme glows in the theme's field when the glow takes its colors from the theme; else in the glow colors
+    bool fromTheme = (int(t5.a + 0.5) & FLAG_COLORED) != 0 && themeGlow();
     float place = edgePlace(vec2(p.x - origin.x, (origin.y + size.y) - p.y), size, radius);
     float bright;
-    if (colored) {
+    if (fromTheme) {
         color = flowForGlow(p - normal * d, base);
         bright = coloredBrightnessAt(place);
     } else {
@@ -211,7 +234,13 @@ void main() {
     int index = int(texCoord0.x + 0.5);
     int base = FIRST_PANE_TEXEL + index * PANE_TEXELS;
     bool outsidePart = texCoord0.y > 0.5 && texCoord0.y < 1.5;
-    bool insidePart = texCoord0.y > 1.5;
+    bool insidePart = texCoord0.y > 1.5 && texCoord0.y < 2.5;
+    if (texCoord0.y > 2.5) {
+        // the backdrop in place of the game's blur: the blurred picture as it is, with nothing of the glass
+        vec4 extent = param(base + 9);
+        fragColor = vec4(texture(Sampler1, gl_FragCoord.xy / vec2(u16(extent.r, extent.g), u16(extent.b, extent.a))).rgb, vertexColor.a);
+        return;
+    }
     vec4 t0 = param(base);
     vec4 t1 = param(base + 1);
     vec4 t2 = param(base + 2);
@@ -259,13 +288,12 @@ void main() {
     vec2 centre = origin + size * 0.5;
     vec2 normal;
     float dist = continuousBox(p - centre, size * 0.5, radius, normal);
-    // where on the edge the pixel is, for the colors of the glow: with the top left corner as the origin, and y going down
-    vec2 q = vec2(p.x - origin.x, (origin.y + size.y) - p.y);
-    float place = edgePlace(q, size, radius);
-    // the colors of the Colored theme at this place of the screen: what fills the pane is what lights its edge and glows around it, at the same moment. Outside of the
-    // pane, the glow has the color of the fill at the nearest point of the edge; the other themes have the glow's own colors along the edge
+    // the edge drawn over a pane's content is only its line: deeper in, it is not seen, and the whole glass would be worked out there for nothing
+    if (rimOnly && -dist >= RIM_DEPTH) {
+        discard;
+    }
+    // the colors of the Colored theme at this place of the screen
     vec3 flow = colored ? texture(Sampler0, flowPlace(p, base)).rgb : vec3(0.0);
-    vec4 glowColor = colored ? vec4(flowForGlow(p - normal * max(dist, 0.0), base), coloredBrightnessAt(place)) : glowAt(place);
     // one light for every pane, from above and a little from the left: it lies along the top edge and fades round the corners, and the bottom
     // edge, turned away from it, is a touch darker
     vec2 lightDirection = normalize(vec2(-0.45, 1.0));
@@ -292,8 +320,11 @@ void main() {
             // two layers: a narrow bright core right at the edge, and a wide, very soft bloom; both reach exactly nothing at their end
             float core = falloff(d / max(1.5, glowSpread * GLOW_CORE)) * GLOW_CORE_STRENGTH;
             float bloom = falloff(d / glowSpread) * GLOW_BLOOM_STRENGTH;
-            float ga = (1.0 - (1.0 - core) * (1.0 - bloom)) * glowColor.a * glowStrength;
-            if (outsidePart) {
+            float layers = 1.0 - (1.0 - core) * (1.0 - bloom);
+            // beyond its reach there is no glow, and nothing of the neighbours' changes that: neither its color nor theirs is needed there
+            vec4 glowColor = layers > 0.0 ? glowColorAt(p, dist, normal, origin, size, radius, base, colored) : vec4(0.0);
+            float ga = layers * glowColor.a * glowStrength;
+            if (outsidePart && ga > 0.0) {
                 // where glows meet they make one soft glow: the strongest here is what is drawn, in the colors of all of them by how strong each is, so they do not add up
                 vec4 neighbors = param(base + 10);
                 // compared as they are drawn, with each pane's fade, so that both see the same at the line where they are equal
@@ -339,10 +370,14 @@ void main() {
             // narrow band at the edge, and is gentle
             float band = thickness * BEND_BAND;
             float tb = clamp(depth / band, 0.0, 1.0);
-            float xr = 1.0 - tb;
-            float thetaI = asin(xr * xr);
-            float thetaT = asin(sin(thetaI) / 1.45);
-            float bend = tb >= 1.0 ? 0.0 : tan(thetaI - thetaT);
+            // beyond the band, or with no bending set, it bends nothing: the arc sines and the tangent are only worked out in the band
+            float bend = 0.0;
+            if (tb < 1.0 && refraction > 0.0) {
+                float xr = 1.0 - tb;
+                float thetaI = asin(xr * xr);
+                float thetaT = asin(sin(thetaI) / 1.45);
+                bend = tan(thetaI - thetaT);
+            }
             vec2 offset = -normal * bend * band * 0.9 * refraction;
             vec2 uv = p / screen;
             vec2 unit = 1.0 / screen;
@@ -351,10 +386,13 @@ void main() {
             vec2 uvR = uv + offset * (1.0 - spread) * unit;
             vec2 uvG = uv + offset * unit;
             vec2 uvB = uv + offset * (1.0 + spread) * unit;
-            vec3 soft = vec3(texture(Sampler1, uvR).r, texture(Sampler1, uvG).g, texture(Sampler1, uvB).b);
+            // where the edge bends nothing or splits no colors, the three places are one: one sample instead of three
+            bool split = spread > 0.0 && (offset.x != 0.0 || offset.y != 0.0);
+            vec3 soft = split ? vec3(texture(Sampler1, uvR).r, texture(Sampler1, uvG).g, texture(Sampler1, uvB).b) : texture(Sampler1, uvG).rgb;
             vec3 behind = soft;
-            if (!colored) {
-                vec3 sharp = vec3(texture(Sampler0, uvR).r, texture(Sampler0, uvG).g, texture(Sampler0, uvB).b);
+            // from a tenth of the blur on only the blurred picture is seen, so the sharp one is not read
+            if (!colored && blur < 0.1) {
+                vec3 sharp = split ? vec3(texture(Sampler0, uvR).r, texture(Sampler0, uvG).g, texture(Sampler0, uvB).b) : texture(Sampler0, uvG).rgb;
                 // the blurred picture is the one that is seen, as soon as there is any blur: how much it is blurred is in the picture itself
                 behind = mix(sharp, soft, smoothstep(0.0, 0.1, blur));
             }
@@ -393,9 +431,12 @@ void main() {
             // the light that comes through the edge: a soft brightening inside of it, strongest where the light falls
             // (a flat pane has neither, nor the gloss below: it is the plain fill)
             if (!flatPane) {
-                float fresnel = pow(max(1.0 - t, 0.0), 2.5) * edgeLight * (0.22 + 0.38 * lightOnEdge) * (window ? 0.9 : 0.7);
-                vec3 lightTint = mix(vec3(1.0), tint, 0.25);
-                color = mix(color, lightTint, fresnel);
+                // deeper than the edge's depth no light comes through it
+                if (t < 1.0) {
+                    float fresnel = pow(1.0 - t, 2.5) * edgeLight * (0.22 + 0.38 * lightOnEdge) * (window ? 0.9 : 0.7);
+                    vec3 lightTint = mix(vec3(1.0), tint, 0.25);
+                    color = mix(color, lightTint, fresnel);
+                }
                 // a gloss over the top of the pane, where the light comes in from above
                 float top = clamp((p.y - origin.y) / max(size.y, 1.0), 0.0, 1.0);
                 color += vec3(0.035 + 0.045 * edgeLight) * smoothstep(0.55, 1.0, top) * (window ? 0.6 : 1.0);
@@ -405,14 +446,17 @@ void main() {
         if (lit > 0.001) {
             color = mix(color, accent, 0.26 * lit);
         }
-        if (innerGlow && glowStrength > 0.001) {
-            float innerDepth = window ? 7.0 * (thickness / 12.0) : 4.0 * (thickness / 12.0);
-            float ti = clamp(depth / max(innerDepth, 1.0), 0.0, 1.0);
+        // the glow inside reaches this deep, and the line on the edge up to RIM_DEPTH: deeper in, the glow's color is not needed
+        float innerDepth = max(window ? 7.0 * (thickness / 12.0) : 4.0 * (thickness / 12.0), 1.0);
+        bool glowSeen = glowStrength > 0.001 && (depth < RIM_DEPTH || (innerGlow && depth < innerDepth));
+        vec4 glowColor = glowSeen ? glowColorAt(p, dist, normal, origin, size, radius, base, colored) : vec4(0.0);
+        if (innerGlow && glowSeen) {
+            float ti = clamp(depth / innerDepth, 0.0, 1.0);
             float f = 1.0 - ti * ti * (3.0 - 2.0 * ti);
             color = mix(color, glowColor.rgb, f * f * glowColor.a * glowStrength * 0.42);
         }
         // the line on the edge: bright where the light falls on the glass, and in the color of the glow where the glow is
-        float rim = 1.0 - smoothstep(0.6, 1.9, depth);
+        float rim = 1.0 - smoothstep(0.6, RIM_DEPTH, depth);
         if (opaque) {
             color = mix(color, lineColor, rim);
         } else {
@@ -428,7 +472,7 @@ void main() {
             }
             color = mix(color, line, rim * lineAlpha);
         }
-        if (glowStrength > 0.001) {
+        if (glowSeen) {
             vec3 glowLine = mix(glowColor.rgb, vec3(1.0), 0.28);
             color = mix(color, glowLine, rim * min(1.0, glowColor.a * glowStrength * 1.1));
         }

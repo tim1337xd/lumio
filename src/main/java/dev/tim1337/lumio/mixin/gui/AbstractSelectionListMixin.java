@@ -5,6 +5,7 @@ import dev.tim1337.lumio.ui.Cards;
 import dev.tim1337.lumio.ui.HudStyle;
 import dev.tim1337.lumio.ui.Ui;
 import dev.tim1337.lumio.ui.UiGlow;
+import dev.tim1337.lumio.ui.VanillaLook;
 
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -70,7 +71,7 @@ public abstract class AbstractSelectionListMixin {
 		boolean selected = picked == entry;
 		// same glass as the main menu buttons: glows on hover; the selected entry is filled with the menu color and outlined in it
 		float lit = Cards.lit(entry, over, selected);
-		float radius = 8f;
+		float radius = VanillaLook.radius(height);
 		HudStyle.panel(ui, x, y, width, height, radius, HudStyle.opacity(), UiGlow.Target.BUTTONS, lit);
 		if (lit > 0.01f) {
 			ui.rounded(x, y, width, height, radius, Ui.withOpacity(ui.accent, 0.20f * lit));

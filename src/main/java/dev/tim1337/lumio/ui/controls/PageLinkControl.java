@@ -15,7 +15,7 @@ import java.util.function.Supplier;
  * A dashed card with a link icon, a note in which the other page's name is bold, and a link on the right that opens that page, as at the end
  * of the Mining page in the mockups.
  */
-public class PageLinkControl extends Control {
+public final class PageLinkControl extends Control {
 	private static final int HEIGHT = 34;
 	private static final int PAD = 12;
 	private static final int ICON = 12;

@@ -7,7 +7,7 @@ import dev.tim1337.lumio.ui.Ui;
 import java.util.List;
 
 /** A note across the row: an info icon and secondary text, wrapped to at most three lines instead of being cut. */
-public class NoteControl extends Control {
+public final class NoteControl extends Control {
 	private static final int ICON = 9;
 	private static final int ICON_GAP = 6;
 	private static final int MOST_LINES = 3;

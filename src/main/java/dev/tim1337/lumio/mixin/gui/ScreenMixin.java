@@ -2,6 +2,7 @@ package dev.tim1337.lumio.mixin.gui;
 
 import dev.tim1337.lumio.ModFeatures;
 import dev.tim1337.lumio.ui.MenuBackground;
+import dev.tim1337.lumio.ui.PagedMenus;
 import dev.tim1337.lumio.ui.loading.LoadingScreens;
 import dev.tim1337.lumio.ui.loading.LoadingSession;
 
@@ -18,6 +19,19 @@ import net.minecraft.client.gui.screens.multiplayer.ServerReconfigScreen;
 /** The mod's animated menu background behind out-of-world screens, and the loading view for the loading screens that draw no more than a message. */
 @Mixin(Screen.class)
 public abstract class ScreenMixin {
+	/**
+	 * The next page of a server menu whose items have not come yet: the page before is drawn in its place, as it was, so a page switch shows no empty
+	 * frame and no opening (see {@link PagedMenus}). Clicks and keys still go to the new page.
+	 */
+	@Inject(method = "extractRenderStateWithTooltipAndSubtitles", at = @At("HEAD"), cancellable = true)
+	private void lumio$pageStandIn(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
+		Screen standIn = PagedMenus.standIn((Screen) (Object) this);
+		if (standIn != null && standIn != (Object) this) {
+			standIn.extractRenderStateWithTooltipAndSubtitles(graphics, mouseX, mouseY, partialTick);
+			ci.cancel();
+		}
+	}
+
 	/**
 	 * The message screens ("Saving world", "Joining world") and the server's reconfiguring screen have no drawing of their own beyond this one, so
 	 * the loading view takes over here. Every other screen passes after one type check.

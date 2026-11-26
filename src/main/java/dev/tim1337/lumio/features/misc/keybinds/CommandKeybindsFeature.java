@@ -1,5 +1,7 @@
 package dev.tim1337.lumio.features.misc.keybinds;
 
+import dev.tim1337.lumio.config.setting.KeySetting;
+
 import dev.tim1337.lumio.api.experimental.util.ScreenInput;
 import dev.tim1337.lumio.addon.Addons;
 import dev.tim1337.lumio.api.Place;
@@ -18,6 +20,7 @@ import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.Options;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -56,7 +59,7 @@ public class CommandKeybindsFeature extends Feature {
 	private String keyName = "";
 
 	public CommandKeybindsFeature() {
-		super("command_keybinds", "Keybinds", "Put a command on a key, everywhere or only in the places you pick.", false);
+		super("command_keybinds", "Keybinds", "Put a command on a key.", false);
 		iconRgb(SystemColors.BLUE_RGB);
 		iconName("keyboard");
 		summary("Commands on keys of your choice");
@@ -121,14 +124,17 @@ public class CommandKeybindsFeature extends Feature {
 			return false;
 		}
 		Screen screen = client.gui.screen();
-		if (screen != null && !keysFree(screen)) {
+		if (screen != null && !keysFree(screen, InputConstants.getKey(event))) {
 			return false;
 		}
 		boolean inWorld = KeybindPlaces.inWorld();
 		String area = inWorld ? KeybindPlaces.placeName() : null;
 		Place known = area == null ? null : CustomIslands.builtIn(area);
 		CommandBinds.Spot place = new CommandBinds.Spot(inWorld, known == null ? null : known.key(), area == null ? "" : CustomIslands.key(area), screen != null);
-		CommandBinds.Outcome outcome = trigger.key(binds.binds(), event.key(), ScreenInput.modifiers(event.modifiers()), action, System.currentTimeMillis(), place);
+		// a more specific bind of the game's or Lumio's on this key (Tab + R while Tab is held) wins over a keybind with fewer keys
+		int giveWayTo = action == InputConstants.PRESS ? KeyCombos.mostSpecific(InputConstants.Type.KEYSYM.getOrCreate(event.key())) : 0;
+		CommandBinds.Outcome outcome = trigger.key(binds.binds(), event.key(), ScreenInput.modifiers(event.modifiers()), action, System.currentTimeMillis(), place,
+			KeyCombos::down, giveWayTo);
 		if (outcome.send() != null) {
 			send(client, outcome.send());
 		}
@@ -136,21 +142,75 @@ public class CommandKeybindsFeature extends Feature {
 	}
 
 	/**
-	 * @return whether keybinds may act while this screen is open: only inventories and containers, and not while one of their text fields
-	 *         has the keyboard. Chat, signs, books, menus and the settings (where keybinds are recorded) never lose a key to them.
+	 * A press of a mouse button or a turn of the wheel (by name, such as "key.mouse.4" or the wheel's), for keybinds on it.
+	 *
+	 * @return whether a keybind takes it: then the game does not get it
 	 */
-	private static boolean keysFree(Screen screen) {
+	public boolean onOther(String triggerName) {
+		Minecraft client = Minecraft.getInstance();
+		if (!isEnabled() || binds.binds().isEmpty() || client.player == null || client.getConnection() == null) {
+			return false;
+		}
+		Screen screen = client.gui.screen();
+		if (screen == null ? ownedInWorld(keyNamed(triggerName)) : !keysFree(screen, keyNamed(triggerName))) {
+			return false;
+		}
+		boolean inWorld = KeybindPlaces.inWorld();
+		String area = inWorld ? KeybindPlaces.placeName() : null;
+		Place known = area == null ? null : CustomIslands.builtIn(area);
+		CommandBinds.Spot place = new CommandBinds.Spot(inWorld, known == null ? null : known.key(), area == null ? "" : CustomIslands.key(area), screen != null);
+		CommandBinds.Outcome outcome = trigger.other(binds.binds(), triggerName, heldModifiers(), System.currentTimeMillis(), place, KeyCombos::down);
+		if (outcome.send() != null) {
+			send(client, outcome.send());
+		}
+		return outcome.taken();
+	}
+
+	/** @return the modifiers held now, as a key event gives them */
+	private static int heldModifiers() {
+		return (KeyCombos.down(KeyCombo.CONTROL) ? ScreenInput.CONTROL : 0) | (KeyCombos.down(KeyCombo.SHIFT) ? ScreenInput.SHIFT : 0)
+			| (KeyCombos.down(KeyCombo.ALT) ? ScreenInput.ALT : 0);
+	}
+
+	/**
+	 * @return whether keybinds may act on this key while this screen is open: only inventories and containers, not while one of their text fields
+	 *         has the keyboard, and not on a key an add-on uses itself in this menu. Chat, signs, books, menus and the settings (where keybinds are
+	 *         recorded) never lose a key to them.
+	 */
+	private static boolean keysFree(Screen screen, InputConstants.Key key) {
 		// a text field of the screen itself, such as the creative search or the anvil name, has the keyboard as well
 		if (!(screen instanceof AbstractContainerScreen<?>) || screen.getFocused() instanceof EditBox) {
 			return false;
 		}
 		// and not while a search field of an add-on has it (the storage overlay, the item list)
 		for (ScreenHooks hooks : Addons.screenHooks()) {
-			if (hooks.typing(screen)) {
+			if (hooks.typing(screen) || key != null && hooks.ownsKey(screen, key)) {
 				return false;
 			}
 		}
 		return true;
+	}
+
+	/** @return whether an add-on uses this key itself in the world now (such as a farming key while farming): the keybind on it waits */
+	private static boolean ownedInWorld(InputConstants.Key key) {
+		if (key == null) {
+			return false;
+		}
+		for (ScreenHooks hooks : Addons.screenHooks()) {
+			if (hooks.ownsWorldKey(key)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** @return the key or mouse button of a trigger's name ("key.mouse.4"), or null for one that is neither, such as the wheel */
+	private static InputConstants.Key keyNamed(String triggerName) {
+		try {
+			return InputConstants.getKey(triggerName);
+		} catch (IllegalArgumentException notAKey) {
+			return null;
+		}
 	}
 
 	/** Sends the keybind's command once, exactly as typed, and shows it briefly if wanted. */
@@ -172,6 +232,20 @@ public class CommandKeybindsFeature extends Feature {
 	}
 
 	/** @return the parts of a key, one per key cap: the modifiers in the usual order, then the key */
+	/** @return a keybind's keys as shown on key caps: "Tab", "R"; its combination, modifiers first */
+	public static List<String> keyParts(CommandBind bind) {
+		if (bind.holders.isEmpty() && bind.trigger.isEmpty()) {
+			return keyParts(bind.key, bind.modifiers);
+		}
+		KeyCombo combo = bind.combo();
+		List<String> parts = new ArrayList<>(combo.size());
+		for (String holder : combo.holders()) {
+			parts.add(KeyCombos.keyName(holder));
+		}
+		parts.add(KeyCombos.keyName(combo.trigger()));
+		return parts;
+	}
+
 	public static List<String> keyParts(int key, int modifiers) {
 		if (key == CommandBind.NO_KEY) {
 			return List.of("None");
@@ -206,9 +280,11 @@ public class CommandKeybindsFeature extends Feature {
 		if (key == CommandBind.NO_KEY) {
 			return null;
 		}
-		for (KeyMapping mapping : Minecraft.getInstance().options.keyMappings) {
+		Options options = Minecraft.getInstance().options;
+		for (KeyMapping mapping : options.keyMappings) {
 			InputConstants.Key bound = KeyMappingHelper.getBoundKeyOf(mapping);
-			if (bound.getType() == InputConstants.Type.KEYSYM && bound.getValue() == key) {
+			// a key that acts only with others held (F3 + H, Tab + R) is no other use of the plain key
+			if (bound.getType() == InputConstants.Type.KEYSYM && bound.getValue() == key && KeySetting.comboOf(options, mapping).size() <= 1) {
 				return Component.translatable(mapping.getName()).getString();
 			}
 		}

@@ -1,7 +1,7 @@
 package dev.tim1337.lumio.features.visual.hud;
 
+import dev.tim1337.lumio.api.experimental.draw.Radius;
 import dev.tim1337.lumio.api.experimental.draw.SystemColors;
-import dev.tim1337.lumio.ui.HudStyle;
 import dev.tim1337.lumio.ui.Ui;
 import dev.tim1337.lumio.ui.motion.Critical;
 
@@ -395,7 +395,7 @@ final class StatusBarPainter {
 			ui.softLight(width / 2f, xpHeight() / 2f, pillWidth / 2f + 7f, pillHeight(), Ui.withOpacity(color, 0.55f * glow * alpha));
 		}
 		// the edge as the pill itself, and the fill one screen pixel inside it: both on the same pixels, unlike an outline drawn in menu pixels
-		ui.roundedSmooth(pillX, pillY, pillWidth, pillHeight, pillHeight / 2f, Ui.withOpacity(Ui.mix(LEVEL_EDGE, 0xFFB9F59A, glow), alpha));
+		ui.roundedSmooth(pillX, pillY, pillWidth, pillHeight, Radius.box(pillHeight), Ui.withOpacity(Ui.mix(LEVEL_EDGE, 0xFFB9F59A, glow), alpha));
 		ui.roundedSmooth(pillX + pixel, pillY + pixel, pillWidth - 2 * pixel, pillHeight - 2 * pixel, pillHeight / 2f - pixel,
 			Ui.withOpacity(LEVEL_FILL, alpha));
 		float textX = pillX + (pillWidth - ink) / 2f;

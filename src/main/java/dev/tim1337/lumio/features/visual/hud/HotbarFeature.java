@@ -6,17 +6,14 @@ import dev.tim1337.lumio.api.experimental.draw.SystemColors;
 import dev.tim1337.lumio.api.experimental.motion.Spring;
 import dev.tim1337.lumio.api.experimental.util.TextColors;
 import dev.tim1337.lumio.config.Feature;
-import dev.tim1337.lumio.config.SettingsView;
 import dev.tim1337.lumio.config.setting.BooleanSetting;
 import dev.tim1337.lumio.config.setting.EnumSetting;
 import dev.tim1337.lumio.config.setting.FloatSetting;
-import dev.tim1337.lumio.config.setting.Setting;
 import dev.tim1337.lumio.hud.HudPanelFeature;
 import dev.tim1337.lumio.ui.EditableHud;
 import dev.tim1337.lumio.ui.HudEditScreen;
 import dev.tim1337.lumio.ui.HudParts;
 import dev.tim1337.lumio.ui.HudStyle;
-import dev.tim1337.lumio.ui.MacScreen;
 import dev.tim1337.lumio.ui.Sweep;
 import dev.tim1337.lumio.ui.Ui;
 import dev.tim1337.lumio.ui.motion.Critical;
@@ -33,7 +30,6 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
@@ -117,8 +113,8 @@ public class HotbarFeature extends HudPanelFeature {
 	private final BooleanSetting lift = add(new BooleanSetting("lift", Component.literal("Raise selected item"), true), "General");
 
 	private final BooleanSetting itemName = add(new BooleanSetting("item_name", Component.literal("Item name"), true), "Item name",
-		"Above the stack when you switch items");
-	private final BooleanSetting tidyName = add(new BooleanSetting("tidy_name", Component.literal("Without stars and \"(Click)\""), true), "Item name");
+		null);
+	private final BooleanSetting tidyName = add(new BooleanSetting("tidy_name", Component.literal("Tidy names"), true), "Item name");
 
 	/** Held item name style: the name in its color, a pill with the item and name, or a card like the pet panel's with the rarity below. */
 	public enum NameStyle {
@@ -216,7 +212,7 @@ public class HotbarFeature extends HudPanelFeature {
 	private long nameStart;
 
 	public HotbarFeature() {
-		super("hotbar", "Hotbar", "The hotbar on glass, with the status bars stacked above it.", false, Anchor.CENTER, true, 0f, 4f);
+		super("hotbar", "Hotbar", "The hotbar on glass, status bars above it.", false, Anchor.CENTER, true, 0f, 4f);
 		iconRgb(SystemColors.GREEN_RGB);
 		iconName("hotbar");
 		summary("The hotbar in the style of the mod");
@@ -227,7 +223,11 @@ public class HotbarFeature extends HudPanelFeature {
 		nameScale.visibleWhen(() -> false);
 		tidyName.under(itemName);
 		nameStyle.under(itemName);
-		nameGlow.under(itemName, () -> nameStyle.get() != NameStyle.TEXT);
+		nameGlow.under(itemName, () -> nameStyle.get() != NameStyle.TEXT && hasBackground());
+		// the slim bar has no glow, and the light on the selected slot is part of the panel's glow
+		glowRow.visibleWhen(() -> !slim());
+		selectedGlow.visibleWhen(() -> !slim() && glow.get());
+		panelDepth.visibleWhen(this::hasBackground);
 	}
 
 	// ----------------------------------------------------------------------------------------------------- settings card

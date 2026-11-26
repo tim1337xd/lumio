@@ -1,8 +1,5 @@
 package dev.tim1337.lumio.render;
 
-import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.blaze3d.vertex.VertexConsumer;
-
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
@@ -132,22 +129,6 @@ public final class EchoShape {
 				ontoSilhouette(sideFirst, segmentCount);
 			}
 		}
-	}
-
-	/** Adds a line from one point to another, already in camera space. */
-	public void addSegment(float ax, float ay, float az, float bx, float by, float bz) {
-		ensure(segmentCount + 1);
-		int at = segmentCount * FLOATS_PER_SEGMENT;
-		segments[at] = ax;
-		segments[at + 1] = ay;
-		segments[at + 2] = az;
-		segments[at + 3] = bx;
-		segments[at + 4] = by;
-		segments[at + 5] = bz;
-		segments[at + 6] = 0f;
-		segments[at + 7] = 0f;
-		segments[at + 8] = 0f;
-		segmentCount++;
 	}
 
 	/**

@@ -25,8 +25,6 @@ import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
 
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.util.Optional;
 import java.util.OptionalDouble;
 
@@ -391,14 +389,6 @@ public final class MenuWorld {
 
 	/** @return a full-image quad in the pipeline's vertex format: position, texture coordinate and color */
 	private static GpuBuffer makeQuad() {
-		float[][] corners = {{-1f, -1f}, {1f, -1f}, {1f, 1f}, {-1f, 1f}};
-		ByteBuffer data = ByteBuffer.allocateDirect(4 * 24).order(ByteOrder.nativeOrder());
-		for (float[] corner : corners) {
-			data.putFloat(corner[0]).putFloat(corner[1]).putFloat(0f);
-			data.putFloat(corner[0] * 0.5f + 0.5f).putFloat(corner[1] * 0.5f + 0.5f);
-			data.putInt(0xFFFFFFFF);
-		}
-		data.flip();
-		return RenderSystem.getDevice().createBuffer(() -> "Lumio menu world quad", GpuBuffer.USAGE_VERTEX, data);
+		return FullQuads.create("Lumio menu world quad", 0xFFFFFFFF);
 	}
 }

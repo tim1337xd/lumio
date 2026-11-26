@@ -5,6 +5,7 @@ import dev.tim1337.lumio.config.setting.BooleanSetting;
 import dev.tim1337.lumio.config.setting.ColorSetting;
 import dev.tim1337.lumio.config.setting.EnumSetting;
 import dev.tim1337.lumio.config.setting.FloatSetting;
+import dev.tim1337.lumio.config.setting.Setting;
 
 import net.minecraft.network.chat.Component;
 
@@ -23,23 +24,29 @@ public class AmbienceFeature extends Feature {
 	private final ColorSetting fireflyColor = add(new ColorSetting("firefly_color", Component.literal("Firefly color"), 0xC8FF5A).followsMenu(), FIREFLIES);
 	/** Firefly blinking: 0 is a steady glow, 1 alternates between lit and dark. */
 	private final FloatSetting fireflyBlink = add(new FloatSetting("firefly_blink", Component.literal("Firefly blinking"), 0.2f, 0f, 1f, 2), FIREFLIES,
-		"0 glows steadily, 1 blinks on and off");
+		"0 steady, 1 blinking");
 	/** Firefly brightness, i.e. how much of their light is visible. */
 	private final FloatSetting fireflyBrightness = add(new FloatSetting("firefly_brightness", Component.literal("Firefly brightness"), 0.8f, 0.1f, 1f, 2), FIREFLIES);
 	/** Firefly count relative to the default. */
 	private final FloatSetting fireflyAmount = add(new FloatSetting("firefly_amount", Component.literal("Firefly amount"), 1f, 0.1f, 6f, 1), FIREFLIES);
-	private final BooleanSetting firefliesAnywhere = add(new BooleanSetting("fireflies_anywhere", Component.literal("Fireflies at any time and place"), false), FIREFLIES);
+	private final BooleanSetting firefliesAnywhere = add(new BooleanSetting("fireflies_anywhere", Component.literal("Fireflies everywhere"), false), FIREFLIES);
 
 	private final AmbienceField field = new AmbienceField();
 
 	public AmbienceFeature() {
-		super("ambience", "Ambience", "Fireflies or rain around you, and a wet ground that reflects.", false);
+		super("ambience", "Ambience", "Fireflies, rain and a wet, reflecting ground.", false);
 		iconRgb(0x5AC8FA);
 		iconName("cloud_snow");
-		summary("Fireflies or rain around you, and a wet ground that reflects");
+		summary("Fireflies, rain and a wet, shiny ground");
 		wetGround.visibleWhen(() -> style.get() == AmbienceLook.Style.RAIN);
 		wetStrength.visibleWhen(() -> style.get() == AmbienceLook.Style.RAIN && wetGround.get() != AmbienceLook.WetGround.OFF);
 		reflectionDistance.visibleWhen(() -> style.get() == AmbienceLook.Style.RAIN && wetGround.get() != AmbienceLook.WetGround.OFF);
+		// fireflies have their own amount and only they have a size; the rain has neither of theirs (the extras would use both)
+		intensity.visibleWhen(() -> style.get() == AmbienceLook.Style.RAIN || AmbienceLook.EXTRAS);
+		particleSize.visibleWhen(() -> style.get() == AmbienceLook.Style.FIREFLIES || AmbienceLook.EXTRAS);
+		for (Setting<?> firefly : new Setting<?>[]{fireflyColor, fireflyBlink, fireflyBrightness, fireflyAmount, firefliesAnywhere}) {
+			firefly.visibleWhen(() -> style.get() == AmbienceLook.Style.FIREFLIES);
+		}
 		addResetButton();
 	}
 

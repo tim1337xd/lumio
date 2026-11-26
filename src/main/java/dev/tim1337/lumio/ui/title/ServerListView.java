@@ -66,7 +66,7 @@ public final class ServerListView extends TitleListView {
 	private ExecutorService pingThreads;
 	private final List<ServerData> all = new ArrayList<>();
 	private final Map<ServerData, Icon> icons = new IdentityHashMap<>();
-	private final Map<ServerData, String[]> texts = new IdentityHashMap<>();
+	private final Map<ServerData, RowTexts> texts = new IdentityHashMap<>();
 	/** The line of each server's message of the day that the row shows, made when the server's status changes. */
 	private final Map<ServerData, FormattedCharSequence> motds = new IdentityHashMap<>();
 	private LanServerDetection.LanServerList lanList;
@@ -349,17 +349,17 @@ public final class ServerListView extends TitleListView {
 				Ui.withOpacity(Ui.mix(color, 0xFF000000, 0.25f), alpha));
 			String letter = offline ? "?" : data.name.isBlank() ? "?" : data.name.substring(0, 1).toUpperCase(Locale.ROOT);
 			float scale = 17f * TEXT;
-			ui.textAtScaledBold(letter, tileX + 21f - ui.widthScaled(letter, scale) / 2f, tileY + 21f - 4.5f * scale, scale, Ui.withOpacity(0xFFFFFFFF, alpha));
+			ui.textCenteredAtScaledBold(letter, tileX + 21f, tileY + 21f - 4.5f * scale, scale, Ui.withOpacity(0xFFFFFFFF, alpha));
 		}
 		// ping and players on the right
 		float right = x + width - 14f;
 		float small = 12f * TEXT;
-		String[] text = texts.computeIfAbsent(data, ServerListView::rowTexts);
-		String ping = text[0];
-		float pingWidth = ui.widthScaled(ping, 13f * TEXT);
+		RowTexts text = texts.computeIfAbsent(data, ServerListView::rowTexts);
+		String ping = text.ping();
+		float pingWidth = ui.boldDrawnWidthScaled(ping, 13f * TEXT, Ui.withOpacity(0xFFFFFFFF, alpha));
 		ui.textAtScaledBold(ping, right - pingWidth, y + 16f, 13f * TEXT, Ui.withOpacity(0xFFFFFFFF, alpha));
 		drawBars(ui, right - pingWidth - 21f, y + 16f, state, data.ping, alpha);
-		String players = text[1];
+		String players = text.players();
 		float playersWidth = ui.widthScaled(players, small);
 		float playersX = right - playersWidth;
 		ui.textAtScaled(players, playersX, y + 38f, small, Ui.withOpacity(0xFFFFFFFF, 0.6f * alpha));
@@ -379,9 +379,9 @@ public final class ServerListView extends TitleListView {
 		if (offline) {
 			ui.textAtScaled("Can't reach the server", textX, lineY, lineScale, Ui.withOpacity(0xFFFFFFFF, 0.45f * alpha));
 		} else if (state == ServerData.State.INCOMPATIBLE) {
-			ui.textAtScaled(ui.fitScaled(text[3], room, lineScale), textX, lineY, lineScale, Ui.withOpacity(OLD_VERSION_TEXT, alpha));
+			ui.textAtScaled(ui.fitScaled(text.neededVersion(), room, lineScale), textX, lineY, lineScale, Ui.withOpacity(OLD_VERSION_TEXT, alpha));
 		} else {
-			String address = text[2];
+			String address = text.address();
 			ui.textAtScaled(ui.fitScaled(address, room, lineScale), textX, lineY, lineScale, Ui.withOpacity(0xFFFFFFFF, 0.62f * alpha));
 			float used = ui.widthScaled(address, lineScale);
 			if (used < room - 20f) {
@@ -457,12 +457,16 @@ public final class ServerListView extends TitleListView {
 		return data;
 	}
 
-	/** @return the texts of a row: the ping, the players, the address with its separator, and the version a server needs */
-	private static String[] rowTexts(ServerData data) {
+	/** The texts of a row: the ping, the players, the address with its separator, and the version a server needs. */
+	private record RowTexts(String ping, String players, String address, String neededVersion) {
+	}
+
+	/** @return the texts of a row, made when the server's status changes */
+	private static RowTexts rowTexts(ServerData data) {
 		ServerData.State state = data.state();
 		String ping = state == ServerData.State.SUCCESSFUL || state == ServerData.State.INCOMPATIBLE ? data.ping + " ms" : "–";
 		String address = data.ip + (data.motd.getString().isBlank() ? "" : "  ·  ");
-		return new String[]{ping, players(data), address, "Needs " + data.version.getString()};
+		return new RowTexts(ping, players(data), address, "Needs " + data.version.getString());
 	}
 
 	private static String players(ServerData data) {
@@ -549,7 +553,7 @@ public final class ServerListView extends TitleListView {
 		}
 		float buttonsY = top + 128f;
 		ui.roundedSmooth(x + WIDTH - 10f - 90f, buttonsY, 90f, 26f, 8f, Ui.withOpacity(ui.accent, alpha));
-		ui.textAtScaledBold("Save", x + WIDTH - 10f - 45f - ui.widthScaled("Save", 13f * TEXT) / 2f, buttonsY + 7f, 13f * TEXT, Ui.withOpacity(0xFFFFFFFF, alpha));
+		ui.textCenteredAtScaledBold("Save", x + WIDTH - 10f - 45f, buttonsY + 7f, 13f * TEXT, Ui.withOpacity(0xFFFFFFFF, alpha));
 		ui.roundedSmooth(x + WIDTH - 10f - 190f, buttonsY, 90f, 26f, 8f, Ui.withOpacity(0xFFFFFFFF, 0.10f * alpha));
 		ui.textAtScaled("Cancel", x + WIDTH - 10f - 145f - ui.widthScaled("Cancel", 13f * TEXT) / 2f, buttonsY + 7f, 13f * TEXT, Ui.withOpacity(0xFFFFFFFF, alpha));
 	}

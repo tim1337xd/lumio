@@ -14,6 +14,30 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /** The upgrade mechanism: a step runs only on settings older than its version, in order. */
 class ConfigUpgradeTest {
 	@Test
+	void moltensColorChoicesBecomeThePicker() {
+		for (String[] choice : new String[][] {{"GOLD", "#FF9A1F", "false"}, {"ICE", "#48B4FF", "false"}, {"MENU", "#FF9A1F", "true"}, {"CUSTOM", "#123456", "false"}}) {
+			JsonObject root = json("{\"sky\":{\"molten_color\":\"" + choice[0] + "\",\"molten_custom\":\"#123456\"}}");
+			ConfigUpgrade.moltenPicker(root);
+			JsonObject sky = root.getAsJsonObject("sky");
+			assertFalse(sky.has("molten_custom"));
+			assertEquals(choice[1], sky.getAsJsonObject("molten_color").get("color").getAsString());
+			assertEquals(Boolean.parseBoolean(choice[2]), sky.getAsJsonObject("molten_color").get("menu").getAsBoolean());
+		}
+	}
+
+	@Test
+	void theOldDefaultSkyQualityBecomesAuto() {
+		for (String[] saved : new String[][] {{"BALANCED", "AUTO"}, {"FAST", "FAST"}, {"DETAILED", "DETAILED"}}) {
+			JsonObject root = json("{\"sky\":{\"quality\":\"" + saved[0] + "\"}}");
+			ConfigUpgrade.skyQualityAuto(root);
+			assertEquals(saved[1], root.getAsJsonObject("sky").get("quality").getAsString());
+		}
+		JsonObject without = json("{\"sky\":{}}");
+		ConfigUpgrade.skyQualityAuto(without);
+		assertFalse(without.getAsJsonObject("sky").has("quality"), "nothing saved: the new default applies");
+	}
+
+	@Test
 	void theTrailsBecomeOneFeature() {
 		JsonObject both = json("{\"arrow_trails\":{\"enabled\":true,\"shots\":{\"on_arrows\":true,\"on_pearls\":false,\"on_self\":true},\"style\":\"ELECTRIC\",\"electric_color\":{\"color\":\"#45D4FF\",\"menu\":true,\"opacity\":1.0},\"pearl_color\":{\"color\":\"#A050FF\",\"menu\":false,\"opacity\":1.0},\"length\":9.0,\"max_arrows\":64.0},\"swing_trail\":{\"enabled\":true,\"look\":\"STREAKS\",\"color\":{\"color\":\"#0700FF\",\"opacity\":0.9},\"ghosts\":24.0,\"width\":0.7,\"after\":300.0}}");
 		ConfigUpgrade.oneTrailsFeature(both);

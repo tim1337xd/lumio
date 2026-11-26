@@ -177,6 +177,38 @@ final class LyricFrame {
 		return Math.min(Math.min(SAFE + left, SAFE - right), Math.min(SAFE + bottom, SAFE - top));
 	}
 
+	/** The character's box around the eyes, in blocks: half its width, how far above the eyes and below them it reaches. */
+	private static final double BODY_HALF = 0.35;
+	private static final double BODY_ABOVE = 0.3;
+	private static final double BODY_BELOW = 1.55;
+
+	/**
+	 * Projects the character's box through a camera pose.
+	 *
+	 * @param box     its bounds in picture units: left, bottom, right, top
+	 * @param scratch two floats to project with
+	 * @return false when none of it is in front of the camera
+	 */
+	static boolean characterBox(CinePose pose, float aspect, float picture, double eyeX, double eyeY, double eyeZ, float[] box, float[] scratch) {
+		box[0] = Float.MAX_VALUE;
+		box[1] = Float.MAX_VALUE;
+		box[2] = -Float.MAX_VALUE;
+		box[3] = -Float.MAX_VALUE;
+		for (int corner = 0; corner < 8; corner++) {
+			double cx = eyeX + ((corner & 1) == 0 ? -BODY_HALF : BODY_HALF);
+			double cy = eyeY + ((corner & 2) == 0 ? -BODY_BELOW : BODY_ABOVE);
+			double cz = eyeZ + ((corner & 4) == 0 ? -BODY_HALF : BODY_HALF);
+			if (!project(pose, aspect, picture, cx, cy, cz, scratch)) {
+				continue;
+			}
+			box[0] = Math.min(box[0], scratch[0]);
+			box[2] = Math.max(box[2], scratch[0]);
+			box[1] = Math.min(box[1], scratch[1]);
+			box[3] = Math.max(box[3], scratch[1]);
+		}
+		return box[0] < box[2];
+	}
+
 	/** @return whether the last box measured overlaps a rectangle in picture units (the character's) */
 	boolean overlaps(float left, float bottom, float right, float top) {
 		return bounds[0] < right && bounds[2] > left && bounds[1] < top && bounds[3] > bottom;

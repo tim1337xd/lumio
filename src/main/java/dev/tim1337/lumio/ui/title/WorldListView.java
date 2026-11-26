@@ -1,6 +1,7 @@
 package dev.tim1337.lumio.ui.title;
 
 import dev.tim1337.lumio.api.experimental.util.Logs;
+import dev.tim1337.lumio.api.experimental.util.Threads;
 import dev.tim1337.lumio.render.MenuWorld;
 import dev.tim1337.lumio.render.RoundedImage;
 import dev.tim1337.lumio.ui.Confirm;
@@ -27,7 +28,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 /**
  * The world list in the main menu: the saved worlds, read in the background with placeholder rows meanwhile, sorted by
@@ -45,11 +45,7 @@ public final class WorldListView extends TitleListView {
 
 	private final Screen title;
 	private final Minecraft minecraft = Minecraft.getInstance();
-	private final ExecutorService files = Executors.newSingleThreadExecutor(task -> {
-		Thread thread = new Thread(task, "Lumio world list");
-		thread.setDaemon(true);
-		return thread;
-	});
+	private final ExecutorService files = Threads.daemonExecutor("Lumio world list");
 	private volatile List<LevelSummary> loaded;
 	private final List<World> worlds = new ArrayList<>();
 	private boolean loading;
@@ -358,7 +354,7 @@ public final class WorldListView extends TitleListView {
 			float playX = x + width - PLAY_WIDTH;
 			ui.roundedSmooth(playX, y + (ROW - 28f) / 2f, PLAY_WIDTH, 28f, 14f, Ui.withOpacity(ui.accent, alpha));
 			float scale = 13f * TEXT;
-			ui.textAtScaledBold("Play", playX + PLAY_WIDTH / 2f - ui.widthScaled("Play", scale) / 2f, y + ROW / 2f - 4.5f * scale, scale,
+			ui.textCenteredAtScaledBold("Play", playX + PLAY_WIDTH / 2f, y + ROW / 2f - 4.5f * scale, scale,
 				Ui.withOpacity(0xFFFFFFFF, alpha));
 		}
 	}

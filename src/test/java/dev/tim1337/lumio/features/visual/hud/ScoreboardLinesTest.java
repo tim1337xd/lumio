@@ -15,6 +15,47 @@ class ScoreboardLinesTest {
 		net.minecraft.server.Bootstrap.bootStrap();
 	}
 
+	/** An add-on that puts lines of its own around the server's, as SkyBlock's custom scoreboard does. */
+	private static final dev.tim1337.lumio.api.ScoreboardProvider ADDS_LINES = new dev.tim1337.lumio.api.ScoreboardProvider() {
+		@Override
+		public boolean active() {
+			return true;
+		}
+
+		@Override
+		public Component title() {
+			return Component.literal("SKYBLOCK");
+		}
+
+		@Override
+		public java.util.List<Component> lines(java.util.List<Component> sidebar) {
+			return java.util.List.of(sidebar.get(0), Component.literal("Mayor: Foxy"), Component.literal("Bank: 1.2M"));
+		}
+
+		@Override
+		public String settingsHeading() {
+			return "Lines on SkyBlock";
+		}
+
+		@Override
+		public java.util.List<? extends dev.tim1337.lumio.api.setting.AddonSetting<?>> settings() {
+			return java.util.List.of();
+		}
+	};
+
+	@Test
+	void theGameLookPassesTheServersLinesThroughUnchanged() {
+		java.util.List<Component> sidebar = java.util.List.of(Component.literal("00A7711/13/26 00A78m12A"), Component.empty(),
+			Component.literal(" 00A7723E3 00A7bYour Island"), Component.literal("Purse: 00A761,204,553"), Component.literal("00A7ewww.hypixel.net"));
+		// the same list, so the same lines, texts, colors and order: nothing of the add-on, with it active or without one
+		org.junit.jupiter.api.Assertions.assertSame(sidebar, ScoreboardLines.shownLines(false, ADDS_LINES, sidebar));
+		org.junit.jupiter.api.Assertions.assertSame(sidebar, ScoreboardLines.shownLines(false, null, sidebar));
+		org.junit.jupiter.api.Assertions.assertSame(sidebar, ScoreboardLines.shownLines(true, null, sidebar));
+		// only the Custom look takes the add-on's choice
+		assertEquals(3, ScoreboardLines.shownLines(true, ADDS_LINES, sidebar).size());
+		assertEquals("Mayor: Foxy", ScoreboardLines.shownLines(true, ADDS_LINES, sidebar).get(1).getString());
+	}
+
 	@Test
 	void aLabelWithAValueIsSplit() {
 		assertEquals(7, ScoreboardLines.valueStart("Purse: 1,204,553"));
@@ -91,7 +132,7 @@ class ScoreboardLinesTest {
 		var line = net.minecraft.network.chat.Component.empty().append(net.minecraft.network.chat.Component.literal(" \u00A77\u200B\u23E3\uFE0F ")).append(net.minecraft.network.chat.Component.literal("\u00A7r")).append(net.minecraft.network.chat.Component.literal("\u00A75Void Sepulture"));
 		ScoreboardLines.Icon icon = ScoreboardLines.locationIcon(line);
 		assertEquals("pin", icon.name());
-		assertEquals(0xAAAAAA, icon.rgb());
+		assertEquals(0xAA00AA, icon.rgb());
 		assertEquals("Void Sepulture", dev.tim1337.lumio.api.experimental.util.TextColors.noColors(icon.rest().getString()));
 	}
 
@@ -111,8 +152,8 @@ class ScoreboardLinesTest {
 	}
 
 	@Test
-	void thePinHasTheSymbolsColor() {
-		assertEquals(0xAAAAAA, ScoreboardLines.locationIcon(net.minecraft.network.chat.Component.literal("\u00A77\u23E3 \u00A7bHub")).rgb());
+	void thePinHasTheColorOfTheAreasName() {
+		assertEquals(0x55FFFF, ScoreboardLines.locationIcon(net.minecraft.network.chat.Component.literal("\u00A77\u23E3 \u00A7bHub")).rgb());
 		assertEquals(0x55FFFF, ScoreboardLines.locationIcon(net.minecraft.network.chat.Component.literal("\u23E3 Hub").withStyle(net.minecraft.ChatFormatting.AQUA)).rgb());
 		assertEquals(-1, ScoreboardLines.locationIcon(net.minecraft.network.chat.Component.literal("\u23E3 Hub")).rgb());
 	}
@@ -172,7 +213,7 @@ class ScoreboardLinesTest {
 			.append(net.minecraft.network.chat.Component.literal("§bYour Island"));
 		var icon = ScoreboardLines.locationIcon(line, java.util.List.of("Your Island"), NOTHING_KNOWN);
 		assertEquals("Your Island", icon.rest().getString().replaceAll("§.", ""));
-		assertEquals(0xAAAAAA, icon.rgb());
+		assertEquals(0x55FFFF, icon.rgb());
 		var split = net.minecraft.network.chat.Component.empty()
 			.append(net.minecraft.network.chat.Component.literal("⏣ §bYour "))
 			.append(net.minecraft.network.chat.Component.literal("Island"));

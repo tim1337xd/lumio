@@ -31,6 +31,17 @@ public final class Adapters implements FeatureBackend {
 	private Adapters() {
 	}
 
+	/** @return the main mod's own settings of an add-on's settings (all of them are), in their order */
+	static java.util.List<dev.tim1337.lumio.config.setting.Setting<?>> settingsOf(java.util.List<? extends dev.tim1337.lumio.api.setting.AddonSetting<?>> settings) {
+		java.util.List<dev.tim1337.lumio.config.setting.Setting<?>> own = new java.util.ArrayList<>();
+		for (var setting : settings) {
+			if (setting instanceof dev.tim1337.lumio.config.setting.Setting<?> main) {
+				own.add(main);
+			}
+		}
+		return own;
+	}
+
 	@Override
 	public FeatureHandle feature(AddonFeature owner, String id, String name, String description, boolean enabledByDefault, boolean hasSwitch) {
 		AddonFeatureAdapter adapter = new AddonFeatureAdapter(owner, id, name, description, enabledByDefault, hasSwitch);

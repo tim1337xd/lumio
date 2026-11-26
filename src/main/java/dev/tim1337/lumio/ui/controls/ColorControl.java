@@ -25,7 +25,7 @@ import java.util.Map;
  * swatch of the color; the preset colors; the opacity, for colors that have one; and the switch to the menu color. The hue is stored here so it
  * survives gray colors, which have none.
  */
-public class ColorControl extends Control {
+public final class ColorControl extends Control {
 	private static final int SQUARE_HEIGHT = 74;
 	private static final int BAR_WIDTH = 14;
 	/** Gap between the square and the hue bar, and between the rows. */
@@ -239,7 +239,7 @@ public class ColorControl extends Control {
 			ui.rounded(bx, by, box, box, Radius.XS, ui.palette.control());
 			ui.ring(bx, by, box, box, Radius.XS, 1, Ui.mix(ui.palette.controlBorder(), ui.accent, 0.7f * h));
 		}
-		ui.textRight("Menu color", bx - 12, by + box / 2, ui.palette.textSecondary());
+		ui.textRight("Menu theme", bx - 12, by + box / 2, ui.palette.textSecondary());
 	}
 
 	@Override
@@ -294,8 +294,8 @@ public class ColorControl extends Control {
 			int noticeWidth = ui.width(notice) + 40;
 			int noticeX = x + (width - noticeWidth) / 2;
 			int noticeY = y + SQUARE_HEIGHT / 2 - 11;
-			ui.rounded(noticeX, noticeY, noticeWidth, 22, Radius.pill(22), Ui.withOpacity(0xFF000000, 0.72f));
-			ui.ring(noticeX, noticeY, noticeWidth, 22, Radius.pill(22), 1, Ui.withOpacity(0xFFFFFFFF, 0.18f));
+			ui.rounded(noticeX, noticeY, noticeWidth, 22, Radius.box(22), Ui.withOpacity(0xFF000000, 0.72f));
+			ui.ring(noticeX, noticeY, noticeWidth, 22, Radius.box(22), 1, Ui.withOpacity(0xFFFFFFFF, 0.18f));
 			ui.icon("lock", noticeX + 8, noticeY + 5, 12, 0xFFFFFFFF);
 			ui.text(notice, noticeX + 28, noticeY + 11 - 4, 0xFFFFFFFF);
 		}

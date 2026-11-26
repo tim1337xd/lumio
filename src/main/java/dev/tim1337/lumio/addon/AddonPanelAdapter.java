@@ -4,7 +4,6 @@ import dev.tim1337.lumio.api.draw.Canvas;
 import dev.tim1337.lumio.api.feature.AddonFeature;
 import dev.tim1337.lumio.api.feature.AddonPanel;
 import dev.tim1337.lumio.api.feature.KeyPlace;
-import dev.tim1337.lumio.api.feature.PanelPicture;
 import dev.tim1337.lumio.api.feature.SettingGroup;
 import dev.tim1337.lumio.api.setting.AddonSetting;
 import dev.tim1337.lumio.api.setting.Choice;
@@ -25,7 +24,6 @@ import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Supplier;
 
 /**
  * An add-on's HUD panel as the main mod keeps it: a {@link HudPanelFeature}, placed, sized and styled like the main mod's panels, which hands
@@ -70,8 +68,25 @@ final class AddonPanelAdapter extends HudPanelFeature {
 	}
 
 	@Override
+	protected boolean usedInMenus() {
+		return addon.usedInMenus();
+	}
+
+	@Override
 	protected boolean shown(Minecraft client) {
 		return addon.shown(client);
+	}
+
+	/** The add-on's panel that is also an extra status bar (the arrows): in the bar's style the bar is what is shown, and what its row selects. */
+	@Override
+	public dev.tim1337.lumio.ui.EditableHud hudShownIn() {
+		return dev.tim1337.lumio.api.experimental.ui.ExtraStatusBar.panel() == addon && dev.tim1337.lumio.api.experimental.ui.ExtraStatusBar.asBar()
+			&& dev.tim1337.lumio.ModFeatures.STATUS.isEnabled() ? dev.tim1337.lumio.ModFeatures.STATUS.arrowsBar() : null;
+	}
+
+	@Override
+	public String hudShownInNote() {
+		return "As a status bar";
 	}
 
 	@Override
@@ -151,8 +166,38 @@ final class AddonPanelAdapter extends HudPanelFeature {
 		}
 
 		@Override
+		public void addMenuKey(KeyMapping mapping, String menu) {
+			AddonPanelAdapter.this.addMenuKey(mapping, menu);
+		}
+
+		@Override
 		public void summary(String text) {
 			AddonPanelAdapter.this.summary(text);
+		}
+
+		@Override
+		public void badge(String text) {
+			AddonPanelAdapter.this.badge(text);
+		}
+
+		@Override
+		public void searchWords(String words) {
+			AddonPanelAdapter.this.searchWords(words);
+		}
+
+		@Override
+		public void pageGroup(String name) {
+			AddonPanelAdapter.this.pageGroup(name);
+		}
+
+		@Override
+		public void workInProgress() {
+			AddonPanelAdapter.this.workInProgress();
+		}
+
+		@Override
+		public void cardSettings(java.util.List<? extends dev.tim1337.lumio.api.setting.AddonSetting<?>> settings) {
+			AddonPanelAdapter.this.cardSettings(Adapters.settingsOf(settings));
 		}
 
 		@Override

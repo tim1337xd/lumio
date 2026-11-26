@@ -5,12 +5,14 @@ import dev.tim1337.lumio.api.experimental.util.ScreenInput;
 import dev.tim1337.lumio.ModFeatures;
 import dev.tim1337.lumio.api.experimental.draw.SystemColors;
 import dev.tim1337.lumio.api.experimental.motion.Spring;
-import dev.tim1337.lumio.features.music.MenuIsland;
+import dev.tim1337.lumio.features.music.MenuMusicCard;
 import dev.tim1337.lumio.render.MenuWarmup;
 import dev.tim1337.lumio.render.MenuWorld;
-import dev.tim1337.lumio.ui.title.MenuLyrics;
+import dev.tim1337.lumio.ui.title.MenuText;
 import dev.tim1337.lumio.ui.title.SeasonPopover;
 import dev.tim1337.lumio.ui.title.ServerListView;
+import dev.tim1337.lumio.ui.title.AccountFace;
+import dev.tim1337.lumio.ui.title.RejoinGate;
 import dev.tim1337.lumio.ui.title.StartupTransition;
 import dev.tim1337.lumio.ui.title.TitleListView;
 import dev.tim1337.lumio.ui.title.WorldListView;
@@ -34,7 +36,7 @@ import net.minecraft.client.multiplayer.ServerList;
 import net.minecraft.client.multiplayer.resolver.ServerAddress;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
-import net.minecraft.world.item.component.ResolvableProfile;
+import net.minecraft.util.Util;
 import net.minecraft.world.level.storage.LevelSummary;
 
 import java.time.LocalTime;
@@ -44,8 +46,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 
 /**
- * The mod's main menu over the block world: the account at the top left, the music island in the middle, the clock, the season button and the
- * settings button at the top right, a greeting with the play card and Options and Quit in the left column, and the lyrics at the bottom right.
+ * The mod's main menu over the block world: the account at the top left, the clock, the season button and the
+ * settings button at the top right, and a greeting with the play card, Options and Quit and the music card in the left column.
  * Everything is laid out in the units of its mockup (1440 by 880 or more) and scaled to the screen, so it looks the same at any GUI scale. It
  * performs the same actions as the vanilla main menu buttons.
  */
@@ -64,11 +66,12 @@ public class MacTitleScreen extends Screen {
 	private static final float ROW = 68f;
 	private static final float ROW_TILE = 40f;
 	private static final float SMALL_BUTTON = 52f;
+	/** The room between Options and Quit and the music card under them. */
+	private static final float MUSIC_GAP = 24f;
 	private static final float TOP_BUTTON = 40f;
 	private static final float TOP_GAP = 10f;
-	private static final float LYRICS_LEFT = 560f;
-	private static final float LYRICS_RIGHT = 80f;
-	private static final float LYRICS_BOTTOM = 76f;
+	/** The clock and the two buttons at the top right are boxes with small corners, like the cards. */
+	private static final float TOP_RADIUS = Radius.XL;
 	/** Text scale per font pixel of the mockup. */
 	private static final float TEXT = 1f / 9.6f;
 	/** The middle of the digits below the top of their line, in font units: lower than the middle of the line, which has room below them. */
@@ -94,6 +97,8 @@ public class MacTitleScreen extends Screen {
 	private static final int SETTINGS = 1;
 
 	private final SeasonPopover seasons = new SeasonPopover();
+	/** The notice of an update, where the season menu opens when it is closed. */
+	private final dev.tim1337.lumio.update.UpdateNotice updateNotice = new dev.tim1337.lumio.update.UpdateNotice();
 	// the world and server lists in the left column: the one open, the one drawn (also while it goes away), and how far it is shown
 	private final ServerListView serverList = new ServerListView(this);
 	private final WorldListView worldList = new WorldListView(this);
@@ -101,7 +106,7 @@ public class MacTitleScreen extends Screen {
 	private TitleListView shownList;
 	private final Spring listSpring = Spring.smooth(Spring.DEFAULT);
 	private float listShown;
-	private final MenuIsland island = new MenuIsland(ModFeatures.MUSIC);
+	private final MenuMusicCard musicCard = new MenuMusicCard(ModFeatures.MUSIC);
 	private final Spring[] rowLight = {Spring.smooth(Spring.SNAPPY), Spring.smooth(Spring.SNAPPY), Spring.smooth(Spring.SNAPPY), Spring.smooth(Spring.SNAPPY),
 		Spring.smooth(Spring.SNAPPY)};
 	private final Spring[] topLight = {Spring.smooth(Spring.SNAPPY), Spring.smooth(Spring.SNAPPY)};
@@ -113,7 +118,6 @@ public class MacTitleScreen extends Screen {
 	/** When the parts started coming in. */
 	private long openedAt;
 	private long lastFrame = System.nanoTime();
-	private ResolvableProfile profile;
 	/** Name and address of the last joined server, or null. */
 	private String[] last;
 	/** Whether the server list opens with the screen, as after leaving a server. */
@@ -124,8 +128,6 @@ public class MacTitleScreen extends Screen {
 	/** The screen to switch to once the parts have animated out; null while staying. */
 	private Supplier<Screen> leaveTo;
 	private final Spring leaveSpring = Spring.smooth(Spring.DEFAULT);
-	// the lyrics: the line shown, the one before it while it leaves, and how far the change is
-	private final MenuLyrics lyrics = new MenuLyrics();
 
 	// the layout scale and the size of the screen in layout units, for the frame being drawn
 	private float scale = 1f;
@@ -155,6 +157,9 @@ public class MacTitleScreen extends Screen {
 		if (openedAt == 0L) {
 			openedAt = System.nanoTime();
 		}
+		// back on the menu: the connect screen Rejoin opened is gone
+		RejoinGate.SHARED.connectEnded();
+		dev.tim1337.lumio.update.Updates.titleScreenShown();
 		askLastWorld();
 		if (openServers) {
 			openServers = false;
@@ -276,6 +281,9 @@ public class MacTitleScreen extends Screen {
 	}
 
 	private boolean enabled(int index) {
+		if (index == REJOIN && !RejoinGate.SHARED.ready(Util.getMillis())) {
+			return false;
+		}
 		return (index != MULTIPLAYER && index != REJOIN) || minecraft.allowsMultiplayer();
 	}
 
@@ -359,7 +367,6 @@ public class MacTitleScreen extends Screen {
 		int pointerY = popover || leaveTo != null ? -10000 : my;
 
 		drawAccount(ui, entrance(0));
-		island.draw(ui, layoutWidth / 2f, pointerX, pointerY, entrance(1));
 		drawTopRight(ui, pointerX, pointerY);
 		// the buttons slide out to the left while a list is shown, and the list comes in where they were
 		listShown = Mth.clamp(listSpring.follow(ui, list != null ? 1f : 0f), 0f, 1f);
@@ -373,6 +380,8 @@ public class MacTitleScreen extends Screen {
 			drawGreeting(ui, entrance(5));
 			drawCard(ui, columnX, pointerY, entrance(6));
 			drawSmallButtons(ui, columnX, pointerY, entrance(7));
+			// the music under Options and Quit, as wide as the column; not there while nothing plays
+			musicCard.draw(ui, SIDE, smallButtonsTop() + SMALL_BUTTON + MUSIC_GAP, COLUMN_WIDTH, columnX, pointerY, entrance(8));
 		}
 		Ui.setAlpha(columnAlpha);
 		pose.popMatrix();
@@ -385,10 +394,12 @@ public class MacTitleScreen extends Screen {
 				shownList.draw(ui, layoutHeight, list != null ? pointerX : -10000, pointerY, list != null ? listShown : listShown * listShown);
 			}
 		}
-		drawLyrics(ui, entrance(8));
 		drawFooter(ui, entrance(9));
 		if (list != null) {
 			list.drawMenu(ui, mx, my);
+		}
+		if (!seasons.isOpen() && seasons.amount() < 0.01f && list == null) {
+			updateNotice.draw(ui, layoutWidth - RIGHT, TOP + TOP_BUTTON + 10f, mx, my);
 		}
 		seasons.draw(ui, layoutWidth - RIGHT, TOP + TOP_BUTTON + 10f, mx, my);
 		Ui.setAlpha(1f);
@@ -418,9 +429,7 @@ public class MacTitleScreen extends Screen {
 		pose.pushMatrix();
 		pose.translate(0f, (1f - in) * -ENTRANCE_SLIDE);
 		String name = minecraft.getUser() != null ? minecraft.getUser().getName() : "player";
-		if (profile == null && minecraft.getUser() != null) {
-			profile = ResolvableProfile.createUnresolved(minecraft.getUser().getProfileId());
-		}
+		var profile = minecraft.getUser() != null ? AccountFace.profile(minecraft) : null;
 		int face = Math.round(ROW_TILE);
 		if (profile != null && in > 0.3f) {
 			PlayerFaceExtractor.extractRenderState(ui.graphics, profile, Math.round(SIDE), Math.round(TOP), face);
@@ -441,7 +450,7 @@ public class MacTitleScreen extends Screen {
 		float pillX = topButtonX(SEASON) - TOP_GAP - pillWidth;
 		pose.pushMatrix();
 		pose.translate(0f, (1f - clockIn) * -ENTRANCE_SLIDE);
-		HudStyle.panel(ui, Math.round(pillX), Math.round(TOP), Math.round(pillWidth), Math.round(TOP_BUTTON), TOP_BUTTON / 2f, HudStyle.opacity() * clockIn,
+		HudStyle.panel(ui, Math.round(pillX), Math.round(TOP), Math.round(pillWidth), Math.round(TOP_BUTTON), TOP_RADIUS, HudStyle.opacity() * clockIn,
 			UiGlow.Target.TITLE, clockIn);
 		ui.textAtScaledBold(time, pillX + 16f, TOP + TOP_BUTTON / 2f - DIGIT_MIDDLE * clockScale, clockScale, Ui.withOpacity(0xFFFFFFFF, clockIn));
 		pose.popMatrix();
@@ -452,15 +461,15 @@ public class MacTitleScreen extends Screen {
 			float light = Mth.clamp(topLight[i].follow(ui, over ? 1f : 0f), 0f, 1f);
 			pose.pushMatrix();
 			pose.translate(0f, (1f - in) * -ENTRANCE_SLIDE);
-			HudStyle.panel(ui, Math.round(bx), Math.round(TOP), Math.round(TOP_BUTTON), Math.round(TOP_BUTTON), TOP_BUTTON / 2f, HudStyle.opacity() * in,
+			HudStyle.panel(ui, Math.round(bx), Math.round(TOP), Math.round(TOP_BUTTON), Math.round(TOP_BUTTON), TOP_RADIUS, HudStyle.opacity() * in,
 				UiGlow.Target.TITLE, in);
 			// the season button is filled with the accent while its menu is open
 			float filled = i == SEASON ? seasons.amount() : 0f;
 			if (filled > 0.01f) {
-				ui.roundedSmooth(bx, TOP, TOP_BUTTON, TOP_BUTTON, TOP_BUTTON / 2f, Ui.withOpacity(ui.accent, filled * in));
+				ui.roundedSmooth(bx, TOP, TOP_BUTTON, TOP_BUTTON, TOP_RADIUS, Ui.withOpacity(ui.accent, filled * in));
 			}
 			if (light > 0.01f) {
-				ui.roundedSmooth(bx, TOP, TOP_BUTTON, TOP_BUTTON, TOP_BUTTON / 2f, Ui.withOpacity(0xFFFFFFFF, 0.12f * light * in));
+				ui.roundedSmooth(bx, TOP, TOP_BUTTON, TOP_BUTTON, TOP_RADIUS, Ui.withOpacity(0xFFFFFFFF, 0.12f * light * in));
 			}
 			String icon = i == SETTINGS ? "gear" : seasonIcon();
 			ui.icon(icon, Math.round(bx + 11f), Math.round(TOP + 11f), 18, Ui.withOpacity(0xFFFFFFFF, in));
@@ -486,7 +495,7 @@ public class MacTitleScreen extends Screen {
 		String greeting = greeting() + ", " + name;
 		ui.textAtScaledBold(greeting.toUpperCase(java.util.Locale.ROOT), SIDE, COLUMN_TOP, 13f * TEXT, Ui.withOpacity(0xFFFFFFFF, 0.78f * in));
 		float titleScale = 54f * TEXT;
-		MenuLyrics.softShadow(ui, "Ready to play?", SIDE, COLUMN_TOP + 26f, titleScale, Ui.withOpacity(0xFF0A061E, 0.9f * in), 3f, MenuLyrics.TITLE_FONT);
+		MenuText.softShadow(ui, "Ready to play?", SIDE, COLUMN_TOP + 26f, titleScale, Ui.withOpacity(0xFF0A061E, 0.9f * in), 3f, MenuText.TITLE_FONT);
 		ui.textAtScaledTitle("Ready to play?", SIDE, COLUMN_TOP + 26f, titleScale, Ui.withOpacity(0xFFFFFFFF, in));
 		pose.popMatrix();
 	}
@@ -603,19 +612,13 @@ public class MacTitleScreen extends Screen {
 		return switch (index) {
 			case SINGLEPLAYER -> lastWorld == null ? "Your worlds" : "Last played: " + lastWorld;
 			case MULTIPLAYER -> "Your servers";
-			default -> last == null ? "" : last[1];
+			default -> {
+				int wait = RejoinGate.SHARED.secondsLeft(Util.getMillis());
+				yield wait > 0 ? "Login server busy, wait " + wait + " s" : last == null ? "" : last[1];
+			}
 		};
 	}
 
-	/** The sung line and the next one, without a box, with a soft shadow, centered in the lower right part of the screen. */
-	private void drawLyrics(Ui ui, float in) {
-		var music = ModFeatures.MUSIC;
-		boolean on = ModFeatures.MENUS.menuLyrics() && music.isEnabled() && music.hasSong();
-		float centerX = (LYRICS_LEFT + layoutWidth - LYRICS_RIGHT) / 2f;
-		float room = layoutWidth - LYRICS_RIGHT - LYRICS_LEFT;
-		lyrics.draw(ui, on ? music.menuLyricNow() : null, on ? music.menuLyricNext() : "", centerX, layoutHeight - LYRICS_BOTTOM, room, 32f * TEXT,
-			19f * TEXT, in);
-	}
 
 	/** The soft shadow of the lines at the bottom. */
 	private static final int FOOTER_SHADOW = 0xFF0A061E;
@@ -628,8 +631,8 @@ public class MacTitleScreen extends Screen {
 		// soft shadows, as under the title: the fields behind them can be bright
 		String copyright = "Copyright Mojang AB. Do not distribute!";
 		int shadow = Ui.withOpacity(FOOTER_SHADOW, 0.9f * in);
-		MenuLyrics.softShadow(ui, line, SIDE, bottom - 32f, textScale, shadow, FOOTER_SHADOW_RADIUS, MenuLyrics.REGULAR_FONT);
-		MenuLyrics.softShadow(ui, copyright, SIDE, bottom - 14f, textScale, shadow, FOOTER_SHADOW_RADIUS, MenuLyrics.REGULAR_FONT);
+		MenuText.softShadow(ui, line, SIDE, bottom - 32f, textScale, shadow, FOOTER_SHADOW_RADIUS, MenuText.REGULAR_FONT);
+		MenuText.softShadow(ui, copyright, SIDE, bottom - 14f, textScale, shadow, FOOTER_SHADOW_RADIUS, MenuText.REGULAR_FONT);
 		ui.textAtScaled(line, SIDE, bottom - 32f, textScale, Ui.withOpacity(0xFFFFFFFF, 0.92f * in));
 		ui.textAtScaled(copyright, SIDE, bottom - 14f, textScale, Ui.withOpacity(0xFFFFFFFF, 0.78f * in));
 	}
@@ -651,7 +654,10 @@ public class MacTitleScreen extends Screen {
 		if (seasons.click(mx, my, event.hasShiftDown())) {
 			return true;
 		}
-		if (island.click(mx, my)) {
+		if (!seasons.isOpen() && list == null && updateNotice.click(mx, my)) {
+			return true;
+		}
+		if (list == null && musicCard.click(mx, my)) {
 			return true;
 		}
 		for (int i = SEASON; i <= SETTINGS; i++) {
@@ -778,6 +784,7 @@ public class MacTitleScreen extends Screen {
 		if (data == null) {
 			data = new ServerData(server[0], server[1], ServerData.Type.OTHER);
 		}
-		ConnectScreen.startConnecting(this, minecraft, ServerAddress.parseString(data.ip), data, false, null);
+		ServerData target = data;
+		RejoinGate.SHARED.click(Util.getMillis(), () -> ConnectScreen.startConnecting(this, minecraft, ServerAddress.parseString(target.ip), target, false, null));
 	}
 }

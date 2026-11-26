@@ -18,10 +18,8 @@ import com.mojang.blaze3d.textures.FilterMode;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import net.minecraft.client.renderer.RenderPipelines;
 
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.util.HashMap;
-import java.util.Map;
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+
 import java.util.Optional;
 import java.util.function.Supplier;
 
@@ -76,7 +74,7 @@ final class EchoGlow {
 	private static final int NARROW_TARGET = 2;
 	private static final int WIDE_TARGET = 3;
 	/** One quad per blur width and direction, made when first needed. */
-	private static final Map<Integer, GpuBuffer> quads = new HashMap<>();
+	private static final Int2ObjectOpenHashMap<GpuBuffer> quads = new Int2ObjectOpenHashMap<>();
 
 	private EchoGlow() {
 	}
@@ -183,17 +181,13 @@ final class EchoGlow {
 
 	/** @return a quad over the whole target with a blur's width in its red and its direction in its green, as glass_blit takes it */
 	private static GpuBuffer quad(int red, int green) {
-		return quads.computeIfAbsent(red << 8 | green, key -> {
-			int color = 0xFF000000 | (green & 0xFF) << 8 | red & 0xFF;
-			float[][] corners = {{-1f, -1f}, {1f, -1f}, {1f, 1f}, {-1f, 1f}};
-			ByteBuffer data = ByteBuffer.allocateDirect(4 * 24).order(ByteOrder.nativeOrder());
-			for (float[] corner : corners) {
-				data.putFloat(corner[0]).putFloat(corner[1]).putFloat(0f);
-				data.putFloat(corner[0] * 0.5f + 0.5f).putFloat(corner[1] * 0.5f + 0.5f);
-				data.putInt(color);
-			}
-			data.flip();
-			return RenderSystem.getDevice().createBuffer(() -> "Lumio echo glow quad", GpuBuffer.USAGE_VERTEX, data);
-		});
+		// looked up without a lambda or a boxed key: this runs for every blur pass, every frame
+		int key = red << 8 | green;
+		GpuBuffer quad = quads.get(key);
+		if (quad == null) {
+			quad = FullQuads.create("Lumio echo glow quad", 0xFF000000 | (green & 0xFF) << 8 | red & 0xFF);
+			quads.put(key, quad);
+		}
+		return quad;
 	}
 }

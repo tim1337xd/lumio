@@ -13,7 +13,7 @@ import com.mojang.blaze3d.platform.InputConstants;
  * A single-line text field. Clicking places the cursor; text can be pasted, and Ctrl+A selects all. A secret (a token) is always masked, also
  * while it is typed; the eye button at its end shows it until pressed again.
  */
-public class TextFieldControl extends Control {
+public final class TextFieldControl extends Control {
 	private static final int HEIGHT = 24;
 	private static final int MAX = 200;
 	/** The eye button of a secret: its icon size and the room it takes at the field's end. */

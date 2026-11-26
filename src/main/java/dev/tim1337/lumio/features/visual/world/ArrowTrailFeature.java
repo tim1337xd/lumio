@@ -6,6 +6,7 @@ import dev.tim1337.lumio.config.setting.BooleanSetting;
 import dev.tim1337.lumio.config.setting.ColorSetting;
 import dev.tim1337.lumio.config.setting.EnumSetting;
 import dev.tim1337.lumio.config.setting.FloatSetting;
+import dev.tim1337.lumio.config.setting.Setting;
 import dev.tim1337.lumio.menu.MenuFeature;
 import dev.tim1337.lumio.render.OutlineRenderTypes;
 import dev.tim1337.lumio.render.EchoLines;
@@ -30,8 +31,8 @@ import net.minecraft.world.phys.Vec3;
 
 import java.util.HashMap;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
+import java.util.function.BooleanSupplier;
 
 /**
  * Trails behind flying arrows and ender pearls, and the settings of the trail behind the swung item ({@link SwingTrail}): one look for all of them, with a look of their own under Advanced.
@@ -55,8 +56,8 @@ public class ArrowTrailFeature extends Feature {
 	private final BooleanSetting onArrows = add(new BooleanSetting("on_arrows", Component.literal("Arrows"), true), SHOW);
 	private final BooleanSetting onPearls = add(new BooleanSetting("on_pearls", Component.literal("Ender pearls"), true), SHOW);
 	private final BooleanSetting others = add(new BooleanSetting("others", Component.literal("Other players' arrows"), false), SHOW);
-	private final BooleanSetting impactBurst = add(new BooleanSetting("impact_burst", Component.literal("Impact burst"), true), SHOW, "A quick ring and a few sparks where an arrow lands");
-	private final BooleanSetting pearlRift = add(new BooleanSetting("pearl_rift", Component.literal("Pearl rift"), true), SHOW, "A dark tear behind a pearl, and a small portal where you land");
+	private final BooleanSetting impactBurst = add(new BooleanSetting("impact_burst", Component.literal("Impact burst"), true), SHOW, "Sparks where an arrow lands");
+	private final BooleanSetting pearlRift = add(new BooleanSetting("pearl_rift", Component.literal("Pearl rift"), true), SHOW, "A tear and a portal where you land");
 
 	private final EnumSetting<TrailLook.Kind> style = add(new EnumSetting<>("style", Component.literal("Style"), TrailLook.Kind.SILK, TrailLook.Kind::displayName, EnumSetting.Style.SEGMENTED), LOOK);
 	private final EnumSetting<TrailLook.TrailColors> colors = add(new EnumSetting<>("color_source", Component.literal("Color"), TrailLook.TrailColors.ACCENT, TrailLook.TrailColors::displayName, EnumSetting.Style.SEGMENTED), LOOK);
@@ -69,9 +70,9 @@ public class ArrowTrailFeature extends Feature {
 	private final EnumSetting<TrailLook.OwnKind> pearlStyle = add(new EnumSetting<>("pearl_style", Component.literal("Style"), TrailLook.OwnKind.SAME, TrailLook.OwnKind::displayName), PEARLS);
 	private final EnumSetting<TrailLook.OwnColors> pearlColors = add(new EnumSetting<>("pearl_colors", Component.literal("Color"), TrailLook.OwnColors.SAME, TrailLook.OwnColors::displayName), PEARLS);
 	private final ColorSetting pearlColor = add(new ColorSetting("pearl_color", Component.literal("Custom color"), 0xA050FF).withOpacity(1f), PEARLS);
-	private final FloatSetting fadeTime = add(new FloatSetting("fade_time", Component.literal("Fade time"), 250f, 0f, 800f, 0), ALL, "In milliseconds");
+	private final FloatSetting fadeTime = add(new FloatSetting("fade_time", Component.literal("Duration"), 250f, 0f, 800f, 0).unit(" ms"), ALL);
 	private final FloatSetting range = add(new FloatSetting("range", Component.literal("Max distance"), 48f, 16f, 128f, 0), ALL);
-	private final FloatSetting maxArrows = add(new FloatSetting("max_arrows", Component.literal("Max trails at once"), 40f, 5f, 150f, 0), ALL);
+	private final FloatSetting maxArrows = add(new FloatSetting("max_arrows", Component.literal("Max trails"), 40f, 5f, 150f, 0), ALL);
 
 	private static final int BURSTS = 16;
 	private static final long BURST_NANOS = 400_000_000L;
@@ -154,6 +155,18 @@ public class ArrowTrailFeature extends Feature {
 		color.under(colors, () -> colors.get() == TrailLook.TrailColors.CUSTOM);
 		arrowColor.under(arrowColors, () -> arrowColors.get() == TrailLook.OwnColors.CUSTOM);
 		pearlColor.under(pearlColors, () -> pearlColors.get() == TrailLook.OwnColors.CUSTOM);
+		// everything here is about the trails of what is switched on above; the page's style counts for those without a style of their own
+		BooleanSupplier anyTrail = () -> onArrows.get() || onPearls.get();
+		for (Setting<?> ofAllTrails : new Setting<?>[]{others, colors, length, width, fadeTime, range, maxArrows}) {
+			ofAllTrails.visibleWhen(anyTrail);
+		}
+		for (Setting<?> ofArrows : new Setting<?>[]{impactBurst, arrowStyle, arrowColors}) {
+			ofArrows.visibleWhen(onArrows::get);
+		}
+		for (Setting<?> ofPearls : new Setting<?>[]{pearlRift, pearlStyle, pearlColors}) {
+			ofPearls.visibleWhen(onPearls::get);
+		}
+		style.visibleWhen(() -> onArrows.get() && arrowStyle.get() == TrailLook.OwnKind.SAME || onPearls.get() && pearlStyle.get() == TrailLook.OwnKind.SAME);
 		addResetButton();
 	}
 
@@ -398,7 +411,6 @@ public class ArrowTrailFeature extends Feature {
 			});
 		}
 	}
-
 
 	private void draw(VertexConsumer consumer, PoseStack.Pose pose, Trail trail, Vec3 cam, float partial, float time, Vector3fc left, Vector3fc up, boolean additive) {
 		boolean flying = trail.seen == tickCount && !trail.entity.isRemoved();

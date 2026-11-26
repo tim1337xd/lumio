@@ -394,6 +394,7 @@ music.world_lyrics
 music.world_place
 music.world_placement
 music.world_reach
+music.world_lyric_size
 music.world_size
 music.world_text_color
 music.world_text_custom

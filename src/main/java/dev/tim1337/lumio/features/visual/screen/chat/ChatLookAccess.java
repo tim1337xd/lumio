@@ -7,6 +7,7 @@ import net.minecraft.util.FormattedCharSequence;
 import org.joml.Matrix3x2f;
 
 import java.util.function.Consumer;
+import java.util.function.ToIntFunction;
 
 /**
  * Stands between the game's chat and what it draws to. The message text goes through as it is. Left out are the game's dark band behind each line, the bar of a message's tag at its left and the game's scroll bar, since
@@ -17,12 +18,14 @@ public final class ChatLookAccess implements ChatComponent.ChatGraphicsAccess {
 	private final float offsetX;
 	private final float offsetY;
 	private final int textLift;
+	private final ToIntFunction<FormattedCharSequence> rowLeft;
 
-	public ChatLookAccess(ChatComponent.ChatGraphicsAccess game, float offsetX, float offsetY, int textLift) {
+	public ChatLookAccess(ChatComponent.ChatGraphicsAccess game, float offsetX, float offsetY, int textLift, ToIntFunction<FormattedCharSequence> rowLeft) {
 		this.game = game;
 		this.offsetX = offsetX;
 		this.offsetY = offsetY;
 		this.textLift = textLift;
+		this.rowLeft = rowLeft;
 	}
 
 	@Override
@@ -40,7 +43,15 @@ public final class ChatLookAccess implements ChatComponent.ChatGraphicsAccess {
 
 	@Override
 	public boolean handleMessage(int y, float alpha, FormattedCharSequence text) {
-		return game.handleMessage(y - textLift, alpha, text);
+		int left = rowLeft.applyAsInt(text);
+		if (left == 0) {
+			return game.handleMessage(y - textLift, alpha, text);
+		}
+		// a centered row: the game draws it, and takes its clicks, this far to the right
+		game.updatePose(pose -> pose.translate(left, 0f));
+		boolean handled = game.handleMessage(y - textLift, alpha, text);
+		game.updatePose(pose -> pose.translate(-left, 0f));
+		return handled;
 	}
 
 	@Override

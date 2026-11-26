@@ -14,7 +14,7 @@ import net.minecraft.network.chat.Component;
  * glass on the glass themes; a primary button is filled with the accent. It shrinks slightly while pressed and springs back with a small bounce,
  * and a disabled one is dimmed and takes no clicks. Screens of their own (such as the source setup) draw their buttons with it too.
  */
-public class ButtonControl extends Control {
+public final class ButtonControl extends Control {
 	private static final int DESTRUCTIVE = SystemColors.DANGER;
 	/** Opacity of the red outline of a destructive button. */
 	private static final float BORDER_DESTRUCTIVE = 0.45f;
@@ -123,7 +123,7 @@ public class ButtonControl extends Control {
 			ui.rounded(x, y, width, height, Radius.SM, Ui.withOpacity(ui.palette.hover(), Math.min(1f, down)));
 		}
 		boolean armed = armed();
-		ui.textCentered(armed ? "Sure?" : text, x + width / 2, y + height / 2, Ui.withOpacity(destructive || armed ? DESTRUCTIVE : ui.palette.text(), fade));
+		ui.textCentered(armed ? "Sure?" : text, x + width / 2, y + height / 2, Ui.withOpacity(destructive || armed ? ui.palette.coloredText(DESTRUCTIVE) : ui.palette.text(), fade));
 		pose.popMatrix();
 	}
 

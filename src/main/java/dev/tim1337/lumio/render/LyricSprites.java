@@ -1,13 +1,12 @@
 package dev.tim1337.lumio.render;
 
 import dev.tim1337.lumio.Lumio;
+import dev.tim1337.lumio.api.experimental.util.Threads;
 import dev.tim1337.lumio.ui.Ui;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.resources.Identifier;
 
@@ -33,7 +32,6 @@ import java.util.Random;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 /**
  * Pre-rendered sprites for the lyric lines floating in the world.
@@ -51,8 +49,8 @@ public final class LyricSprites {
 	 * screen pixels per unit, so the glyphs are never stretched there; smaller on screen, the mipmaps keep them smooth.
 	 */
 	public static final float SCALE = 5f;
-	/** Maximum rows of a lyric line; longer lines fall back to regular text rendering. */
-	public static final int MAX_ROWS = 3;
+	/** Maximum rows of a lyric line; a line that needs more is set smaller or split by the lyrics in the world before it comes here. */
+	public static final int MAX_ROWS = 4;
 	/** Maximum row width in text units, at which lines are wrapped. */
 	public static final float MAX_WIDTH = 300f;
 	/** Row spacing in text units. */
@@ -73,6 +71,11 @@ public final class LyricSprites {
 	/** @return the bottom of a line's cells (its glow included), from the line's center, in text units */
 	public static float boundsBottom(int rows) {
 		return boundsTop(rows) + (rows - 1) * LINE_HEIGHT + CELL;
+	}
+
+	/** @return the baseline of a row of a line with so many rows, from the line's center, in text units (down is positive) */
+	public static float rowBaseline(int rows, int k) {
+		return (k - rows / 2f) * LINE_HEIGHT + BASELINE;
 	}
 
 	/** @return the width of a line (its widest row) with the glow on both sides, in text units */
@@ -102,11 +105,7 @@ public final class LyricSprites {
 	/** Reference text used to calibrate the font size against the game's rendering. */
 	private static final String REFERENCE = "the quick brown fox jumps over the lazy dog while waiting for a ride in the dark";
 
-	private static final ExecutorService BAKER = Executors.newSingleThreadExecutor(task -> {
-		Thread thread = new Thread(task, "Lumio lyrics");
-		thread.setDaemon(true);
-		return thread;
-	});
+	private static final ExecutorService BAKER = Threads.daemonExecutor("Lumio lyrics");
 
 	private static final Slot[] SLOTS = new Slot[SLOT_COUNT];
 	private static Font font;
@@ -125,6 +124,8 @@ public final class LyricSprites {
 		final RenderType glowType;
 		/** For the glyphs, which occlude what is behind them. */
 		final RenderType letterType;
+		/** For glyphs that lie on something drawn late (a tile): the same picture, hiding nothing behind them. */
+		final RenderType flatType;
 		boolean used;
 
 		Slot(int index) {
@@ -136,11 +137,15 @@ public final class LyricSprites {
 			Minecraft.getInstance().getTextureManager().register(glowId, glow);
 			glowType = OutlineRenderTypes.glowMipmapped(glowId);
 			letterType = OutlineRenderTypes.lyricMipmapped(id);
+			flatType = OutlineRenderTypes.lyricFlatMipmapped(id);
 		}
 	}
 
-	/** One row of a line: its width and the x position of every glyph, in text units. */
-	public record Row(String text, float width, float[] letterX) {
+	/**
+	 * One row of a line: its width and the x position of every glyph, in text units, and for a row in Inter Bold (the clean style) how large an em
+	 * of it is, in text units; 0 for any other row.
+	 */
+	public record Row(String text, float width, float[] letterX, float cleanEm) {
 	}
 
 	/** A baked line: its rows, and the mip levels of the glyphs and of the glow. */
@@ -158,7 +163,10 @@ public final class LyricSprites {
 		private final boolean hand;
 		private final boolean classic;
 		private State state = State.BAKING;
+		private String failure = "";
 		private List<Row> rows = List.of();
+		/** Whether the glyphs (not their glow) are drawn from the distance field, as the Cut-out preset's are: every row clean, every letter there. */
+		private boolean distances;
 
 		private Sprite(Slot slot, CompletableFuture<Baked> baked, boolean hand, boolean classic) {
 			this.slot = slot;
@@ -186,11 +194,29 @@ public final class LyricSprites {
 					slot.glow.upload(result.glow());
 					rows = result.rows();
 					state = State.READY;
+					distances = false;
 				} catch (Exception | Error e) {
 					state = State.FAILED;
+					Throwable cause = e.getCause() == null ? e : e.getCause();
+					failure = cause.getClass().getSimpleName() + ": " + cause.getMessage();
 				}
 			}
+			// decided here only, before anything of a frame is drawn, so a frame's types and quads always agree; once on, it stays on
+			if (state == State.READY && !distances) {
+				distances = !rows.isEmpty() && rows.stream().allMatch(row -> row.cleanEm() > 0f) && SdfText.ready()
+					&& rows.stream().allMatch(row -> SdfText.covers(row.text()));
+			}
 			return state;
+		}
+
+		/** @return whether the glyphs are drawn from the distance field, sharp at any size */
+		public boolean distances() {
+			return distances;
+		}
+
+		/** @return why the sprite could not be made, for the debug log; empty while it has not failed */
+		public String failure() {
+			return failure;
 		}
 
 		public List<Row> rows() {
@@ -200,7 +226,12 @@ public final class LyricSprites {
 		public RenderType renderType(Layer layer) {
 			// The glow layers are soft and must not occlude: drawn with the glyph type, the sung part's glow hid everything around it (glass blocks
 			// disappeared behind the sung word).
-			return layer.glow ? slot.glowType : slot.letterType;
+			return layer.glow ? slot.glowType : distances ? SdfText.text() : slot.letterType;
+		}
+
+		/** @return the type for glyphs drawn flat over something that writes no depth itself: they write none either */
+		public RenderType flatType() {
+			return distances ? SdfText.textFlat() : slot.flatType;
 		}
 
 		/** Frees the texture for the next line. */
@@ -215,21 +246,47 @@ public final class LyricSprites {
 		 *
 		 * @param sung how many glyphs of each row are sung; fractional values put the edge of the sung part inside a glyph
 		 */
+		/**
+		 * Emits only the part of a layer between two places across the line (in text units, as {@link #charX} gives them): a piece of the line that
+		 * moves on its own, such as one dot of a break that hops.
+		 */
+		public void emitSlice(PoseStack.Pose pose, VertexConsumer consumer, float[] sung, Layer layer, int color, float from, float to) {
+			clipFrom = from;
+			clipTo = to;
+			try {
+				emit(pose, consumer, sung, layer, color);
+			} finally {
+				clipFrom = Float.NEGATIVE_INFINITY;
+				clipTo = Float.POSITIVE_INFINITY;
+			}
+		}
+
 		public void emit(PoseStack.Pose pose, VertexConsumer consumer, float[] sung, Layer layer, int color) {
 			int count = rows.size();
 			for (int k = 0; k < count; k++) {
+				emitRow(pose, consumer, sung, layer, color, k);
+			}
+		}
+
+		private void emitRow(PoseStack.Pose pose, VertexConsumer consumer, float[] sung, Layer layer, int color, int k) {
+			int count = rows.size();
+			{
 				Row row = rows.get(k);
 				float x = rowLeft(k);
-				float top = (k - count / 2f) * LINE_HEIGHT - TEXT_TOP;
+				float top = rowBaseline(k) - BASELINE - TEXT_TOP;
 				float left = x - PAD;
 				float full = row.width() + 2 * PAD;
 				float u1 = full * SCALE / TEX_W;
 				// the glow texture covers the same area as the glyphs' at half the size, so both take the same coordinates
 				float v0 = k * CELL_PX;
 				float v1 = v0 + CELL_PX;
+				if (distances && !layer.glow) {
+					emitDistances(pose, consumer, sung, layer, color, k, full);
+					return;
+				}
 				if (!layer.sungOnly) {
 					quad(consumer, pose, left, top, left + full, top + CELL, 0f, 0f, v0 / TEX_H, u1, v1 / TEX_H, color);
-					continue;
+					return;
 				}
 				int length = row.text().length();
 				float here = Math.max(0f, Math.min(sung[k], length));
@@ -247,16 +304,16 @@ public final class LyricSprites {
 						quadGradient(consumer, pose, left + edge, top, left + to, top + CELL, 0f, edge * SCALE / TEX_W, v0 / TEX_H, to * SCALE / TEX_W,
 							v1 / TEX_H, lit, none);
 					}
-					continue;
+					return;
 				}
 				if (here <= 0f) {
-					continue;
+					return;
 				}
 				// the whole row plus the margin to its right once it is fully sung
 				float edge = here >= length ? full : PAD + edgeX(row, here);
 				if (here >= length) {
 					quad(consumer, pose, left, top, left + edge, top + CELL, 0f, 0f, v0 / TEX_H, edge * SCALE / TEX_W, v1 / TEX_H, color);
-					continue;
+					return;
 				}
 				float from = edge - SOFT_EDGE;
 				float to = Math.min(full, edge + SOFT_EDGE * 0.4f);
@@ -266,6 +323,81 @@ public final class LyricSprites {
 				float start = Math.max(0f, from);
 				quadGradient(consumer, pose, left + start, top, left + to, top + CELL, 0f, start * SCALE / TEX_W, v0 / TEX_H, to * SCALE / TEX_W, v1 / TEX_H,
 					fade(color, (edge + SOFT_EDGE * 0.4f - start) / (SOFT_EDGE * 1.4f)), fade(color, (edge + SOFT_EDGE * 0.4f - to) / (SOFT_EDGE * 1.4f)));
+			}
+		}
+
+		/** The same as the sprite's quads for the glyph layers, drawn from the distance field: the line, or its sung part with its soft edge. */
+		private void emitDistances(PoseStack.Pose pose, VertexConsumer consumer, float[] sung, Layer layer, int color, int k, float full) {
+			if (!layer.sungOnly) {
+				distanceGlyphs(pose, consumer, k, 0f, full, color, color);
+				return;
+			}
+			Row row = rows.get(k);
+			int length = row.text().length();
+			float here = Math.max(0f, Math.min(sung[k], length));
+			if (here <= 0f) {
+				return;
+			}
+			if (here >= length) {
+				distanceGlyphs(pose, consumer, k, 0f, full, color, color);
+				return;
+			}
+			float edge = PAD + edgeX(row, here);
+			float from = edge - SOFT_EDGE;
+			float to = Math.min(full, edge + SOFT_EDGE * 0.4f);
+			if (from > 0f) {
+				distanceGlyphs(pose, consumer, k, 0f, from, color, color);
+			}
+			float start = Math.max(0f, from);
+			distanceGlyphs(pose, consumer, k, start, to, fade(color, (edge + SOFT_EDGE * 0.4f - start) / (SOFT_EDGE * 1.4f)),
+				fade(color, (edge + SOFT_EDGE * 0.4f - to) / (SOFT_EDGE * 1.4f)));
+		}
+
+		/**
+		 * Emits the parts of a row's glyphs between two places across its cell (from the cell's left edge, in text units), from the distance field;
+		 * the color goes from one to the other between them. The parts outside of a slice ({@link #emitSlice}) are left out too.
+		 */
+		private void distanceGlyphs(PoseStack.Pose pose, VertexConsumer consumer, int k, float a, float b, int colorA, int colorB) {
+			SdfAtlas atlas = SdfText.atlas();
+			if (atlas == null || b <= a) {
+				return;
+			}
+			Row row = rows.get(k);
+			String text = row.text();
+			float em = row.cleanEm();
+			float cell = rowLeft(k) - PAD;
+			float baseline = rowBaseline(k);
+			float texel = 1f / atlas.width;
+			float lo = Math.max(cell + a, clipFrom);
+			float hi = Math.min(cell + b, clipTo);
+			for (int i = 0; i < text.length(); i++) {
+				SdfAtlas.Glyph glyph = atlas.glyph(text.charAt(i));
+				if (glyph == null || glyph.width() == 0) {
+					continue;
+				}
+				float pen = cell + PAD + row.letterX()[i];
+				float left = pen + glyph.left() * em;
+				float right = pen + glyph.right() * em;
+				float x0 = Math.max(left, lo);
+				float x1 = Math.min(right, hi);
+				if (x1 <= x0) {
+					continue;
+				}
+				float u0 = glyph.atlasX() * texel;
+				float u1 = (glyph.atlasX() + glyph.width()) * texel;
+				float cu0 = u0 + (u1 - u0) * (x0 - left) / (right - left);
+				float cu1 = u0 + (u1 - u0) * (x1 - left) / (right - left);
+				float top = baseline + glyph.top() * em;
+				float bottom = baseline + glyph.bottom() * em;
+				float v0 = glyph.atlasY() * texel;
+				float v1 = (glyph.atlasY() + glyph.height()) * texel;
+				int c0 = mixColor(colorA, colorB, (x0 - cell - a) / (b - a));
+				int c1 = mixColor(colorA, colorB, (x1 - cell - a) / (b - a));
+				// wound as SdfText's own quads
+				consumer.addVertex(pose, x0, top, 0f).setUv(cu0, v0).setColor(c0);
+				consumer.addVertex(pose, x0, bottom, 0f).setUv(cu0, v1).setColor(c0);
+				consumer.addVertex(pose, x1, bottom, 0f).setUv(cu1, v1).setColor(c1);
+				consumer.addVertex(pose, x1, top, 0f).setUv(cu1, v0).setColor(c1);
 			}
 		}
 
@@ -292,55 +424,11 @@ public final class LyricSprites {
 				this.glow = glow;
 				this.sungOnly = sungOnly;
 			}
-		}
 
-		/**
-		 * Draws the line flat in the menu, for the preview of the world lyrics: the glow of the sung part, the line, and the sung part on top, as in
-		 * the world, centered on a point.
-		 *
-		 * @param unit menu pixels per text unit
-		 * @param sung how many glyphs of each row are sung
-		 */
-		public void drawFlat(GuiGraphicsExtractor graphics, float centerX, float centerY, float unit, float[] sung, int glowColor, int textColor, int sungColor) {
-			var pose = graphics.pose();
-			pose.pushMatrix();
-			pose.translate(centerX, centerY);
-			pose.scale(unit / SCALE, unit / SCALE);
-			int count = rows.size();
-			for (int k = 0; k < count; k++) {
-				Row row = rows.get(k);
-				pose.pushMatrix();
-				pose.translate((rowLeft(k) - PAD) * SCALE, ((k - count / 2f) * LINE_HEIGHT - TEXT_TOP) * SCALE);
-				int full = Math.round((row.width() + 2 * PAD) * SCALE);
-				int length = row.text().length();
-				float here = Math.max(0f, Math.min(sung[k], length));
-				int sungWidth = here >= length ? full : Math.round((PAD + edgeX(row, here)) * SCALE);
-				if (here > 0f) {
-					flatGlow(graphics, k * CELL_PX, sungWidth, glowColor);
-				}
-				flat(graphics, k * CELL_PX, full, textColor);
-				if (here > 0f) {
-					flat(graphics, k * CELL_PX, sungWidth, sungColor);
-				}
-				pose.popMatrix();
+			/** @return whether the layer is a glow, which writes no depth */
+			public boolean isGlow() {
+				return glow;
 			}
-			pose.popMatrix();
-		}
-
-		/** Draws a part of a row's cell, from its left edge, at the origin. */
-		private void flat(GuiGraphicsExtractor graphics, int v, int width, int color) {
-			if ((color >>> 24) == 0 || width <= 0) {
-				return;
-			}
-			graphics.blit(RenderPipelines.GUI_TEXTURED, slot.id, 0, 0, 0f, v, width, CELL_PX, width, CELL_PX, TEX_W, TEX_H, color);
-		}
-
-		/** Draws a part of a row's glow, from its left edge, at the origin: from the glow texture at half the size, drawn at full size. */
-		private void flatGlow(GuiGraphicsExtractor graphics, int v, int width, int color) {
-			if ((color >>> 24) == 0 || width <= 0) {
-				return;
-			}
-			graphics.blit(RenderPipelines.GUI_TEXTURED, slot.glowId, 0, 0, 0f, v / 2f, width, CELL_PX, width / 2, CELL_PX / 2, GLOW_W, GLOW_H, color);
 		}
 
 		/**
@@ -358,9 +446,13 @@ public final class LyricSprites {
 			float a = from <= 0f ? 0f : PAD + edgeX(row, Math.min(from, length));
 			float b = to >= length ? full : PAD + edgeX(row, to);
 			float left = rowLeft(k) - PAD;
-			float top = (k - rows.size() / 2f) * LINE_HEIGHT - TEXT_TOP;
+			float top = rowBaseline(k) - BASELINE - TEXT_TOP;
 			float v0 = k * CELL_PX;
 			float v1 = v0 + CELL_PX;
+			if (distances && !layer.glow) {
+				distanceGlyphs(pose, consumer, k, a, b, color, color);
+				return;
+			}
 			quad(consumer, pose, left + a, top, left + b, top + CELL, 0f, a * SCALE / TEX_W, v0 / TEX_H, b * SCALE / TEX_W, v1 / TEX_H, color);
 		}
 
@@ -371,7 +463,7 @@ public final class LyricSprites {
 
 		/** @return the baseline of a row, from the line's center, in text units (down is positive) */
 		public float rowBaseline(int k) {
-			return (k - rows.size() / 2f) * LINE_HEIGHT + BASELINE;
+			return LyricSprites.rowBaseline(rows.size(), k);
 		}
 
 		/** @return the x of a (possibly fractional) glyph position of a row, from the line's center, in text units */
@@ -414,8 +506,30 @@ public final class LyricSprites {
 	}
 
 	/** Emits a quad with one color on its left side and another on its right, interpolated across. */
+	/** The part across a line that is emitted (see {@link Sprite#emitSlice}): everything outside of a slice. Only the render thread emits. */
+	private static float clipFrom = Float.NEGATIVE_INFINITY;
+	private static float clipTo = Float.POSITIVE_INFINITY;
 	private static void quadGradient(VertexConsumer consumer, PoseStack.Pose pose, float x0, float y0, float x1, float y1, float z,
 									 float u0, float v0, float u1, float v1, int left, int right) {
+		if (x1 <= clipFrom || x0 >= clipTo || x1 <= x0) {
+			return;
+		}
+		if (x0 < clipFrom || x1 > clipTo) {
+			float a = (Math.max(x0, clipFrom) - x0) / (x1 - x0);
+			float b = (Math.min(x1, clipTo) - x0) / (x1 - x0);
+			int clippedLeft = mixColor(left, right, a);
+			int clippedRight = mixColor(left, right, b);
+			float cu0 = u0 + (u1 - u0) * a;
+			float cu1 = u0 + (u1 - u0) * b;
+			float cx0 = Math.max(x0, clipFrom);
+			float cx1 = Math.min(x1, clipTo);
+			x0 = cx0;
+			x1 = cx1;
+			u0 = cu0;
+			u1 = cu1;
+			left = clippedLeft;
+			right = clippedRight;
+		}
 		consumer.addVertex(pose, x0, y0, z).setUv(u0, v0).setColor(left);
 		consumer.addVertex(pose, x1, y0, z).setUv(u1, v0).setColor(right);
 		consumer.addVertex(pose, x1, y1, z).setUv(u1, v1).setColor(right);
@@ -424,10 +538,23 @@ public final class LyricSprites {
 
 	private static void quad(VertexConsumer consumer, PoseStack.Pose pose, float x0, float y0, float x1, float y1, float z,
 							 float u0, float v0, float u1, float v1, int color) {
+		if (clipFrom != Float.NEGATIVE_INFINITY || clipTo != Float.POSITIVE_INFINITY) {
+			quadGradient(consumer, pose, x0, y0, x1, y1, z, u0, v0, u1, v1, color, color);
+			return;
+		}
 		consumer.addVertex(pose, x0, y0, z).setUv(u0, v0).setColor(color);
 		consumer.addVertex(pose, x1, y0, z).setUv(u1, v0).setColor(color);
 		consumer.addVertex(pose, x1, y1, z).setUv(u1, v1).setColor(color);
 		consumer.addVertex(pose, x0, y1, z).setUv(u0, v1).setColor(color);
+	}
+
+	/** @return the color between two, each channel and the opacity mixed */
+	private static int mixColor(int from, int to, float amount) {
+		int a = Math.round((from >>> 24) + ((to >>> 24) - (from >>> 24)) * amount);
+		int r = Math.round((from >> 16 & 0xFF) + ((to >> 16 & 0xFF) - (from >> 16 & 0xFF)) * amount);
+		int g = Math.round((from >> 8 & 0xFF) + ((to >> 8 & 0xFF) - (from >> 8 & 0xFF)) * amount);
+		int b = Math.round((from & 0xFF) + ((to & 0xFF) - (from & 0xFF)) * amount);
+		return a << 24 | r << 16 | g << 8 | b;
 	}
 
 	/** Starts rendering the sprite for the rows of a line, in the clean or the handwritten style; see {@link #begin(List, boolean, boolean)}. */
@@ -635,6 +762,11 @@ public final class LyricSprites {
 		return emUnits;
 	}
 
+	/** @return the font size of the clean style's letters at full text size, in text units: what a measure at font size 1 is multiplied by */
+	public static float cleanSize() {
+		return emUnits() * CLEAN_SIZE;
+	}
+
 	/** Size of Inter Bold, the clean style's font, relative to the lyrics font, whose glyphs are smaller for the same size. */
 	private static final float CLEAN_SIZE = 0.9f;
 	private static Font clean;
@@ -703,6 +835,72 @@ public final class LyricSprites {
 		return new Font(Font.SANS_SERIF, Font.PLAIN, 1).deriveFont(sized.getSize2D());
 	}
 
+	/**
+	 * @param cleanStyle whether the lines are in the clean style (Inter Bold), which has more letters than the lyrics font
+	 * @return the width of a row at full size, in text units, as its sprite will have it: the game's width where the sprite places the glyphs as
+	 *         the game does; for a row in a script neither font has (Japanese, Chinese, Arabic, ...) the width of the font it is laid out in,
+	 *         whose letters are far wider than the game's. Rows are broken and lines placed by this, so such a line stays inside the view.
+	 */
+	public static float rowWidth(String row, boolean cleanStyle) {
+		float game = Minecraft.getInstance().font.width(Ui.lyricSequence(row));
+		float em = emUnits();
+		if (row.isBlank() || em <= 0f || font.canDisplayUpTo(row) == -1) {
+			return game;
+		}
+		Font clean = cleanStyle ? cleanFont() : null;
+		if (clean != null && clean.canDisplayUpTo(row) == -1) {
+			return game;
+		}
+		Float known = LAID_WIDTHS.get(row);
+		if (known == null) {
+			if (LAID_WIDTHS.size() > MOST_LAID_WIDTHS) {
+				LAID_WIDTHS.clear();
+			}
+			try {
+				known = new TextLayout(row, rowFont(font.deriveFont(em), row), new FontRenderContext(null, true, true)).getAdvance();
+			} catch (Exception | Error e) {
+				known = game;
+			}
+			LAID_WIDTHS.put(row, known);
+		}
+		return known;
+	}
+
+	/** While the debug probes listen: the time spent making the world lyrics' geometry, for measuring what a preset costs. */
+	public static long emitNanos;
+
+	/**
+	 * @return the width of a row at full size as the clean style really draws it, in text units. Inter Bold's letters are not exactly as wide
+	 *         as the game's, by which rows are broken elsewhere; the Cut-out preset, which packs single words into rows, measures
+	 *         by this. Rows the clean style does not draw are as wide as {@link #rowWidth} says.
+	 */
+	public static float drawnWidth(String row, boolean cleanStyle) {
+		float em = emUnits();
+		Font clean = cleanStyle ? cleanFont() : null;
+		if (row.isBlank() || em <= 0f || clean == null || clean.canDisplayUpTo(row) != -1) {
+			return rowWidth(row, cleanStyle);
+		}
+		Float known = DRAWN_WIDTHS.get(row);
+		if (known == null) {
+			if (DRAWN_WIDTHS.size() > MOST_LAID_WIDTHS) {
+				DRAWN_WIDTHS.clear();
+			}
+			try {
+				known = new TextLayout(row, clean.deriveFont(em * CLEAN_SIZE), new FontRenderContext(null, true, true)).getAdvance();
+			} catch (Exception | Error e) {
+				known = rowWidth(row, cleanStyle);
+			}
+			DRAWN_WIDTHS.put(row, known);
+		}
+		return known;
+	}
+
+	private static final Map<String, Float> DRAWN_WIDTHS = new ConcurrentHashMap<>();
+
+	/** The widths of rows laid out in another font, kept since breaking a line into rows asks for the same texts again and again. */
+	private static final Map<String, Float> LAID_WIDTHS = new ConcurrentHashMap<>();
+	private static final int MOST_LAID_WIDTHS = 2000;
+
 	/** System fonts tried in order: Chinese, Japanese, Korean, then Arabic, Hebrew and more, Indic scripts, Thai. */
 	private static final String[] SYSTEM_FONTS = {"Microsoft YaHei UI", "Microsoft YaHei", "Yu Gothic UI", "Malgun Gothic", "Segoe UI", "Nirmala UI",
 		"Leelawadee UI", "Noto Sans", "Arial Unicode MS"};
@@ -759,7 +957,7 @@ public final class LyricSprites {
 			float baseline = k * CELL_PX + (TEXT_TOP + BASELINE) * SCALE;
 			float[] handX = hand == null ? null : handRow(g, hand, text, k, baseline, context);
 			if (handX != null) {
-				rows.add(new Row(text, handX[text.length()], handX));
+				rows.add(new Row(text, handX[text.length()], handX, 0f));
 				continue;
 			}
 			if (clean != null && clean.canDisplayUpTo(text) == -1) {
@@ -767,7 +965,7 @@ public final class LyricSprites {
 				float advance = new TextLayout(text.isBlank() ? " " : text, clean, context).getAdvance();
 				Font fitted = advance > (MAX_WIDTH - 1f) * SCALE ? clean.deriveFont(clean.getSize2D() * (MAX_WIDTH - 1f) * SCALE / advance) : clean;
 				letterX = layRow(g, fitted, text, context, baseline);
-				rows.add(new Row(text, letterX[text.length()], letterX));
+				rows.add(new Row(text, letterX[text.length()], letterX, fitted.getSize2D() / SCALE));
 				continue;
 			}
 			// Rows with characters the lyrics font lacks (Russian, Arabic, Chinese, ...) are laid out as a whole in a font that has them: Arabic
@@ -775,15 +973,23 @@ public final class LyricSprites {
 			// from that layout.
 			Font rowFont = rowFont(sized, text);
 			if (rowFont != null) {
-				letterX = layRow(g, rowFont, text, context, baseline);
-				if (letterX[text.length()] > MAX_WIDTH) {
-					throw new IllegalStateException("a row that is too wide");
-				}
-				rows.add(new Row(text, letterX[text.length()], letterX));
+				// such a font's letters are not as wide as the game's, by which the rows were broken: a row it makes too wide is set smaller, never dropped
+				float advance = new TextLayout(text.isBlank() ? " " : text, rowFont, context).getAdvance();
+				Font fitted = advance > (MAX_WIDTH - 1f) * SCALE ? rowFont.deriveFont(rowFont.getSize2D() * (MAX_WIDTH - 1f) * SCALE / advance) : rowFont;
+				letterX = layRow(g, fitted, text, context, baseline);
+				rows.add(new Row(text, letterX[text.length()], letterX, 0f));
 				continue;
 			}
+			Font rowSized = sized;
 			if (letterX[text.length()] > MAX_WIDTH) {
-				throw new IllegalStateException("a row that is too wide");
+				// a row wider than the sprite (a word that cannot be broken): its letters and their places are set smaller to fit, never dropped
+				float fit = (MAX_WIDTH - 1f) / letterX[text.length()];
+				float[] fittedX = new float[letterX.length];
+				for (int i = 0; i < letterX.length; i++) {
+					fittedX[i] = letterX[i] * fit;
+				}
+				letterX = fittedX;
+				rowSized = sized.deriveFont(sized.getSize2D() * fit);
 			}
 			for (int i = 0; i < text.length(); i++) {
 				char letter = text.charAt(i);
@@ -792,7 +998,7 @@ public final class LyricSprites {
 				}
 				if (letter != ' ') {
 					// fill the outline instead of drawing text: gives every pixel its exact coverage, where text rendering is slightly bolder
-					Shape outline = withGlyph(sized, letter).createGlyphVector(context, String.valueOf(letter)).getOutline((PAD + letterX[i]) * SCALE, baseline);
+					Shape outline = withGlyph(rowSized, letter).createGlyphVector(context, String.valueOf(letter)).getOutline((PAD + letterX[i]) * SCALE, baseline);
 					g.setColor(Color.WHITE);
 					g.fill(outline);
 					// The game's glyphs are slightly lighter than their outlines; a black stroke along the edge trims a little off every stroke.
@@ -801,7 +1007,7 @@ public final class LyricSprites {
 					g.draw(outline);
 				}
 			}
-			rows.add(new Row(text, letterX[text.length()], letterX));
+			rows.add(new Row(text, letterX[text.length()], letterX, 0f));
 		}
 		g.dispose();
 

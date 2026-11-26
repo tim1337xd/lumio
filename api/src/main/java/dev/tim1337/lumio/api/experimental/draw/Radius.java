@@ -2,7 +2,7 @@ package dev.tim1337.lumio.api.experimental.draw;
 
 /**
  * Corner radii in menu pixels: the few sizes everything is drawn with, so elements of the same kind are equally rounded. Shapes with fully
- * rounded ends (a switch, a chip, a bar) use {@link #pill}.
+ * rounded ends (a switch, a thin bar, a dot) use {@link #pill}; labels, chips, badges and panels are boxes with small corners, {@link #box}.
  */
 public final class Radius {
 	private Radius() {
@@ -24,6 +24,11 @@ public final class Radius {
 	public static final float XXL = 14f;
 	/** A large floating window. */
 	public static final float WINDOW = 22f;
+
+	/** @return the radius of a box (a label, a chip, a badge, a panel) of the given height: small corners, never fully round ends */
+	public static float box(float height) {
+		return Math.min(XS, height / 2f);
+	}
 
 	/** @return the radius that fully rounds both ends of a shape of the given height */
 	public static float pill(float height) {

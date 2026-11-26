@@ -17,7 +17,7 @@ public class CursorFeature extends Feature {
 	private long savedAt;
 
 	public CursorFeature() {
-		super("no_cursor_reset", "No cursor reset", "When one menu follows another, the cursor stays where it was instead of jumping to the middle of the screen.", true);
+		super("no_cursor_reset", "No cursor reset", "The cursor stays put when menus change.", true);
 		iconRgb(SystemColors.BLUE_RGB);
 		iconName("cursor");
 		summary("Keeps the cursor in place between menus");

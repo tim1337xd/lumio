@@ -95,6 +95,15 @@ final class AdlibLayout {
 	/** The same, with the gap to the line as a share of a row of its own (the world's, see {@link #WORLD_GAP_SHARE}). */
 	static void place(float lineLeft, float lineTop, float lineRight, float lineBottom, float rowHeight, float gapShare, float[] widths, float[] heights,
 					  int count, float lowest, float[] out) {
+		place(lineLeft, lineTop, lineRight, lineBottom, rowHeight, gapShare, widths, heights, null, count, lowest, out);
+	}
+
+	/**
+	 * The same, where a long adlib ({@code longOnes}, may be null) always stands below the line, past {@code lowest} where it must: it gets a row of
+	 * its own and never stands beside the line.
+	 */
+	static void place(float lineLeft, float lineTop, float lineRight, float lineBottom, float rowHeight, float gapShare, float[] widths, float[] heights,
+					  boolean[] longOnes, int count, float lowest, float[] out) {
 		float gap = rowHeight * gapShare;
 		float between = between(rowHeight);
 		float below = lineBottom + gap;
@@ -104,7 +113,7 @@ final class AdlibLayout {
 		for (int i = 0; i < count; i++) {
 			// once one goes beside the line the rest follow it, so none below reaches into them
 			beside |= below + heights[i] > lowest + rowHeight * FIT_SLACK;
-			if (!beside) {
+			if (!beside || longOnes != null && longOnes[i]) {
 				out[2 * i] = Math.max(lineLeft, lineRight - widths[i]);
 				out[2 * i + 1] = below;
 				below += heights[i] + between;
@@ -116,6 +125,17 @@ final class AdlibLayout {
 				side += heights[i] + between;
 			}
 		}
+	}
+
+	/**
+	 * @return an adlib's middle moved across as little as needed so it stays inside a block reaching this far from the line's middle to either
+	 *         side; one wider than the block is centered in it
+	 */
+	static float inside(float middle, float halfWidth, float reach) {
+		if (halfWidth >= reach) {
+			return 0f;
+		}
+		return Math.clamp(middle, halfWidth - reach, reach - halfWidth);
 	}
 
 	/** @return the height a line keeps below it for adlibs of these heights, the gap included; 0 without adlibs */

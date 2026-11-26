@@ -27,6 +27,7 @@ import dev.tim1337.lumio.config.setting.StringSetting;
 import dev.tim1337.lumio.features.visual.hud.StatusBar.Kind;
 import dev.tim1337.lumio.ui.EditableHud;
 import dev.tim1337.lumio.hud.HudSimulation;
+import dev.tim1337.lumio.hud.HudUnderChat;
 import dev.tim1337.lumio.ui.HudEditScreen;
 import dev.tim1337.lumio.ui.HudParts;
 import dev.tim1337.lumio.ui.HudStyle;
@@ -119,7 +120,7 @@ public class StatusBarsHudFeature extends Feature {
 	private final BooleanSetting showSpeed = add(new BooleanSetting("show_speed", Component.literal("Speed"), false), "Shows");
 
 	// numbers
-	private final BooleanSetting maximum = add(new BooleanSetting("maximum", Component.literal("Show maximum"), true), "Numbers");
+	private final BooleanSetting maximum = add(new BooleanSetting("maximum", Component.literal("Maximum"), true), "Numbers");
 	private final BooleanSetting separators = add(new BooleanSetting("separators", Component.literal("Thousands separator"), true), "Numbers");
 	private final BooleanSetting fuelPercent = add(new BooleanSetting("fuel_percent", Component.literal("Fuel in percent"), false), "Numbers");
 
@@ -147,7 +148,7 @@ public class StatusBarsHudFeature extends Feature {
 	}
 
 	private final EnumSetting<ExtraMode> extraMode = add(new EnumSetting<>("extra_mode", Component.literal("Absorption and overflow"),
-		ExtraMode.SEPARATE, ExtraMode::displayName, EnumSetting.Style.SEGMENTED), "Numbers");
+		ExtraMode.SEPARATE, ExtraMode::displayName, EnumSetting.Style.SEGMENTED), "Numbers", "Extra hearts and mana beyond the full bar");
 	/** How large the numbers of the bars are: small (as before), medium or large; the bars' heights follow. */
 	public enum TextSize {
 		SMALL("Small", 1f),
@@ -200,10 +201,10 @@ public class StatusBarsHudFeature extends Feature {
 	private final StringSetting stack = add(new StringSetting("stack", Component.literal("Stack"), DEFAULT_STACK, false), "Layout");
 
 	/** The bars left and right of the hotbar, from the top down (see {@link BarStackLayout}). */
-	private final StringSetting sideLeft = add(new StringSetting("side_left", Component.literal("Left of the hotbar"), "", false), "Layout");
-	private final StringSetting sideRight = add(new StringSetting("side_right", Component.literal("Right of the hotbar"), "", false), "Layout");
+	private final StringSetting sideLeft = add(new StringSetting("side_left", Component.literal("Left of hotbar"), "", false), "Layout");
+	private final StringSetting sideRight = add(new StringSetting("side_right", Component.literal("Right of hotbar"), "", false), "Layout");
 	/** How wide the bars beside the hotbar are, the same on both sides, in GUI pixels at size 1. */
-	private final FloatSetting sideWidth = add(new FloatSetting("side_width", Component.literal("Width beside the hotbar"), SIDE_WIDTH, MIN_BAR_WIDTH,
+	private final FloatSetting sideWidth = add(new FloatSetting("side_width", Component.literal("Side width"), SIDE_WIDTH, MIN_BAR_WIDTH,
 		SIDE_MOST_WIDTH, 0), "Layout");
 
 	/** The width of the stack: the hotbar's, or the player's own. */
@@ -250,16 +251,26 @@ public class StatusBarsHudFeature extends Feature {
 	private boolean visibleNow;
 
 	public StatusBarsHudFeature() {
-		super("status_bars", "Status bars", "Health, mana, hunger, air and experience as bars stacked above the hotbar.", false);
+		super("status_bars", "Status bars", "Health, mana, hunger, air and XP as bars.", false);
 		iconRgb(SystemColors.RED_RGB);
 		iconName("heart");
-		summary("Health, mana, hunger, air and experience as bars");
+		summary("Health, mana, hunger, air and XP as bars");
 		stack.visibleWhen(() -> false);
 		rowWeights.visibleWhen(() -> false);
 		sideLeft.visibleWhen(() -> false);
 		sideRight.visibleWhen(() -> false);
 		sideWidth.visibleWhen(() -> false);
 		stackWidth.under(stackWidthMode, () -> stackWidthMode.get() == StackWidth.CUSTOM);
+		// what belongs to one bar counts only while that bar is on; absorption and overflow have a color of their own only when shown separately
+		BooleanSupplier absorption = () -> showHealth.get() && showAbsorption.get();
+		BooleanSupplier overflow = () -> Addons.status() != null && showMana.get() && showOverflow.get();
+		showAbsorption.visibleWhen(showHealth::get);
+		showOverflow.visibleWhen(() -> Addons.status() != null && showMana.get());
+		fuelPercent.visibleWhen(() -> Addons.status() != null && showFuel.get());
+		lowHealthEdge.visibleWhen(showHealth::get);
+		extraMode.visibleWhen(() -> absorption.getAsBoolean() || overflow.getAsBoolean());
+		absorptionColor.visibleWhen(() -> absorption.getAsBoolean() && extraMode.get() == ExtraMode.SEPARATE);
+		overflowColor.visibleWhen(() -> overflow.getAsBoolean() && extraMode.get() == ExtraMode.SEPARATE);
 		for (Kind kind : KINDS) {
 			bars[kind.ordinal()] = new StatusBar(kind);
 			slots[kind.ordinal()] = new Slot(kind);
@@ -267,7 +278,7 @@ public class StatusBarsHudFeature extends Feature {
 	}
 
 	private ColorSetting color(String key, String name, int rgb) {
-		return add(new ColorSetting(key, Component.literal(name), rgb).withOpacity(1f).inRow("Bar colors"), "Colors");
+		return add(new ColorSetting(key, Component.literal(name), rgb).ownColorOnly().withOpacity(1f).inRow("Bar colors"), "Colors");
 	}
 
 	// ----------------------------------------------------------------------------------------------------- settings card
@@ -409,21 +420,6 @@ public class StatusBarsHudFeature extends Feature {
 		return List.of(showHealth, showMana, showXp, showFood, showAir, showDefense, showAbsorption, showOverflow, showVitality, showFuel, showArrows, showSpeed);
 	}
 
-	/** @return the text size of the bars, which the hotbar's card offers too */
-	public EnumSetting<TextSize> textSizeSetting() {
-		return textSize;
-	}
-
-	/** @return how absorption and overflow show, which the hotbar's card offers too */
-	public EnumSetting<ExtraMode> extraModeSetting() {
-		return extraMode;
-	}
-
-	/** @return the setting of the red screen edge at low health, which the hotbar's card offers too */
-	public BooleanSetting lowHealthEdgeSetting() {
-		return lowHealthEdge;
-	}
-
 	public boolean wantsFuel() {
 		return isEnabled() && showFuel.get();
 	}
@@ -470,6 +466,11 @@ public class StatusBarsHudFeature extends Feature {
 	}
 
 	/** @return the elements movable in the HUD editor: every bar */
+	/** @return the arrows' bar, for the add-on's arrows panel that stands for it in the editor's list */
+	public EditableHud arrowsBar() {
+		return slots[Kind.ARROWS.ordinal()];
+	}
+
 	public List<EditableHud> editables() {
 		if (Addons.status() != null) {
 			return List.of(slots);
@@ -1116,7 +1117,9 @@ public class StatusBarsHudFeature extends Feature {
 	private void drawBar(Ui ui, StatusBar bar, Slot slot) {
 		float s = bar.drawnScale;
 		float width = bar.width.value() / s;
-		float alpha = Mth.clamp(bar.shown.value(), 0f, 1f);
+		// under the open chat a bar is dimmed, never hidden
+		float alpha = Mth.clamp(bar.shown.value(), 0f, 1f) * slot.underChat.step(!HudEditScreen.isOpen() && HudUnderChat.under(bar.bounds, ModFeatures.CHAT == null ? null : ModFeatures.CHAT.openPanel()),
+			ModFeatures.MENU == null || ModFeatures.MENU.animations(), System.nanoTime());
 		boolean slim = slim();
 		float low = 0f;
 		if (bar.kind == Kind.HEALTH && bar.realFraction < LOW_HEALTH && bar.realFraction > 0f) {
@@ -1653,6 +1656,8 @@ public class StatusBarsHudFeature extends Feature {
 		/** The width of the bar while it floats, in GUI pixels at size 1, or 0 for the standard width. */
 		final FloatSetting freeWidth;
 		final HudParts parts = new HudParts();
+		/** How far the bar is dimmed under the open chat. */
+		final HudUnderChat.Fade underChat = new HudUnderChat.Fade();
 		/** The editor's list asked for this bar while it is not active here. */
 		boolean previewed;
 		int lastGuiWidth = 854;
@@ -1732,6 +1737,12 @@ public class StatusBarsHudFeature extends Feature {
 		@Override
 		public String hudName() {
 			return kind.title;
+		}
+
+		/** The arrows' bar has no row of its own while the add-on's arrows panel stands for both styles: that row selects the bar. */
+		@Override
+		public boolean hudListed() {
+			return kind != Kind.ARROWS || ExtraStatusBar.panel() == null;
 		}
 
 		@Override

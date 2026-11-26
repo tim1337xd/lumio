@@ -31,7 +31,7 @@ public class CreditsScreen extends Screen {
 	private static final int HEIGHT = 440;
 	private static final int PAD = 24;
 
-	/** A credited name and what was taken from it, as inspiration or as a part. */
+	/** A credited name and what we use of it: a part, data, a format or a service (inspiration alone gets no entry). */
 	private record Credit(String name, String text) {
 	}
 
@@ -44,12 +44,16 @@ public class CreditsScreen extends Screen {
 			new Credit("tim1337", "The idea, the design and the testing."))),
 		new Section("Parts and services", List.of(
 			new Credit("Fabric", "The loader and the API."),
+			new Credit("GitHub", "The update check and the downloads you start."),
 			new Credit("LRCLIB", "Synced lyrics."),
 			new Credit("Spotify Web API", "What plays."),
 			new Credit("Cider", "What plays, and its lyrics."),
 			new Credit("iTunes Search API", "Song covers."),
 			new Credit("Inter, Kalam and Poppins", "The fonts."),
 			new Credit("GNU Unifont", "The shapes of some server symbols."))),
+		new Section("Formats", List.of(
+			new Credit("Skyblocker", "Its waypoint lists, and Skytils' and ColeWeight's, read and written."),
+			new Credit("SkyHanni", "Its numbered waypoint lists, read and written."))),
 		new Section("Thanks", List.of(
 			new Credit("Everyone who tried it", "Every screenshot and idea made it better.")))
 	);
@@ -147,24 +151,6 @@ public class CreditsScreen extends Screen {
 		return false;
 	}
 
-	private static List<String> wrap(Ui ui, String text, int width) {
-		List<String> lines = new ArrayList<>();
-		StringBuilder line = new StringBuilder();
-		for (String word : text.split(" ")) {
-			String candidate = line.isEmpty() ? word : line + " " + word;
-			if (!line.isEmpty() && ui.width(candidate) > width) {
-				lines.add(line.toString());
-				line = new StringBuilder(word);
-			} else {
-				line = new StringBuilder(candidate);
-			}
-		}
-		if (!line.isEmpty()) {
-			lines.add(line.toString());
-		}
-		return lines;
-	}
-
 	@Override
 	public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
 		super.extractRenderState(graphics, mouseX, mouseY, partialTick);
@@ -215,7 +201,7 @@ public class CreditsScreen extends Screen {
 				ui.circle(x + PAD + 4, cy + 5, 3, ui.accent);
 				ui.text(credit.name(), x + PAD + 16, cy, HudStyle.text());
 				cy += 14;
-				for (String part : wrap(ui, credit.text(), textWidth)) {
+				for (String part : ui.wrap(credit.text(), textWidth, Integer.MAX_VALUE)) {
 					ui.text(part, x + PAD + 16, cy, HudStyle.secondary());
 					cy += 13;
 				}

@@ -2,6 +2,7 @@ package dev.tim1337.lumio.hud;
 
 import dev.tim1337.lumio.render.WorldBackdrop;
 import dev.tim1337.lumio.ModFeatures;
+import dev.tim1337.lumio.mixin.accessor.AbstractContainerScreenAccessor;
 import dev.tim1337.lumio.api.draw.Canvas;
 import dev.tim1337.lumio.api.experimental.draw.PanelKit;
 import dev.tim1337.lumio.api.experimental.draw.SystemColors;
@@ -33,12 +34,13 @@ import dev.tim1337.lumio.ui.PanelTheme;
 import dev.tim1337.lumio.ui.Ui;
 import dev.tim1337.lumio.ui.WidthSnap;
 
-
 import com.google.gson.JsonObject;
 
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
 import net.minecraft.world.item.Item;
@@ -49,7 +51,6 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Supplier;
 
 /**
  * Base class of HUD panels in the style of the info bar: a glass surface with content on it. It knows its position (a distance from one of the
@@ -61,8 +62,6 @@ public abstract class HudPanelFeature extends Feature implements EditableHud {
 	}
 
 	private final String hudName;
-	private final float defaultX;
-	private final float defaultY;
 	// where the panel is placed from: 0 left or top, 1 center, 2 right or bottom (hidden settings, part of the HUD layout); it starts at the edge
 	// the panel was made for, and the HUD editor moves it to the nearest one when the panel is dropped
 	private final FloatSetting anchorX;
@@ -77,7 +76,7 @@ public abstract class HudPanelFeature extends Feature implements EditableHud {
 	private final PanelLook look = new PanelLook(lookMode);
 
 	protected final ColorSetting accent = add(new ColorSetting("accent", Component.literal("Accent"), SystemColors.BLUE_RGB).menuByDefault(), "Panel");
-	protected final FloatSetting scale = add(new FloatSetting("scale", Component.literal("Size"), 1f, 0.3f, 3f, 2).percent(), "Panel");
+	protected final FloatSetting scale = add(new FloatSetting("scale", Component.literal("Size"), 1f, PanelSizes.LEAST, PanelSizes.MOST, 2).percent(), "Panel");
 	/** Shared default width of the SkyBlock cards (profit, commissions, pity, pests, visitors, farming), so they line up when stacked. */
 	protected static final int SKYBLOCK_WIDTH = 200;
 
@@ -87,7 +86,7 @@ public abstract class HudPanelFeature extends Feature implements EditableHud {
 	protected final BooleanSetting glow = add(new BooleanSetting("glow", Component.literal("Glow"), false), "Panel");
 	/** Whether the glow is the soft one. */
 	private final BooleanSetting glowSoft = add(new BooleanSetting("glow_soft", Component.literal("Soft glow"), false), "Panel");
-	private final EnumSetting<PanelLook.Glow> glowRow = add(PanelLook.glowRow("glow_row", glow, glowSoft), "Panel");
+	protected final EnumSetting<PanelLook.Glow> glowRow = add(PanelLook.glowRow("glow_row", glow, glowSoft), "Panel");
 	/** The panel's theme: the HUD theme, or its own glass, dark or light. Also selectable from the panel's menu in the HUD editor. */
 	protected final EnumSetting<PanelTheme> panelTheme = add(new EnumSetting<>("panel_theme",
 		Component.literal("Theme"), PanelTheme.HUD, PanelTheme::displayName, EnumSetting.Style.SEGMENTED), "Panel");
@@ -97,6 +96,9 @@ public abstract class HudPanelFeature extends Feature implements EditableHud {
 	/** The panel's depth effect: as set in the menu settings, or on or off for this panel; also chosen in its card in the HUD editor. */
 	protected final EnumSetting<PanelDepth> panelDepth = add(new EnumSetting<>("panel_depth",
 		Component.literal("Depth effect"), PanelDepth.MENU, PanelDepth::displayName, EnumSetting.Style.SEGMENTED), "Panel");
+	/** How this panel shows while a menu with slots is open: as the HUD's setting says, or always, or never. */
+	private final EnumSetting<HudInMenus.Own> inMenus = add(new EnumSetting<>("in_menus", Component.literal("In menus"), HudInMenus.Own.FOLLOW,
+		value -> Component.literal(value.label()), EnumSetting.Style.DROPDOWN), "Panel");
 	/** Whether the panel shows the background switch: all panels do, except elements without a panel of their own. */
 	private boolean offersNoBackground = true;
 
@@ -118,6 +120,12 @@ public abstract class HudPanelFeature extends Feature implements EditableHud {
 		offersNoBackground = true;
 	}
 
+	/** For a panel whose background is its only surface: without the background its glow and depth rows have nothing to act on. */
+	protected final void glowAndDepthNeedBackground() {
+		glowRow.visibleWhen(this::hasBackground);
+		panelDepth.visibleWhen(this::hasBackground);
+	}
+
 	/** Places the panel by default from the middle of the screen's height, as the game places its sidebar scoreboard. */
 	protected final void placeCenteredVertically() {
 		anchorY.setDefault((float) MIDDLE);
@@ -136,6 +144,12 @@ public abstract class HudPanelFeature extends Feature implements EditableHud {
 	private final FloatSetting y;
 
 	private int[] bounds = {0, 0, 0, 0};
+	/** The bounds where the player placed it, before the auto-fit moved it ({@link HudAutoFit}). */
+	private final int[] naturalBounds = {0, 0, 0, 0};
+	/** How far the auto-fit moves the panel now, in GUI units, and how much it shrinks it (1: not at all); never saved. */
+	private float fitShiftX;
+	private float fitShiftY;
+	private float autoFit = 1f;
 	/** The parts a click in the HUD editor switches, as drawn this frame. */
 	private final HudParts parts = new HudParts();
 	private final Eased shownScale = new Eased();
@@ -145,8 +159,6 @@ public abstract class HudPanelFeature extends Feature implements EditableHud {
 	protected HudPanelFeature(String id, String name, String description, boolean enabledByDefault, Anchor anchor, boolean fromBottom, float defaultX, float defaultY) {
 		super(id, name, description, enabledByDefault);
 		this.hudName = name;
-		this.defaultX = defaultX;
-		this.defaultY = defaultY;
 		x = add(new FloatSetting("x", Component.literal("Place across"), defaultX, -4000f, 4000f, 0), "Panel");
 		y = add(new FloatSetting("y", Component.literal("Place down"), defaultY, -4000f, 8000f, 0), "Panel");
 		anchorX = add(new FloatSetting("anchor_x", Component.literal("Placed from across"), anchor.ordinal(), START, END, 0), "Panel");
@@ -182,17 +194,14 @@ public abstract class HudPanelFeature extends Feature implements EditableHud {
 	}
 
 	/**
-	 * @return a factor applied to the scale, so panels with large content still fit on the screen: a panel taller or wider than the screen (a
-	 *         tall card at a large GUI scale in a small window) shrinks until it fits, never cut off
+	 * @return a factor applied to the scale, so panels with large content still fit on the screen: a panel wider than 90 % of the screen or taller
+	 *         than 45 % of it (a tall card at a large GUI scale in a small window) shrinks until it fits, never grows, and goes back to its own size
+	 *         when there is room again
 	 */
 	protected float fit(int width, int height, int guiWidth, int guiHeight, float scale) {
-		float room = Math.min((guiWidth - 2f * SCREEN_MARGIN) / Math.max(1f, width * scale), (guiHeight - 2f * SCREEN_MARGIN) / Math.max(1f, height * scale));
-		return Math.min(1f, Math.max(MIN_FIT, room));
+		return HudFit.shrink(width * scale, height * scale, guiWidth, guiHeight, HudFit.PANEL_WIDTH_SHARE, HudFit.PANEL_HEIGHT_SHARE);
 	}
 
-	/** The room a panel keeps from the screen's edges when it has to shrink, and the least it shrinks to. */
-	private static final float SCREEN_MARGIN = 4f;
-	private static final float MIN_FIT = 0.3f;
 
 	/**
 	 * @return 0, or for a panel of variable width the width it is anchored for: on the right half of the screen the panel then keeps its right edge
@@ -220,8 +229,8 @@ public abstract class HudPanelFeature extends Feature implements EditableHud {
 
 	/** A panel's width: fitted to its content, or as wide as the player set it. */
 	public enum WidthMode {
-		AUTO("Auto"),
-		CUSTOM("Custom");
+		CUSTOM("Custom"),
+		AUTO("Auto");
 
 		private final Component displayName;
 
@@ -250,14 +259,6 @@ public abstract class HudPanelFeature extends Feature implements EditableHud {
 		look.follow(widthMode, () -> ModFeatures.MENU.hudWidthMode());
 		look.follow(customWidth, () -> Mth.clamp((float) Math.round(defaultWidth * ModFeatures.MENU.hudWidth()), customWidth.min(), customWidth.max()),
 			() -> ModFeatures.MENU.hudWidthMode() == WidthMode.CUSTOM);
-	}
-
-	/** @return the width settings, for the More page of the settings card; empty for panels without them */
-	protected List<Setting<?>> widthSettings() {
-		if (cardWidthSetting != null) {
-			return List.of(cardWidthSetting, cardHeightSetting);
-		}
-		return widthMode == null ? List.of() : List.of(widthMode, customWidth);
 	}
 
 	/** Tells the panel its narrowest width with the content still fitting, and its width with Auto, in panel pixels. */
@@ -421,7 +422,12 @@ public abstract class HudPanelFeature extends Feature implements EditableHud {
 	 *         (see {@link HudSimulation})
 	 */
 	protected boolean simulated() {
-		return HudSimulation.simulates(this);
+		return HudSimulation.simulates(this) || allPanelsSample();
+	}
+
+	/** @return whether the editor's All panels shows this panel with its sample, wherever the player is */
+	private boolean allPanelsSample() {
+		return dev.tim1337.lumio.ui.HudEditPreview.allPanels() && HudEditScreen.isOpen() && inEditorWhenHidden();
 	}
 
 	/** @return whether the menu glow is drawn around this panel */
@@ -472,7 +478,7 @@ public abstract class HudPanelFeature extends Feature implements EditableHud {
 		prepare(client);
 		boolean editing = HudEditScreen.isOpen();
 		// the editor shows what would show now; while an activity is simulated there, the panels of the activity show and the others are hidden
-		boolean asked = editing && previewed == this;
+		boolean asked = editing && (previewed == this || allPanelsSample());
 		boolean hidden = editing && HudSimulation.active() ? !HudSimulation.shows(this) || !simulated() && !asked && !shown(client)
 			: !asked && !shown(client);
 		if (hidden || !editing && ScreenTitles.titleShown() && ScreenTitles.over(bounds[0], bounds[1], bounds[2], bounds[3], graphics.guiWidth())) {
@@ -489,7 +495,8 @@ public abstract class HudPanelFeature extends Feature implements EditableHud {
 		int guiWidth = graphics.guiWidth();
 		int guiHeight = graphics.guiHeight();
 		float eased = shownScale.follow(scale.get());
-		float s = eased * fit(w, h, guiWidth, guiHeight, eased);
+		autoFit = fit(w, h, guiWidth, guiHeight, eased);
+		float s = eased * autoFit;
 		lastGuiWidth = guiWidth;
 		lastGuiHeight = guiHeight;
 		float left = switch (across()) {
@@ -508,7 +515,29 @@ public abstract class HudPanelFeature extends Feature implements EditableHud {
 			left = dockedCenterX(guiWidth, guiHeight) + x.get() - w * s / 2f;
 			top = dockBottom - h * s;
 		}
+		naturalBounds[0] = Math.round(left);
+		naturalBounds[1] = Math.round(top);
+		naturalBounds[2] = Math.round(w * s);
+		naturalBounds[3] = Math.round(h * s);
+		// the auto-fit's move, except while the player has the panel in hand in the editor: it is shown where they put it
+		if (!HudEditScreen.isSelected(this)) {
+			left += fitShiftX;
+			top += fitShiftY;
+		}
 		bounds = new int[]{Math.round(left), Math.round(top), Math.round(w * s), Math.round(h * s)};
+		// behind a menu with slots: dimmed, as it is, or not at all, as the HUD's setting and the panel's own say
+		HudInMenus.Look menuLook = editing ? HudInMenus.Look.NORMAL : menuLook(client);
+		float menuOpacity = menuLook == HudInMenus.Look.NORMAL && menuWindow == null ? 1f
+			: HudInMenus.opacity(menuLook, ModFeatures.MENU.hudMenuDim(), HudInMenus.covered(bounds, menuWindow, MENU_AREAS));
+		if (menuWatch && menuWindow != null && !editing) {
+			(menuOpacity <= 0f ? MENU_HIDDEN : menuOpacity < HudInMenus.opacity(menuLook, ModFeatures.MENU.hudMenuDim(), 0f) ? MENU_FADED : MENU_SHOWN).add(id());
+		}
+		if (menuOpacity <= 0f) {
+			// not there: it takes no place and no click either
+			hiddenNow = true;
+			bounds = new int[]{bounds[0], bounds[1], 0, 0};
+			return;
+		}
 		drawnScale = s;
 		parts.clear();
 
@@ -516,18 +545,104 @@ public abstract class HudPanelFeature extends Feature implements EditableHud {
 		// the panel's own look while it is drawn (colors are taken from it for the whole panel)
 		enterLook();
 		Ui ui = new Ui(graphics, client.font, HudStyle.palette(), accentArgb(), 0f, false);
+		float alphaBefore = Ui.alpha();
+		float menuShade = HudInMenus.shade(menuLook, ModFeatures.MENU.hudMenuDim());
+		// under the open chat: dimmed while it is open, never hidden
+		float chatKept = editing ? 1f : underChat.step(HudUnderChat.under(bounds, ModFeatures.CHAT == null ? null : ModFeatures.CHAT.openPanel()), ModFeatures.MENU.animations(), System.nanoTime());
 		var pose = graphics.pose();
 		pose.pushMatrix();
 		try {
 			pose.translate(left, top);
+			Ui.setAlpha(alphaBefore * menuOpacity * chatKept);
 			pose.scale(s, s);
 			drawPanel(ui, graphics, client);
+			if (menuShade > 0f) {
+				// darker too, not only fainter: a shade over the panel's box
+				Ui.setAlpha(alphaBefore);
+				ui.rounded(0, 0, w, h, MENU_SHADE_RADIUS, Ui.withOpacity(0xFF000000, menuShade));
+			}
+			if (chatKept < 1f) {
+				Ui.setAlpha(alphaBefore);
+				ui.rounded(0, 0, w, h, MENU_SHADE_RADIUS, Ui.withOpacity(0xFF000000, HudUnderChat.shade(chatKept)));
+			}
 		} finally {
 			// always restore the render state, so an exception in here cannot break the rest of the screen
+			Ui.setAlpha(alphaBefore);
 			pose.popMatrix();
 			Ui.setZoom(1f);
 			leaveLook();
 		}
+	}
+
+	/** The corners of the shade over a dimmed panel. */
+	private static final float MENU_SHADE_RADIUS = 6f;
+	/** How far the panel is dimmed under the open chat. */
+	private final HudUnderChat.Fade underChat = new HudUnderChat.Fade();
+	/** The window of the menu with slots that is open (x, y, width, height), or null without one. */
+	private static int[] menuWindow;
+	private static boolean menuOpen;
+	private static final int[] MENU_WINDOW = new int[4];
+	/** The places of the add-ons' menu overlays (inventory buttons, a chest's profit panel), collected at most once per this long. */
+	private static final java.util.List<int[]> MENU_AREAS = new ArrayList<>();
+	private static final long MENU_AREAS_NANOS = 4_000_000L;
+	private static long menuAreasAt;
+	/** For the tests, while they watch: the panels drawn behind a menu as set, those faded more because they lie partly under it, and those not drawn. */
+	public static volatile boolean menuWatch;
+	public static final java.util.Set<String> MENU_SHOWN = new java.util.TreeSet<>();
+	public static final java.util.Set<String> MENU_FADED = new java.util.TreeSet<>();
+	public static final java.util.Set<String> MENU_HIDDEN = new java.util.TreeSet<>();
+
+	/**
+	 * @return whether the panel is meant to be used while an inventory is open (a profit panel with its clicks): it stays as it is there,
+	 *         whatever the HUD's setting says
+	 */
+	protected boolean usedInMenus() {
+		return false;
+	}
+
+	/**
+	 * @return the share of a HUD element's box that lies under the open menu's window or one of the add-ons' overlays on it, from 0 to 1; 0
+	 *         without a menu with slots. For the elements that are no panels (the info bar), which step back like the panels do.
+	 */
+	public static float coveredByMenu(Minecraft client, int[] box) {
+		if (box == null || !(client.gui.screen() instanceof AbstractContainerScreen<?> screen)) {
+			return 0f;
+		}
+		return HudInMenus.covered(box, window(screen), MENU_AREAS);
+	}
+
+	/** @return the open menu's window; the add-ons' own overlays on it are looked up once per frame for all elements */
+	private static int[] window(Screen screen) {
+		AbstractContainerScreenAccessor window = (AbstractContainerScreenAccessor) screen;
+		MENU_WINDOW[0] = window.lumio$left();
+		MENU_WINDOW[1] = window.lumio$top();
+		MENU_WINDOW[2] = window.lumio$width();
+		MENU_WINDOW[3] = window.lumio$height();
+		if (dev.tim1337.lumio.api.experimental.util.HudCover.replaced(screen)) {
+			// an overlay stands in the window's place: the window is not on the screen and covers nothing
+			MENU_WINDOW[2] = 0;
+			MENU_WINDOW[3] = 0;
+		}
+		long now = System.nanoTime();
+		if (now - menuAreasAt > MENU_AREAS_NANOS) {
+			menuAreasAt = now;
+			MENU_AREAS.clear();
+			dev.tim1337.lumio.api.experimental.util.HudCover.areas(MENU_AREAS);
+		}
+		return MENU_WINDOW;
+	}
+
+	private HudInMenus.Look menuLook(Minecraft client) {
+		Screen screen = client.gui.screen();
+		menuOpen = screen instanceof AbstractContainerScreen<?>;
+		menuWindow = null;
+		if (!menuOpen) {
+			MENU_AREAS.clear();
+		}
+		if (menuOpen) {
+			menuWindow = window(screen);
+		}
+		return HudInMenus.look(ModFeatures.MENU.hudInMenus(), inMenus.get(), menuOpen, usedInMenus());
 	}
 
 	/** Everything drawn from here on has this panel's own look: its theme, depth, glow and transparency, and never the menu's, also outside of the HUD pass. */
@@ -562,7 +677,7 @@ public abstract class HudPanelFeature extends Feature implements EditableHud {
 
 	private List<Setting<?>> lookSettings() {
 		if (lookSettings == null) {
-			List<Setting<?>> list = new ArrayList<>(List.of(lookMode, panelTheme, accent, background, seeThrough, glowRow, glow, glowSoft, panelDepth, scale));
+			List<Setting<?>> list = new ArrayList<>(List.of(lookMode, panelTheme, accent, background, seeThrough, glowRow, glow, glowSoft, panelDepth, scale, inMenus));
 			if (cardWidthSetting != null) {
 				list.addAll(List.of(cardWidthSetting, cardHeightSetting, spacingRow));
 			}
@@ -594,6 +709,7 @@ public abstract class HudPanelFeature extends Feature implements EditableHud {
 			if (showTitle != null) {
 				groups.add(new SettingsView.Group("Header", List.of(showTitle, showStatus)));
 			}
+			groups.add(new SettingsView.Group("HUD in menus", List.of(inMenus)));
 			ButtonSetting copy = new ButtonSetting("copy_look", Component.literal("Copy this look to the other panels"), Component.literal("Copy"), false, () -> {
 				copyStyleToOthers();
 				FeatureManager.saveSoon();
@@ -869,6 +985,48 @@ public abstract class HudPanelFeature extends Feature implements EditableHud {
 		return bounds;
 	}
 
+	@Override
+	public int[] hudNaturalBounds() {
+		return naturalBounds;
+	}
+
+	/** @return along which edge the auto-fit may move the panel: the one it is anchored at; never while it is docked to the hotbar's stack */
+	@Override
+	public int hudFitAxis() {
+		return Float.isNaN(dockedBottom(lastGuiWidth, lastGuiHeight)) ? HudFit.along(across(), down()) : 0;
+	}
+
+	@Override
+	public void hudSetFitShift(float dx, float dy) {
+		fitShiftX = dx;
+		fitShiftY = dy;
+	}
+
+	@Override
+	public float hudAutoFit() {
+		return autoFit;
+	}
+
+	@Override
+	public boolean hudFitMoved() {
+		return Math.abs(fitShiftX) >= 1f || Math.abs(fitShiftY) >= 1f;
+	}
+
+	/** Saves the fitted place and size as the panel's own: from its anchor, at the size it is drawn now. */
+	@Override
+	public boolean hudApplyFit() {
+		if (autoFit >= HudFit.KEPT && !hudFitMoved()) {
+			return false;
+		}
+		float fitted = Mth.clamp(scale.get() * autoFit, scale.min(), scale.max());
+		scale.set(fitted);
+		x.set(Mth.clamp(HudAnchors.offset(across(), bounds[0], bounds[2], lastGuiWidth), x.min(), x.max()));
+		y.set(Mth.clamp(HudAnchors.offset(down(), bounds[1], bounds[3], lastGuiHeight), y.min(), y.max()));
+		fitShiftX = 0f;
+		fitShiftY = 0f;
+		return true;
+	}
+
 	private int across() {
 		return Math.round(anchorX.get());
 	}
@@ -969,11 +1127,6 @@ public abstract class HudPanelFeature extends Feature implements EditableHud {
 		anchorY.reset();
 		scale.reset();
 		PanelLook.settleAll();
-	}
-
-	/** @return the panel's appearance settings, for the More page of its settings card */
-	protected List<Setting<?>> panelSettings() {
-		return List.of(lookRow());
 	}
 
 	@Override

@@ -155,16 +155,16 @@ public class CinematicCameraFeature extends Feature {
 
 	private final EnumSetting<Mode> mode = add(new EnumSetting<>("mode", Component.literal("Mode"), Mode.MUSIC_VIDEO, Mode::displayName)
 		.withOptionCards(choice -> choice == Mode.MUSIC_VIDEO
-			? new EnumSetting.OptionCard("camera", SystemColors.PURPLE_RGB, "Picks a new shot on line starts and lands cuts on the beat. Lyrics in the world.", null)
-			: new EnumSetting.OptionCard("wind", SystemColors.TEAL_RGB, "One slow shot after another with soft blends. Good without music.", null)), "Film");
+			? new EnumSetting.OptionCard("camera", SystemColors.PURPLE_RGB, "Cuts with the lines and the beat. World lyrics.", null)
+			: new EnumSetting.OptionCard("wind", SystemColors.TEAL_RGB, "Slow shots with soft blends. Good without music.", null)), "Film");
 	private final EnumSetting<Pace> pace = add(new EnumSetting<>("pace", Component.literal("Pace"), Pace.BALANCED, Pace::displayName, EnumSetting.Style.SEGMENTED),
 		"Film");
 	private final BooleanSetting[] shotSwitches = new BooleanSetting[ShotType.count()];
 	private final MultiSelectSetting shots;
-	private final BooleanSetting cutOnBeat = add(new BooleanSetting("cut_on_beat", Component.literal("Cut on the beat"), true), "Cuts and starting",
-		"Moves a cut up to 150 ms to the nearest beat");
-	private final BooleanSetting smoothMoves = add(new BooleanSetting("smooth_instrumental", Component.literal("Smooth moves in long instrumental parts"), true),
-		"Cuts and starting");
+	private final BooleanSetting cutOnBeat = add(new BooleanSetting("cut_on_beat", Component.literal("Cut on beat"), true), "Cuts and starting",
+		"Moves a cut up to 150 ms");
+	private final BooleanSetting smoothMoves = add(new BooleanSetting("smooth_instrumental", Component.literal("Calm instrumentals"), true),
+		"Cuts and starting", "Glides instead of cutting");
 	private final EnumSetting<StartAfter> startAfter = add(new EnumSetting<>("start_after", Component.literal("Start by itself"), StartAfter.SECONDS_60,
 		StartAfter::displayName, EnumSetting.Style.SEGMENTED), "Cuts and starting", "After this long idle while music plays");
 	private final BooleanSetting stopOnMove = add(new BooleanSetting("stop_on_move", Component.literal("Stop when I move or press a key"), true),
@@ -175,14 +175,14 @@ public class CinematicCameraFeature extends Feature {
 	private final EnumSetting<SongInfo> songInfo = add(new EnumSetting<>("song_info", Component.literal("Song info"), SongInfo.AT_START, SongInfo::displayName,
 		EnumSetting.Style.SEGMENTED), "Look");
 	private final BooleanSetting vignette = add(new BooleanSetting("vignette", Component.literal("Vignette"), true), "Look");
-	private final BooleanSetting worldLyrics = add(new BooleanSetting("world_lyrics", Component.literal("Lyrics in the world"), true), "Look",
-		"Same style as Music, Lyrics in the world");
+	private final BooleanSetting worldLyrics = add(new BooleanSetting("world_lyrics", Component.literal("World lyrics"), true), "Look",
+		"Styled on the Music page");
 	private final BooleanSetting hideHud = add(new BooleanSetting("hide_hud", Component.literal("Hide the HUD"), true), "Look");
 	private final BooleanSetting handheld = add(new BooleanSetting("handheld", Component.literal("Handheld camera"), false), "Look",
-		"A slight, natural sway, like a camera held by hand");
+		"A slight, natural sway");
 
 	{
-		add(new NoteSetting("server_note", "On servers it only runs while you stand still, stays close and always keeps you in view."), "Look");
+		add(new NoteSetting("server_note", "On servers: only while you stand still, close, with you in view."), "Look");
 	}
 
 	private final CineCamera camera = new CineCamera(this);
@@ -199,7 +199,7 @@ public class CinematicCameraFeature extends Feature {
 	private boolean lyricsHidden;
 
 	public CinematicCameraFeature() {
-		super("cinematic_camera", "Cinematic camera", "Your own music video: the camera finds its shots and cuts with the song.", false);
+		super("cinematic_camera", "Cinematic camera", "Your own music video, cut with the song.", false);
 		iconRgb(SystemColors.PURPLE_RGB);
 		iconName("camera");
 		summary("Your own music video while you are away");
@@ -210,7 +210,7 @@ public class CinematicCameraFeature extends Feature {
 			switches.add(shotSwitches[i]);
 		}
 		shots = add(new MultiSelectSetting("shots", Component.literal("Shots"), switches).asChips(), "Film");
-		pace.setDescription("A new shot every few lines, a bit faster in the chorus");
+		pace.setDescription("A new shot every few lines");
 		pace.visibleWhen(() -> mode.get() == Mode.MUSIC_VIDEO);
 		cutOnBeat.visibleWhen(() -> mode.get() == Mode.MUSIC_VIDEO);
 		smoothMoves.visibleWhen(() -> mode.get() == Mode.MUSIC_VIDEO);
@@ -344,6 +344,36 @@ public class CinematicCameraFeature extends Feature {
 		return camera.anchorZ();
 	}
 
+	/**
+	 * @return whether the shot found an open area for its lyric, free from its first view and where its move ends; it is read with {@link #openX}
+	 *         and the others, and stays the same for the whole shot
+	 */
+	public boolean lyricOpen() {
+		return lyricPlaced() && camera.opened();
+	}
+
+	public double openX() {
+		return camera.openX();
+	}
+
+	public double openY() {
+		return camera.openY();
+	}
+
+	public double openZ() {
+		return camera.openZ();
+	}
+
+	/** @return half the open area's width at its middle, in blocks */
+	public double openHalfWidth() {
+		return camera.openHalfWidth();
+	}
+
+	/** @return half the open area's height at its middle, in blocks */
+	public double openHalfHeight() {
+		return camera.openHalfHeight();
+	}
+
 	/** @return how many shots took their lyric spot so far, so a log can tell them apart */
 	public int shotNumber() {
 		return camera.shots();
@@ -438,7 +468,7 @@ public class CinematicCameraFeature extends Feature {
 	}
 
 	/** @return the share of the screen's height the picture takes between the letterbox bars */
-	private float picture(float aspect) {
+	float picture(float aspect) {
 		float ratio = letterboxRatio();
 		return ratio <= 0f ? 1f : Math.min(1f, aspect / ratio);
 	}

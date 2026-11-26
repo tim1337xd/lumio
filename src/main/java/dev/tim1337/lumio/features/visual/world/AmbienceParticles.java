@@ -1,11 +1,10 @@
 package dev.tim1337.lumio.features.visual.world;
 
 import dev.tim1337.lumio.Lumio;
-import dev.tim1337.lumio.api.experimental.util.Debug;
+import dev.tim1337.lumio.api.experimental.debug.DebugCategory;
+import dev.tim1337.lumio.api.experimental.debug.DebugHooks;
 
-import org.joml.Vector3fc;
 
-import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
@@ -37,16 +36,6 @@ public final class AmbienceParticles {
 		return windZ;
 	}
 
-	/** @return the on-screen angle of a movement direction, for particles drawn as lines */
-	public static float screenAngle(double dx, double dy, double dz) {
-		Camera camera = Minecraft.getInstance().gameRenderer.mainCamera();
-		Vector3fc left = camera.leftVector();
-		Vector3fc up = camera.upVector();
-		double toRight = -(dx * left.x() + dy * left.y() + dz * left.z());
-		double toUp = dx * up.x() + dy * up.y() + dz * up.z();
-		return (float) Math.atan2(toUp, toRight);
-	}
-
 	/** Called every tick; errors here are caught and do not stop it. */
 	public static void tick(Minecraft client, AmbienceFeature ambience) {
 		ClientLevel level = client.level;
@@ -68,7 +57,9 @@ public final class AmbienceParticles {
 		} catch (RuntimeException e) {
 			SPRITES.clear();
 			spriteAtlas = null;
-			Debug.log("Ambience tick failed", e);
+			if (DebugHooks.ACTIVE) {
+				DebugHooks.log(DebugCategory.RENDER, "Ambience tick failed", e);
+			}
 		}
 	}
 

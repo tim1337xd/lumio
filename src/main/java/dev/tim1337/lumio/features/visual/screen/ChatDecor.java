@@ -5,6 +5,8 @@ import dev.tim1337.lumio.features.visual.screen.chat.ChatScroll;
 import dev.tim1337.lumio.features.visual.screen.chat.ChatLayout;
 import dev.tim1337.lumio.features.visual.screen.chat.ChatRules;
 import dev.tim1337.lumio.mixin.accessor.ChatComponentAccessor;
+import dev.tim1337.lumio.hud.HudUnderChat;
+import dev.tim1337.lumio.ui.EditableHud;
 import dev.tim1337.lumio.ui.HudStyle;
 import dev.tim1337.lumio.ui.MacTheme;
 import dev.tim1337.lumio.ui.Ui;
@@ -19,7 +21,6 @@ import net.minecraft.client.gui.components.PlayerFaceExtractor;
 import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.client.multiplayer.chat.GuiMessage;
 import net.minecraft.client.renderer.Rect2i;
-import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.util.Mth;
 
 /**
@@ -53,7 +54,7 @@ final class ChatDecor {
 	/** What the lines lie on while the chat is closed, faint and fading with them, so they read over a bright world. */
 	private static final float CLOSED_OPACITY = 0.35f;
 	private static final float CLOSED_RADIUS = 6f;
-	private static final int CLOSED_MARGIN = 2;
+	private static final int CLOSED_MARGIN = ChatScrolling.ROWS_MARGIN;
 	private static final int CLOSED_COLOR = 0xFF0C0C12;
 	private static final float SCROLL_WIDTH = 1.5f;
 	private static final int SCROLL_INSET = 2;
@@ -79,6 +80,10 @@ final class ChatDecor {
 	private static final String SUGGESTIONS_HINT = "Tab for suggestions";
 	private static final String CHANNEL_MARK = " · ";
 	private static final String TAB_HINT = "Tab";
+	private static final String WAYPOINT = "+ Waypoint";
+	/** The most "+ Waypoint" pills kept for clicks in one frame. */
+	private static final int MOST_PILLS = 32;
+	private static final int PILL_GAP = 4;
 	/** Behind Copy and Reply where a line reaches them: they lie on its end only while the mouse is on it. */
 	private static final int ACTIONS_BACKING = 0xF0141418;
 	private static final int ACTIONS_BACKING_MARGIN = 2;
@@ -96,6 +101,12 @@ final class ChatDecor {
 	private int replyLeft = -1;
 	private int replyWidth;
 	private int actionsTop;
+	/** The "+ Waypoint" pills of the last frame, for clicks: their lines, left edges and tops, in the chat's scaled pixels. */
+	private final int[] pillLines = new int[MOST_PILLS];
+	private final int[] pillLefts = new int[MOST_PILLS];
+	private final int[] pillTops = new int[MOST_PILLS];
+	private int pillCount;
+	private int pillWidth;
 	/** While the closed chat's backing is worked out: the highest shown line, and how visible the most visible line is. */
 	private int closedTop;
 	private int closedBottom;
@@ -161,6 +172,23 @@ final class ChatDecor {
 		}
 	}
 
+	/** What the open chat lies on where it is over another HUD element, whatever its own background: dark enough to read the lines there. */
+	private static final float OVER_ELEMENT_OPACITY = 0.6f;
+
+	/** Gives the open chat a dark backing over every HUD element it lies on (those are dimmed meanwhile, see {@link HudUnderChat}), in the panel's shape. */
+	private void drawOverElements(Ui ui) {
+		int[] panel = chat.hudBounds();
+		for (EditableHud hud : ModFeatures.editableHuds()) {
+			int[] box = hud == chat || !hud.hudShown() ? null : hud.hudBounds();
+			if (!HudUnderChat.under(box, panel)) {
+				continue;
+			}
+			ui.graphics.enableScissor(Math.max(box[0], panel[0]), Math.max(box[1], panel[1]), Math.min(box[0] + box[2], panel[0] + panel[2]), Math.min(box[1] + box[3], panel[1] + panel[3]));
+			ui.rounded(panel[0], panel[1], panel[2], panel[3], PANEL_RADIUS, Ui.withOpacity(CLOSED_COLOR, OVER_ELEMENT_OPACITY));
+			ui.graphics.disableScissor();
+		}
+	}
+
 	/** Draws what lies around the lines' text: stripes, the time, heads, the line under links, the scroll bar, and the actions of the line under the mouse. */
 	void after(GuiGraphicsExtractor graphics, Font font, int tick, int mouseX, int mouseY, boolean open) {
 		Ui ui = ui(graphics, font);
@@ -170,6 +198,8 @@ final class ChatDecor {
 		boolean heads = chat.heads();
 		int textLeft = ChatLayout.textLeft(timeWidth, heads);
 		int panelWidth = chat.panelWidthInChat();
+		pillCount = 0;
+		double[] mouseInChat = open ? chat.toChat(graphics.guiHeight(), mouseX, mouseY) : null;
 		actionsLine = -1;
 		forLines(graphics, tick, open, (line, index, top, height, alpha, info) -> {
 			int textY = top + (height - FONT_HEIGHT) / 2;
@@ -188,10 +218,13 @@ final class ChatDecor {
 				drawHead(graphics, info, ChatLayout.headLeft(timeWidth), textY, alpha);
 			}
 			if (info.link() && chat.links()) {
-				underlineLink(ui, font, line, textLeft, textY, alpha);
+				underlineLink(ui, font, line, textLeft + chat.rowLeft(line.content()), textY, alpha);
+			}
+			if (info.coords() != null && line.endOfEntry()) {
+				drawWaypointPill(ui, index, index == under, textLeft + chat.rowLeft(line.content()) + font.width(line.content()) + PILL_GAP, textY, panelWidth, alpha, mouseInChat);
 			}
 			if (index == under && chat.hoverActions()) {
-				drawActions(ui, index, info, textY, mouseX, mouseY, graphics.guiHeight(), panelWidth, textLeft + font.width(line.content()));
+				drawActions(ui, index, info, textY, mouseX, mouseY, graphics.guiHeight(), panelWidth, textLeft + chat.rowLeft(line.content()) + font.width(line.content()));
 			}
 		});
 		if (open) {
@@ -272,6 +305,47 @@ final class ChatDecor {
 		drawAction(ui, COPY, copyLeft, copyWidth, inChat);
 	}
 
+	/** @return the room a "+ Waypoint" pill takes after a line, in the chat's pixels */
+	static int pillRoom(Font font) {
+		return PILL_GAP + Math.round(font.width(WAYPOINT) * ACTION_TEXT) + 2 * ACTION_PAD + 2;
+	}
+
+	/** The pill after a line with coordinates that adds them as a waypoint when clicked; it only adds to the line, never changes it. */
+	private void drawWaypointPill(Ui ui, int index, boolean hovered, int left, int y, int panelWidth, float alpha, double[] mouse) {
+		pillWidth = Math.round(ui.widthScaled(WAYPOINT, ACTION_TEXT)) + 2 * ACTION_PAD;
+		// where it does not fit after the line, it goes before Copy and Reply, which lie on the line's end while the mouse is on it
+		int actions = chat.hoverActions() ? Math.round(ui.widthScaled(COPY, ACTION_TEXT) + ui.widthScaled(REPLY, ACTION_TEXT)) + 4 * ACTION_PAD + 2 * ACTION_GAP : 0;
+		int shownLeft = left + pillWidth <= ChatLayout.contentRight(panelWidth) ? left : ChatLayout.contentRight(panelWidth) - pillWidth - actions;
+		boolean fits = shownLeft == left;
+		if (!fits && !hovered) {
+			// where it would cover the end of the line, it shows only while the mouse is on the line, on a backing, as Copy and Reply do
+			return;
+		}
+		int top = y - (ACTION_HEIGHT - FONT_HEIGHT) / 2;
+		boolean over = mouse != null && mouse[0] >= shownLeft && mouse[0] < shownLeft + pillWidth && mouse[1] >= top && mouse[1] < top + ACTION_HEIGHT;
+		if (!fits) {
+			ui.rounded(shownLeft - ACTIONS_BACKING_MARGIN, top - 1, pillWidth + 2 * ACTIONS_BACKING_MARGIN, ACTION_HEIGHT + 2, ACTIONS_BACKING_RADIUS, ACTIONS_BACKING);
+		}
+		ui.rounded(shownLeft, top, pillWidth, ACTION_HEIGHT, ACTION_RADIUS, Ui.withOpacity(Ui.mix(ui.accent, 0xFFFFFFFF, over ? 0.15f : 0f), alpha));
+		ui.textAtScaled(WAYPOINT, shownLeft + ACTION_PAD, top + (ACTION_HEIGHT - UI_LINE * ACTION_TEXT) / 2f, ACTION_TEXT, Ui.withOpacity(0xFFFFFFFF, alpha));
+		if (pillCount < MOST_PILLS) {
+			pillLines[pillCount] = index;
+			pillLefts[pillCount] = shownLeft;
+			pillTops[pillCount] = top;
+			pillCount++;
+		}
+	}
+
+	/** @return whether a point in the chat is on the "+ Waypoint" pill of a line, as it was drawn in the last frame */
+	boolean waypointAt(int line, double chatX, double chatY) {
+		for (int i = 0; i < pillCount; i++) {
+			if (pillLines[i] == line && chatX >= pillLefts[i] && chatX < pillLefts[i] + pillWidth && chatY >= pillTops[i] && chatY < pillTops[i] + ACTION_HEIGHT) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private void drawAction(Ui ui, String text, int left, int width, double[] mouse) {
 		boolean over = mouse[0] >= left && mouse[0] < left + width && mouse[1] >= actionsTop && mouse[1] < actionsTop + ACTION_HEIGHT;
 		ui.rounded(left, actionsTop, width, ACTION_HEIGHT, ACTION_RADIUS, over ? ACTION_HOVER : ACTION_FILL);
@@ -307,7 +381,7 @@ final class ChatDecor {
 		float scale = chat.scale();
 		var pose = graphics.pose();
 		pose.pushMatrix();
-		pose.translate(chat.panelLeft(), chat.moveY());
+		pose.translate(chat.panelLeft(), chat.rowsY());
 		pose.scale(scale, scale);
 		try {
 			int bottom = Mth.floor(chat.baseBottom(graphics.guiHeight()) / scale);
@@ -324,6 +398,7 @@ final class ChatDecor {
 	void drawInput(GuiGraphicsExtractor graphics, Font font, EditBox input, int screenHeight) {
 		Ui ui = ui(graphics, font);
 		// first of all that the open chat draws: its tabs and lines lie on the panel
+		drawOverElements(ui);
 		if (chat.background() != ChatFeature.Background.NONE) {
 			drawPanel(ui, screenHeight);
 		}
@@ -411,7 +486,7 @@ final class ChatDecor {
 		var pose = graphics.pose();
 		pose.pushMatrix();
 		boolean clipped = chat.clipRows(graphics);
-		pose.translate(chat.panelLeft(), chat.moveY() + chat.scrollShift());
+		pose.translate(chat.panelLeft(), chat.rowsY() + chat.scrollShift());
 		pose.scale(scale, scale);
 		try {
 			for (int shown = 0, rows = chat.rowsDrawn(perPage); shown < rows && scroll + shown < lines.size(); shown++) {

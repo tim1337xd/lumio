@@ -86,20 +86,9 @@ public class MacOptionsScreen extends Screen {
 	private record Section(String title, List<Row> rows) {
 	}
 
-	private static final class Page {
-		final String name;
-		final String description;
-		final String icon;
-		final int rgb;
-		final int group;
-		final List<Section> sections = new ArrayList<>();
-
+	private record Page(String name, String description, String icon, int rgb, int group, List<Section> sections) {
 		Page(String name, String description, String icon, int rgb, int group) {
-			this.name = name;
-			this.description = description;
-			this.icon = icon;
-			this.rgb = rgb;
-			this.group = group;
+			this(name, description, icon, rgb, group, new ArrayList<>());
 		}
 	}
 
@@ -259,57 +248,57 @@ public class MacOptionsScreen extends Screen {
 		Minecraft client = Minecraft.getInstance();
 
 		Page video = new Page("Video", "Picture, speed and details", "eye", SystemColors.BLUE_RGB, 0);
-		video.sections.add(new Section("Picture", List.of(widget(options.graphicsPreset()), widget(options.renderDistance()), widget(options.simulationDistance()),
+		video.sections().add(new Section("Picture", List.of(widget(options.graphicsPreset()), widget(options.renderDistance()), widget(options.simulationDistance()),
 			widget(options.framerateLimit()), toggle(options.enableVsync(), translated("options.vsync")), toggle(options.fullscreen(), translated("options.fullscreen")),
 			widget(options.guiScale()), widget(options.fov()), widget(options.gamma()))));
-		video.sections.add(new Section("Details", List.of(widget(options.cloudStatus()), widget(options.particles()), toggle(options.ambientOcclusion(), translated("options.ao")),
+		video.sections().add(new Section("Details", List.of(widget(options.cloudStatus()), widget(options.particles()), toggle(options.ambientOcclusion(), translated("options.ao")),
 			toggle(options.entityShadows(), translated("options.entityShadows")), toggle(options.vignette(), translated("options.vignette")), widget(options.biomeBlendRadius()),
 			toggle(options.bobView(), translated("options.viewBobbing")))));
 		// Sodium replaces the video settings screen and the vanilla button opens Sodium's screen; do the same here
 		Supplier<Screen> sodium = sodiumVideo();
 		if (sodium != null) {
-			video.sections.add(0, new Section("Sodium", List.of(link("Video settings of Sodium", sodium))));
+			video.sections().add(0, new Section("Sodium", List.of(link("Video settings of Sodium", sodium))));
 		}
 		pages.add(video);
 
 		Page sound = new Page("Sound", "Volume and device", "note", SystemColors.PINK_RGB, 0);
 		List<Row> master = new ArrayList<>();
 		master.add(slider(options.getSoundSourceOptionInstance(SoundSource.MASTER), translated("soundCategory.master")));
-		sound.sections.add(new Section("General", master));
+		sound.sections().add(new Section("General", master));
 		List<Row> categories = new ArrayList<>();
 		for (SoundSource source : SoundSource.values()) {
 			if (source != SoundSource.MASTER) {
 				categories.add(slider(options.getSoundSourceOptionInstance(source), translated("soundCategory." + source.getName())));
 			}
 		}
-		sound.sections.add(new Section("Categories", categories));
-		sound.sections.add(new Section("Device", List.of(widget(options.soundDevice()), toggle(options.showSubtitles(), translated("options.showSubtitles")),
+		sound.sections().add(new Section("Categories", categories));
+		sound.sections().add(new Section("Device", List.of(widget(options.soundDevice()), toggle(options.showSubtitles(), translated("options.showSubtitles")),
 			toggle(options.directionalAudio(), translated("options.directionalAudio")), widget(options.musicFrequency()), widget(options.musicToast()))));
 		pages.add(sound);
 
 		Page controls = new Page("Controls", "Mouse, keys and movement", "move", SystemColors.GREEN_RGB, 1);
-		controls.sections.add(new Section("Mouse", List.of(slider(options.sensitivity(), translated("options.sensitivity")), toggle(options.invertMouseY(), translated("options.invertMouseY")),
+		controls.sections().add(new Section("Mouse", List.of(slider(options.sensitivity(), translated("options.sensitivity")), toggle(options.invertMouseY(), translated("options.invertMouseY")),
 			toggle(options.invertMouseX(), translated("options.invertMouseX")), toggle(options.rawMouseInput(), translated("options.rawMouseInput")), toggle(options.discreteMouseScroll(), translated("options.discrete_mouse_scroll")))));
-		controls.sections.add(new Section("Movement", List.of(toggle(options.toggleSprint(), translated("key.sprint") + " (toggle)"), toggle(options.toggleCrouch(), translated("key.sneak") + " (toggle)"),
+		controls.sections().add(new Section("Movement", List.of(toggle(options.toggleSprint(), translated("key.sprint") + " (toggle)"), toggle(options.toggleCrouch(), translated("key.sneak") + " (toggle)"),
 			toggle(options.autoJump(), translated("options.autoJump")))));
-		controls.sections.add(new Section("Keys", List.of(link("Key binds", () -> new KeyBindsScreen(this, options)))));
+		controls.sections().add(new Section("Keys", List.of(link("Key binds", () -> new KeyBindsScreen(this, options)))));
 		pages.add(controls);
 
 		Page chat = new Page("Chat", "How the chat looks", "quote", SystemColors.PURPLE_RGB, 1);
-		chat.sections.add(new Section("Chat", List.of(widget(options.chatVisibility()), slider(options.chatOpacity(), translated("options.chat.opacity")), slider(options.chatScale(), translated("options.chat.scale")),
+		chat.sections().add(new Section("Chat", List.of(widget(options.chatVisibility()), slider(options.chatOpacity(), translated("options.chat.opacity")), slider(options.chatScale(), translated("options.chat.scale")),
 			slider(options.chatWidth(), translated("options.chat.width")), slider(options.chatLineSpacing(), translated("options.chat.line_spacing")),
 			toggle(options.chatColors(), translated("options.chat.color")), toggle(options.chatLinks(), translated("options.chat.links")), toggle(options.autoSuggestions(), translated("options.autoSuggestCommands")))));
 		pages.add(chat);
 
 		Page access = new Page("Accessibility", "Help with seeing and hearing", "shield", SystemColors.TEAL_RGB, 1);
-		access.sections.add(new Section("Display", List.of(toggle(options.highContrast(), translated("options.accessibility.high_contrast")), slider(options.screenEffectScale(), translated("options.screenEffectScale")),
+		access.sections().add(new Section("Display", List.of(toggle(options.highContrast(), translated("options.accessibility.high_contrast")), slider(options.screenEffectScale(), translated("options.screenEffectScale")),
 			slider(options.fovEffectScale(), translated("options.fovEffectScale")), slider(options.damageTiltStrength(), translated("options.damageTiltStrength")),
 			toggle(options.hideLightningFlash(), translated("options.hideLightningFlashes")), toggle(options.hideSplashTexts(), translated("options.accessibility.hide_splash_texts")))));
-		access.sections.add(new Section("Hearing", List.of(widget(options.narrator()))));
+		access.sections().add(new Section("Hearing", List.of(widget(options.narrator()))));
 		pages.add(access);
 
 		Page more = new Page("More", "The other screens of the game", "sliders", SystemColors.GRAY_RGB, 2);
-		more.sections.add(new Section("Screens of the game", List.of(link("All options of the game", () -> new OptionsScreen(this, options, false)),
+		more.sections().add(new Section("Screens of the game", List.of(link("All options of the game", () -> new OptionsScreen(this, options, false)),
 			link("Key binds", () -> new KeyBindsScreen(this, options)))));
 		pages.add(more);
 	}
@@ -333,7 +322,7 @@ public class MacOptionsScreen extends Screen {
 	}
 
 	private boolean gapBefore(int index) {
-		return index > 0 && pages.get(index).group != pages.get(index - 1).group;
+		return index > 0 && pages.get(index).group() != pages.get(index - 1).group();
 	}
 
 	/** @return top of the sidebar item at an index; fractional indices interpolate, for the sliding highlight */
@@ -421,8 +410,8 @@ public class MacOptionsScreen extends Screen {
 
 		Page page = pages.get(selected);
 		ui.text("SETTINGS", MARGIN, 22, palette.textSecondary());
-		ui.textAtScaled(searching() ? "Search" : page.name, MARGIN, 36, TextScale.TITLE, palette.text());
-		ui.text(ui.fit(searching() ? "Every page of the options" : page.description, SIDE_WIDTH), MARGIN, 64, palette.textSecondary());
+		ui.textAtScaled(searching() ? "Search" : page.name(), MARGIN, 36, TextScale.TITLE, palette.text());
+		ui.text(ui.fit(searching() ? "Every page of the options" : page.description(), SIDE_WIDTH), MARGIN, 64, palette.textSecondary());
 
 		drawSide(ui, mouseX, mouseY, fade);
 		drawContent(ui, mouseX, mouseY, partialTick);
@@ -465,9 +454,9 @@ public class MacOptionsScreen extends Screen {
 			if (itemHover[i] > 0.01f) {
 				ui.rounded(MARGIN + 4, y, SIDE_WIDTH - 8, ITEM_HEIGHT, Radius.MD, Ui.withOpacity(0xFFFFFFFF, 0.08f * itemHover[i]));
 			}
-			ui.rounded(MARGIN + 12, y + (ITEM_HEIGHT - 22) / 2, 22, 22, Radius.SM, 0xFF000000 | page.rgb);
-			ui.icon(page.icon, MARGIN + 16, y + (ITEM_HEIGHT - 14) / 2, 14, 0xFFFFFFFF);
-			ui.textMiddle(page.name, MARGIN + 44, y + ITEM_HEIGHT / 2, on ? 0xFFFFFFFF : palette.text());
+			ui.rounded(MARGIN + 12, y + (ITEM_HEIGHT - 22) / 2, 22, 22, Radius.SM, 0xFF000000 | page.rgb());
+			ui.icon(page.icon(), MARGIN + 16, y + (ITEM_HEIGHT - 14) / 2, 14, 0xFFFFFFFF);
+			ui.textMiddle(page.name(), MARGIN + 44, y + ITEM_HEIGHT / 2, on ? 0xFFFFFFFF : palette.text());
 			var pose = ui.graphics.pose();
 			pose.pushMatrix();
 			pose.translate(MARGIN + SIDE_WIDTH - 20f, y + ITEM_HEIGHT / 2f);
@@ -487,13 +476,13 @@ public class MacOptionsScreen extends Screen {
 
 	private List<Section> visibleSections() {
 		if (!searching()) {
-			return pages.get(selected).sections;
+			return pages.get(selected).sections();
 		}
 		String needle = query.toLowerCase(Locale.ROOT).trim();
 		List<Section> found = new ArrayList<>();
 		for (Page page : pages) {
 			List<Row> rows = new ArrayList<>();
-			for (Section section : page.sections) {
+			for (Section section : page.sections()) {
 				for (Row row : section.rows()) {
 					String name = labelOf(row);
 					if (!name.isEmpty() && name.toLowerCase(Locale.ROOT).contains(needle)) {
@@ -502,7 +491,7 @@ public class MacOptionsScreen extends Screen {
 				}
 			}
 			if (!rows.isEmpty()) {
-				found.add(new Section(page.name, rows));
+				found.add(new Section(page.name(), rows));
 			}
 		}
 		return found;

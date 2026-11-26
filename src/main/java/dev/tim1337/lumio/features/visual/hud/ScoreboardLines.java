@@ -2,7 +2,8 @@ package dev.tim1337.lumio.features.visual.hud;
 
 import dev.tim1337.lumio.addon.Addons;
 import dev.tim1337.lumio.api.LocationProvider;
-import dev.tim1337.lumio.api.experimental.util.Debug;
+import dev.tim1337.lumio.api.experimental.debug.DebugCategory;
+import dev.tim1337.lumio.api.experimental.debug.DebugHooks;
 import dev.tim1337.lumio.api.experimental.util.ScoreLines;
 import dev.tim1337.lumio.api.experimental.util.ShortNumber;
 
@@ -57,6 +58,34 @@ final class ScoreboardLines {
 	static String gainOf(String value) {
 		Matcher matcher = GAIN.matcher(value);
 		return matcher.find() ? "+" + matcher.group(1) : "";
+	}
+
+	/**
+	 * @return a line's entry as it is shown between the team's prefix and suffix: nothing when it is only the server's filler, an emoji with color
+	 *         codes that Hypixel makes each line unique with (🍫 💣 👽); the fonts draw it as a speck or a small picture after the text
+	 */
+	static Component entryShown(Component entry) {
+		return filler(entry.getString()) ? Component.empty() : entry;
+	}
+
+	/** @return whether an entry is only color codes, padding and symbols outside the basic plane, and has one such symbol at least */
+	static boolean filler(String entry) {
+		boolean symbol = false;
+		int at = 0;
+		while (at < entry.length()) {
+			int c = entry.codePointAt(at);
+			if (c == COLOR_CODE) {
+				at += 2;
+				continue;
+			}
+			if (Character.isSupplementaryCodePoint(c) && !Character.isLetterOrDigit(c)) {
+				symbol = true;
+			} else if (!ScoreLines.padding(c)) {
+				return false;
+			}
+			at += Character.charCount(c);
+		}
+		return symbol;
 	}
 
 	/** @return a number written shorter, readably: "12,480,553" is "12.5M"; a text that is no number, or a small one, as it is */
@@ -247,6 +276,17 @@ final class ScoreboardLines {
 		return -1;
 	}
 
+	/**
+	 * @param customLook whether the panel is in its Custom look
+	 * @param provider   an add-on that picks and orders lines (SkyBlock's custom scoreboard), or null
+	 * @param sidebar    the server's lines, as the game has them
+	 * @return the lines the panel shows: in the Game look always the server's own, the very list given, with nothing added, left out, reworded
+	 *         or moved; the add-on's choice only in the Custom look, while it is active
+	 */
+	static List<Component> shownLines(boolean customLook, dev.tim1337.lumio.api.ScoreboardProvider provider, List<Component> sidebar) {
+		return customLook && provider != null && provider.active() ? provider.lines(sidebar) : sidebar;
+	}
+
 	/** @return a location line's pin apart from its name, which stays as sent; null for any other line */
 	static Icon locationIcon(Component line, List<String> areas, Predicate<String> known) {
 		String whole = line.getString();
@@ -255,20 +295,8 @@ final class ScoreboardLines {
 			return null;
 		}
 		noteLocation(line, whole, found);
-		// the pin has the color of what stood before the name, which it takes the place of, or else of the name
-		int colorAt = found.nameStart();
-		for (int i = 0; i < found.nameStart(); ) {
-			int c = whole.codePointAt(i);
-			if (c == COLOR_CODE) {
-				i += 2;
-			} else if (ScoreLines.padding(c)) {
-				i += Character.charCount(c);
-			} else {
-				colorAt = i;
-				break;
-			}
-		}
-		return apart(line, colorAt, found.nameStart(), PIN, "");
+		// the pin has the color of the area's name, which it belongs to (the symbol it takes the place of is often a quiet grey)
+		return apart(line, found.nameStart(), found.nameStart(), PIN, "");
 	}
 
 	/** @return a location line's pin apart from its name, by what the location source says; null for any other line */
@@ -284,7 +312,9 @@ final class ScoreboardLines {
 	private static void noteLocation(Component line, String whole, LocationFound found) {
 		if (!whole.equals(lastNoted)) {
 			lastNoted = whole;
-			Debug.log("Location line by {}: {}", found.rule(), ScoreLines.describe(line));
+			if (DebugHooks.ACTIVE) {
+				DebugHooks.log(DebugCategory.HUD, "Location line by {}: {}", found.rule(), ScoreLines.describe(line));
+			}
 		}
 	}
 

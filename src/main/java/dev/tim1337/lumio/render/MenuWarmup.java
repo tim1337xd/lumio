@@ -1,8 +1,9 @@
 package dev.tim1337.lumio.render;
 
+import dev.tim1337.lumio.api.experimental.debug.DebugCategory;
+import dev.tim1337.lumio.api.experimental.debug.DebugHooks;
 import dev.tim1337.lumio.api.experimental.util.Logs;
 import dev.tim1337.lumio.ui.title.StartupTransition;
-import dev.tim1337.lumio.util.FrameTimes;
 
 import net.minecraft.util.Util;
 
@@ -29,7 +30,7 @@ public final class MenuWarmup {
 	private static final String[] MENU_CLASSES = {"dev.tim1337.lumio.ui.MacTitleScreen", "dev.tim1337.lumio.ui.title.SeasonPopover",
 		"dev.tim1337.lumio.ui.title.TitleListView", "dev.tim1337.lumio.ui.title.ServerListView",
 		"dev.tim1337.lumio.ui.title.WorldListView", "dev.tim1337.lumio.ui.title.TitleField",
-		"dev.tim1337.lumio.ui.title.ListFilter", "dev.tim1337.lumio.features.music.MenuIsland",
+		"dev.tim1337.lumio.ui.title.ListFilter", "dev.tim1337.lumio.features.music.MenuMusicCard",
 		"dev.tim1337.lumio.render.MenuParticles", "dev.tim1337.lumio.render.RoundedImage", "dev.tim1337.lumio.util.TimeOfDay"};
 	private static boolean classesLoading;
 	private static Step step = Step.IDLE;
@@ -75,8 +76,8 @@ public final class MenuWarmup {
 	public static String step() {
 		long start = System.nanoTime();
 		String done = slice();
-		if (done != null && FrameTimes.enabled()) {
-			Logs.info("Main menu preparation: {} took {} ms", done, (System.nanoTime() - start) / 1_000_000L);
+		if (done != null && DebugHooks.ACTIVE) {
+			DebugHooks.log(DebugCategory.RENDER, "Main menu preparation: {} took {} ms", done, (System.nanoTime() - start) / 1_000_000L);
 		}
 		return done;
 	}

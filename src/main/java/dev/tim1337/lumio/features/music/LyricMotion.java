@@ -1,5 +1,7 @@
 package dev.tim1337.lumio.features.music;
 
+import dev.tim1337.lumio.api.experimental.debug.DebugCategory;
+import dev.tim1337.lumio.api.experimental.debug.DebugHooks;
 import dev.tim1337.lumio.ModFeatures;
 import dev.tim1337.lumio.api.experimental.motion.AnimClock;
 import dev.tim1337.lumio.features.music.MusicService.Background;
@@ -57,8 +59,11 @@ final class LyricMotion {
 	private final AnimClock clock = new AnimClock();
 	private long lastFrame;
 
-	/** The lines shown: kept while they fade out after the song changed. */
+	/** The lines shown: kept while they fade out after the song changed. Fast lines in a row are blocks here (see {@link LyricGroups}). */
 	List<LyricLine> lines = List.of();
+	/** The song's lyrics the shown lines were made from, and with which grouping. */
+	private List<LyricLine> source = List.of();
+	private long groupedBelowMs = -1;
 	/** Index of the sung line in {@link #lines}, or -1; it stays while the lyrics fade out. */
 	int current = -1;
 	/** The sung line's position as a fractional line index, moving to {@link #current} on a line change. */
@@ -128,17 +133,21 @@ final class LyricMotion {
 		List<LyricLine> all = MusicService.lyrics();
 		int trackNow = MusicService.trackNumber();
 		boolean wanted = music.lyricsPlaying();
+		// the Cut-out preset shows words one by one: it has no use for blocks of fast lines
+		long groupBelowMs = music.worldGroupFast.get() && music.worldPreset.get() != WorldLyricPreset.CUTOUT ? Math.round(music.worldGroupSeconds.get() * 1000f) : 0L;
+		// the width a line may take in the world changed (window, field of view, size): what is split is decided anew
+		boolean regroup = groupBelowMs != groupedBelowMs || fitWidth.getAsInt() != fittedWidth;
 		if (idle) {
-			lines = all;
+			take(all, groupBelowMs);
 			track = trackNow;
 			current = -1;
 			visible = 0f;
 			jump = true;
 		}
-		if (all != lines || trackNow != track) {
+		if (all != source || trackNow != track || regroup) {
 			// another song or other lyrics: the old ones fade out first, then the new ones come in at the sung line
 			if (visible <= 0.001f || !animated || lines.isEmpty() || current < 0) {
-				lines = all;
+				take(all, groupBelowMs);
 				track = trackNow;
 				current = -1;
 				jump = true;
@@ -146,7 +155,7 @@ final class LyricMotion {
 				wanted = false;
 			}
 		}
-		int index = wanted ? LyricTimes.steadyIndex(lines, music.lyricClockMs(), indexOf(music.lyricLine), current) : -1;
+		int index = wanted ? LyricTimes.steadyIndex(lines, music.lyricClockMs(), partAt(indexOf(music.lyricLine), music.lyricClockMs()), current) : -1;
 		if (index >= 0 && index != current) {
 			if (jump || current < 0 || Math.abs(index - current) > LONGEST_SCROLL || !animated) {
 				scroll = index;
@@ -160,6 +169,13 @@ final class LyricMotion {
 			sung = 0f;
 			lit = 0f;
 			jump = false;
+			if (DebugHooks.ACTIVE) {
+				LyricLine started = lines.get(index);
+				long clockMs = music.lyricClockMs();
+				DebugHooks.log(DebugCategory.MUSIC, "Lyric line {}: starts {} ms, ends {} ms, clock {} ms, position {} ms, highlight {} of {} chars, {}", index,
+					started.timeMs(), LyricTimes.lineEnd(lines, index), clockMs, MusicService.position(), MusicFeature.sungChars(started, clockMs),
+					started.text().length(), started.words().isEmpty() ? "estimated word timings" : "word timings");
+			}
 		}
 		if (scrollProgress < 1f) {
 			scrollProgress = Math.min(1f, scrollProgress + dt / LINE_SECONDS);
@@ -184,6 +200,25 @@ final class LyricMotion {
 		updateAdlibs(all, dt, animated);
 	}
 
+	/** Whether a text can stand whole in the world; set by the lyrics in the world, which measure it. Everything fits until then. */
+	java.util.function.Predicate<String> fitsWhole = text -> true;
+	/** The width that answer was given for; the lines are split anew when it changes. */
+	java.util.function.IntSupplier fitWidth = () -> 0;
+	private int fittedWidth;
+
+	/** Takes the song's lyrics as the lines shown, its fast lines grouped into blocks where the player wants that. */
+	private void take(List<LyricLine> all, long groupBelowMs) {
+		source = all;
+		groupedBelowMs = groupBelowMs;
+		fittedWidth = fitWidth.getAsInt();
+		List<LyricLine> grouped = groupBelowMs > 0 ? LyricGroups.group(all, groupBelowMs) : all;
+		// a line too long to stand whole in the world comes in parts, one after the other
+		lines = LyricSplit.split(grouped, fitsWhole, laterParts);
+		if (DebugHooks.ACTIVE && lines != grouped) {
+			DebugHooks.log(DebugCategory.MUSIC, "World lyrics: lines too long to show whole were split in time, {} lines more", lines.size() - grouped.size());
+		}
+	}
+
 	/** The next line starts in place instead of moving up into it: the cinematic camera cut to a new shot, which starts with a fresh line. */
 	void freshStart() {
 		jump = true;
@@ -193,12 +228,25 @@ final class LyricMotion {
 
 	private boolean cutJustNow;
 
+	/** The later parts of lines split in time, by their index among the shown lines. */
+	private final java.util.BitSet laterParts = new java.util.BitSet();
+
+	/** @return the part sung now of a line split in time, from its first part's index: the last of its parts the clock has reached */
+	private int partAt(int index, long clockMs) {
+		int at = index;
+		while (at >= 0 && at + 1 < lines.size() && laterParts.get(at + 1) && lines.get(at + 1).timeMs() <= clockMs) {
+			at++;
+		}
+		return at;
+	}
+
 	/** @return the index of the sung line among the shown lines, looked up only when the line changes */
 	private int indexOf(LyricLine line) {
 		if (line != indexedLine || lines != indexedIn) {
 			indexedLine = line;
 			indexedIn = lines;
-			indexedAt = line == null ? -1 : lines.indexOf(line);
+			// by its start, as the line may be part of a block here
+			indexedAt = line == null ? -1 : LyricTimes.mainIndexAt(lines, line.timeMs());
 		}
 		return indexedAt;
 	}
@@ -207,7 +255,8 @@ final class LyricMotion {
 		for (Adlib adlib : adlibs) {
 			adlib.active = false;
 		}
-		boolean on = music.adlibsShown() && MusicService.isPlaying() && all == lines;
+		boolean on = music.adlibsShown() && MusicService.isPlaying() && all == source;
+		all = lines;
 		long at = music.lyricClockMs();
 		if (on && !all.isEmpty()) {
 			int at0 = lastLineAt(all, at);

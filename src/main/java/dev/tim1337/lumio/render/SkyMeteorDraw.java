@@ -89,7 +89,7 @@ public final class SkyMeteorDraw {
 			}
 			int rgb = natural ? NATURAL[(int) (m.hue[i] * NATURAL.length) % NATURAL.length] : mixWhite(own, WHITE_IN_OWN);
 			int head = lightColor(rgb, alpha);
-			float back = Math.min(m.age[i], tail * m.trail[i]) * m.speed[i];
+			float back = Math.min(m.age[i], dev.tim1337.lumio.features.visual.world.SkyMeteors.streakSeconds(tail) * m.trail[i]) * m.speed[i];
 			float hx = m.x[i];
 			float hy = m.y[i];
 			float hz = m.z[i];

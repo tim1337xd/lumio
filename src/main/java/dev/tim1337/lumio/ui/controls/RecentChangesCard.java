@@ -149,7 +149,7 @@ final class RecentChangesCard {
 		if (hasMore()) {
 			int moreY = y + HEAD + shown * ROW;
 			int moreWidth = ui.width(showAll);
-			boolean over = inside(mouseX, mouseY, x + PAD, moreY, moreWidth, MORE_ROW);
+			boolean over = Ui.over(mouseX, mouseY, x + PAD, moreY, moreWidth, MORE_ROW);
 			moreHover = ui.approach(moreHover, over ? 1f : 0f, Ui.HOVER_RATE);
 			int middle = moreY + MORE_ROW / 2;
 			ui.textMiddle(showAll, x + PAD, middle, palette.text());
@@ -168,7 +168,7 @@ final class RecentChangesCard {
 		clearWidth = empty ? 0 : Math.round(ui.widthScaled(CLEAR, TextScale.SMALL)) + 2 * PILL_PAD;
 		clearX = right - clearWidth + PILL_PAD;
 		if (!empty) {
-			boolean over = inside(mouseX, mouseY, clearX, cardY + 4, clearWidth, HEAD - 6);
+			boolean over = Ui.over(mouseX, mouseY, clearX, cardY + 4, clearWidth, HEAD - 6);
 			clearHover = ui.approach(clearHover, over ? 1f : 0f, Ui.HOVER_RATE);
 			if (clearHover > 0.01f) {
 				ui.rounded(clearX, cardY + 6, clearWidth, HEAD - 10, Radius.SM, Ui.withOpacity(palette.hover(), clearHover));
@@ -188,7 +188,7 @@ final class RecentChangesCard {
 		int rowWidth = cardWidth - 2 * INSET;
 		int top = cardY + HEAD + i * ROW;
 		int middle = top + ROW / 2;
-		boolean over = inside(mouseX, mouseY, rowX, top, rowWidth, ROW);
+		boolean over = Ui.over(mouseX, mouseY, rowX, top, rowWidth, ROW);
 		float hover = rowHover[i] = ui.approach(rowHover[i], over ? 1f : 0f, Ui.HOVER_RATE);
 		int tileX = rowX + PAD - INSET;
 		int textX = tileX + TILE + TEXT_GAP;
@@ -221,7 +221,7 @@ final class RecentChangesCard {
 		if (undoable && hover > 0.01f) {
 			int ux = timeRight - undoW;
 			int uy = middle - UNDO_HEIGHT / 2;
-			boolean onUndo = over && inside(mouseX, mouseY, ux, uy, undoW, UNDO_HEIGHT);
+			boolean onUndo = over && Ui.over(mouseX, mouseY, ux, uy, undoW, UNDO_HEIGHT);
 			undoHover = over ? ui.approach(undoHover, onUndo ? 1f : 0f, Ui.HOVER_RATE) : undoHover;
 			float lit = over ? undoHover : 0f;
 			ui.rounded(ux, uy, undoW, UNDO_HEIGHT, Radius.XS, Ui.withOpacity(palette.text(), (0.08f + 0.08f * lit) * hover));
@@ -264,7 +264,7 @@ final class RecentChangesCard {
 			int pillX = lineX + Math.round(Math.min(labelWidth, labelRoom)) + VALUE_GAP;
 			int color = change.on() ? SystemColors.GREEN : 0xFF000000 | SystemColors.GRAY_RGB;
 			int text = change.on() ? (palette.light() ? Ui.mix(color, 0xFF000000, 0.35f) : Ui.mix(color, 0xFFFFFFFF, 0.45f)) : palette.textSecondary();
-			ui.rounded(pillX, lineY - 2, pillWidth, PILL_HEIGHT, Radius.pill(PILL_HEIGHT), Ui.withOpacity(color, 0.22f));
+			ui.rounded(pillX, lineY - 2, pillWidth, PILL_HEIGHT, Radius.box(PILL_HEIGHT), Ui.withOpacity(color, 0.22f));
 			ui.textAtScaledBold(state, pillX + PILL_PAD, lineY - 0.5f, TextScale.SMALL, text);
 			return;
 		}
@@ -327,28 +327,28 @@ final class RecentChangesCard {
 	/** @return whether the click was on the card */
 	boolean click(double mouseX, double mouseY) {
 		List<RecentChanges.Change> changes = RecentChanges.list();
-		if (!inside(mouseX, mouseY, cardX, cardY, cardWidth, height())) {
+		if (!Ui.over(mouseX, mouseY, cardX, cardY, cardWidth, height())) {
 			return false;
 		}
-		if (!changes.isEmpty() && inside(mouseX, mouseY, clearX, cardY + 4, clearWidth, HEAD - 6)) {
+		if (!changes.isEmpty() && Ui.over(mouseX, mouseY, clearX, cardY + 4, clearWidth, HEAD - 6)) {
 			UiSounds.click();
 			RecentChanges.clear();
 			expanded = false;
 			return true;
 		}
 		int shown = shownCount();
-		if (undoRow >= 0 && undoRow < shown && inside(mouseX, mouseY, undoX, undoY, undoWidth, UNDO_HEIGHT)) {
+		if (undoRow >= 0 && undoRow < shown && Ui.over(mouseX, mouseY, undoX, undoY, undoWidth, UNDO_HEIGHT)) {
 			undo(changes.get(undoRow));
 			return true;
 		}
 		for (int i = 0; i < shown; i++) {
-			if (inside(mouseX, mouseY, cardX + INSET, cardY + HEAD + i * ROW, cardWidth - 2 * INSET, ROW)) {
+			if (Ui.over(mouseX, mouseY, cardX + INSET, cardY + HEAD + i * ROW, cardWidth - 2 * INSET, ROW)) {
 				UiSounds.click();
 				MacScreen.reveal(changes.get(i).feature(), changes.get(i).setting());
 				return true;
 			}
 		}
-		if (hasMore() && inside(mouseX, mouseY, cardX + PAD, cardY + HEAD + shown * ROW, cardWidth - 2 * PAD, MORE_ROW)) {
+		if (hasMore() && Ui.over(mouseX, mouseY, cardX + PAD, cardY + HEAD + shown * ROW, cardWidth - 2 * PAD, MORE_ROW)) {
 			UiSounds.click();
 			expanded = true;
 			return true;
@@ -384,9 +384,5 @@ final class RecentChangesCard {
 			return minutes / MINUTES_PER_HOUR + " h ago";
 		}
 		return days == 1 ? "Yesterday" : days + " days ago";
-	}
-
-	private static boolean inside(double mouseX, double mouseY, int x, int y, int width, int height) {
-		return mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height;
 	}
 }

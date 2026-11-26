@@ -18,7 +18,7 @@ import java.util.List;
  * and its current state as a colored chip. The chosen card has an accent frame. A click chooses a card. Cards are as tall as the tallest
  * card's content.
  */
-public class OptionCardsControl<E extends Enum<E>> extends Control {
+public final class OptionCardsControl<E extends Enum<E>> extends Control {
 	/** Gap between cards, the same as between the cards of a page. */
 	private static final int GAP = 8;
 	/** Cards narrower than this would squeeze their text: the grid uses fewer columns then. */
@@ -42,6 +42,10 @@ public class OptionCardsControl<E extends Enum<E>> extends Control {
 	private static final int TEXT_LINES = 2;
 	private static final int PICTURE_TEXT_LINES = 3;
 	private static final int CHIP_HEIGHT = 14;
+	/** How far secondary text on a tinted backing (the chosen card, a chip) moves toward the main text color, to keep its contrast. */
+	private static final float STRONGER = 0.5f;
+	/** How much of its color a tinted chip's text takes: enough to tell, little enough to read on the light theme. */
+	private static final float CHIP_TINT = 0.15f;
 	/** Height of a picture relative to its width, and its bounds in menu pixels. */
 	private static final float PICTURE_ASPECT = 0.5f;
 	private static final int MIN_PICTURE_HEIGHT = 40;
@@ -191,7 +195,7 @@ public class OptionCardsControl<E extends Enum<E>> extends Control {
 			if (oneRow()) {
 				// short names under short pictures: the frame says which is chosen, and the name has the whole width
 				String name = ui.fit(names[i], room);
-				ui.textAtScaledBold(name, cx + (cardWidth - ui.width(name)) / 2f, nameY, 1f, selected ? palette.text() : palette.textSecondary());
+				ui.textCenteredAtScaledBold(name, cx + cardWidth / 2f, nameY, 1f, selected ? palette.text() : palette.textSecondary());
 			} else {
 				ui.ringAt(radioX, radioY, RADIO, 1f, selected ? ui.accent : Ui.withOpacity(palette.textSecondary(), 0.7f));
 				if (selected) {
@@ -200,8 +204,10 @@ public class OptionCardsControl<E extends Enum<E>> extends Control {
 				ui.textAtScaledBold(ui.fit(names[i], nameRoom), cx + PAD, nameY, 1f, palette.text());
 			}
 			List<String> lines = descriptions.get(i);
+			// on the tinted card of the choice, a little stronger, so it reads as well as on a plain one
+			int lineColor = selected ? Ui.mix(palette.textSecondary(), palette.text(), STRONGER) : palette.textSecondary();
 			for (int k = 0; k < lines.size(); k++) {
-				ui.textAtScaled(lines.get(k), cx + PAD, cy + textY() + k * LINE, TextScale.SMALL, palette.textSecondary());
+				ui.textAtScaled(lines.get(k), cx + PAD, cy + textY() + k * LINE, TextScale.SMALL, lineColor);
 			}
 			if (card.state() != null) {
 				chip(ui, card.state().get(), cx + PAD, cy + cardHeight - PAD - CHIP_HEIGHT, room);
@@ -220,7 +226,7 @@ public class OptionCardsControl<E extends Enum<E>> extends Control {
 		boolean neutral = state.rgb() < 0;
 		int color = 0xFF000000 | Math.max(0, state.rgb());
 		ui.rounded(cx, cy, width, CHIP_HEIGHT, Radius.XS, neutral ? palette.control() : Ui.withOpacity(color, 0.16f));
-		ui.textAtScaled(text, cx + 5, cy + 3f, TextScale.SMALL, neutral ? palette.textSecondary() : Ui.mix(palette.text(), color, 0.6f));
+		ui.textAtScaled(text, cx + 5, cy + 3f, TextScale.SMALL, neutral ? Ui.mix(palette.textSecondary(), palette.text(), STRONGER) : Ui.mix(palette.text(), color, CHIP_TINT));
 	}
 
 	@Override

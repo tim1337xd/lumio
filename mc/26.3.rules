@@ -3,6 +3,7 @@
 # the render classes moved into the package com.mojang.renderpearl
 com.mojang.blaze3d.pipeline.BindGroupLayout => com.mojang.renderpearl.api.pipeline.BindGroupLayout
 com.mojang.blaze3d.pipeline.BlendFunction => com.mojang.renderpearl.api.pipeline.BlendFunction
+com.mojang.blaze3d.platform.BlendFactor => com.mojang.renderpearl.api.pipeline.BlendFactor
 com.mojang.blaze3d.pipeline.ColorTargetState => com.mojang.renderpearl.api.pipeline.ColorTargetState
 com.mojang.blaze3d.pipeline.DepthStencilState => com.mojang.renderpearl.api.pipeline.DepthStencilState
 com.mojang.blaze3d.pipeline.RenderPipeline => com.mojang.renderpearl.api.pipeline.RenderPipeline

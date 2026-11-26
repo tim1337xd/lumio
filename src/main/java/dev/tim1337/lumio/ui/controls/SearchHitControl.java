@@ -1,6 +1,8 @@
 package dev.tim1337.lumio.ui.controls;
 
+import dev.tim1337.lumio.api.experimental.draw.Radius;
 import dev.tim1337.lumio.api.experimental.motion.Spring;
+import dev.tim1337.lumio.config.Feature;
 import dev.tim1337.lumio.ui.Control;
 import dev.tim1337.lumio.ui.Ui;
 import dev.tim1337.lumio.ui.UiSounds;
@@ -8,7 +10,7 @@ import dev.tim1337.lumio.ui.UiSounds;
 import java.util.function.BooleanSupplier;
 
 /** The location of a search result, right of its name, with an arrow; clicking opens it. Results that can be toggled get a switch at the end. */
-public class SearchHitControl extends Control {
+public final class SearchHitControl extends Control {
 	private final String path;
 	private final Runnable open;
 	private final BooleanSupplier state;
@@ -19,6 +21,17 @@ public class SearchHitControl extends Control {
 	private final Spring press = Spring.smooth(Spring.SNAPPY);
 	private boolean pressed;
 	private boolean known;
+	/** Whether the result is a feature still being tested, which the tag before its location says. */
+	private boolean workInProgress;
+	private static final int TAG_PAD = 5;
+	private static final int TAG_HEIGHT = 12;
+	private static final int TAG_GAP = 6;
+
+	/** Marks the result as work in progress. @return this */
+	public SearchHitControl workInProgress(boolean flagged) {
+		workInProgress = flagged;
+		return this;
+	}
 
 	public SearchHitControl(String path, Runnable open, BooleanSupplier state, Runnable flip, Runnable onChanged) {
 		this.path = path;
@@ -64,7 +77,16 @@ public class SearchHitControl extends Control {
 			end = switchX() - 10;
 		}
 		ui.icon("chevron", end - 12, middle - 5, 10, Ui.mix(ui.palette.textSecondary(), ui.accent, h));
-		ui.textRight(ui.fit(path, Math.max(40, end - x - 30)), end - 20, middle, Ui.mix(ui.palette.textSecondary(), ui.palette.text(), h));
+		String shown = ui.fit(path, Math.max(40, end - x - 30));
+		ui.textRight(shown, end - 20, middle, Ui.mix(ui.palette.textSecondary(), ui.palette.text(), h));
+		if (workInProgress) {
+			// short, so it never takes the room of the result's name
+			String tag = Feature.WORK_IN_PROGRESS_SHORT;
+			int tagWidth = ui.width(tag) + TAG_PAD * 2;
+			int tagX = end - 20 - ui.width(shown) - TAG_GAP - tagWidth;
+			ui.rounded(tagX, middle - TAG_HEIGHT / 2, tagWidth, TAG_HEIGHT, Radius.box(TAG_HEIGHT), Ui.withOpacity(FeatureListControl.WORK_COLOR, 0.18f));
+			ui.textMiddle(tag, tagX + TAG_PAD, middle, Ui.mix(ui.palette.text(), ui.palette.coloredText(FeatureListControl.WORK_COLOR), 0.55f));
+		}
 	}
 
 	@Override

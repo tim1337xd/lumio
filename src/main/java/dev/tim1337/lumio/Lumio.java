@@ -1,6 +1,7 @@
 package dev.tim1337.lumio;
 
 import dev.tim1337.lumio.config.PageOutlines;
+import dev.tim1337.lumio.api.experimental.debug.DebugHooks;
 import dev.tim1337.lumio.api.experimental.util.HudCover;
 import dev.tim1337.lumio.api.experimental.util.ScreenInput;
 import dev.tim1337.lumio.addon.AddonLoader;
@@ -10,7 +11,6 @@ import dev.tim1337.lumio.config.FeatureManager;
 import dev.tim1337.lumio.features.music.MusicKeys;
 import dev.tim1337.lumio.features.visual.hud.HudStack;
 import dev.tim1337.lumio.features.visual.world.AmbienceParticles;
-import dev.tim1337.lumio.features.visual.world.SwingTrace;
 import dev.tim1337.lumio.features.visual.world.cinematic.CinematicKeys;
 import dev.tim1337.lumio.render.AmbienceDraw;
 import dev.tim1337.lumio.render.SkyMeteorDraw;
@@ -25,15 +25,15 @@ import dev.tim1337.lumio.ui.Toasts;
 import dev.tim1337.lumio.ui.UiSounds;
 import dev.tim1337.lumio.ui.setup.SetupScreen;
 import dev.tim1337.lumio.util.ModVersion;
-import dev.tim1337.lumio.util.Profiler;
+import dev.tim1337.lumio.util.DebugLogFile;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.event.client.player.ClientPlayerBlockBreakEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
-import net.fabricmc.fabric.api.client.rendering.v1.PictureInPictureRendererRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
@@ -85,12 +85,18 @@ public class Lumio implements ClientModInitializer {
 		}
 		// the add-ons register their features and providers now: after the features of the main mod exist, before the settings are read
 		PageOutlines.apply(MOD_ID);
+		// the waypoints' place key first: an add-on lists it on its own page too (points in a dungeon room)
+		WAYPOINTS.registerKeys();
 		AddonLoader.load();
 		dev.tim1337.lumio.ModFeatures.CHAT.addonsLoaded();
 		FeatureManager.load();
+		// key combinations of the key mappings (Tab + R), beside the game's own keys; small, read once like the config
+		dev.tim1337.lumio.features.misc.keybinds.KeyCombos.load();
 		// the game's crop and particle textures for the main menu's world, read while the game loads
 		MenuGameTextures.register();
 		UiSounds.warmUp();
+		// the update check (off at first) and the notice; nothing reaches the network here
+		dev.tim1337.lumio.update.Updates.register();
 		// Remember the joined server for the main menu's "rejoin" button
 		ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
 			var server = client.getCurrentServer();
@@ -105,12 +111,12 @@ public class Lumio implements ClientModInitializer {
 			HudStack.newFrame();
 		});
 		HudElementRegistry.addLast(id("hud_theme_end"), (graphics, tracker) -> HudStyle.endHud());
+		// after the whole HUD: where every element lies now, so the next frame keeps the panels on the screen and off each other
+		HudElementRegistry.addLast(id("hud_fit"), (graphics, tracker) -> dev.tim1337.lumio.hud.HudAutoFit.update(graphics.guiWidth(), graphics.guiHeight()));
 		// what stands at a place in the world lies under all of the HUD: before everything that is attached behind the game's first element
 		HudElementRegistry.attachElementBefore(VanillaHudElements.MISC_OVERLAYS, id("world_labels"), dev.tim1337.lumio.api.experimental.util.WorldLabels::draw);
 		// Error notifications, drawn over the game and over every screen
 		HudElementRegistry.attachElementAfter(VanillaHudElements.MISC_OVERLAYS, id("toasts"), Toasts::renderHud);
-		// the first person swing's values, while the Debug log shows them
-		HudElementRegistry.attachElementAfter(VanillaHudElements.MISC_OVERLAYS, id("swing_trace"), (graphics, tracker) -> SwingTrace.draw(graphics));
 		ScreenEvents.AFTER_INIT.register((client, screen, width, height) ->
 			ScreenEvents.afterExtract(screen).register((shown, graphics, mouseX, mouseY, delta) -> {
 				Toasts.render(graphics);
@@ -129,6 +135,7 @@ public class Lumio implements ClientModInitializer {
 		HudElementRegistry.attachElementAfter(VanillaHudElements.MISC_OVERLAYS, id("action_bar_hud"), ACTION_BAR::render);
 		MUSIC.registerKeys();
 		CINEMATIC.registerKeys();
+		CAMERA.registerKeys();
 		MenuGear.register();
 		Toasts.register();
 		// which symbols the menu font lacks, read from the font file in the background
@@ -140,6 +147,17 @@ public class Lumio implements ClientModInitializer {
 		ClientTickEvents.END_CLIENT_TICK.register(client -> AmbienceParticles.tick(client, AMBIENCE));
 		ClientTickEvents.END_CLIENT_TICK.register(SetupScreen::tick);
 		ClientTickEvents.END_CLIENT_TICK.register(BORDERLESS::tick);
+		ClientTickEvents.END_CLIENT_TICK.register(CAMERA::tick);
+		WAYPOINTS.start();
+		LevelRenderEvents.COLLECT_SUBMITS.register(WAYPOINTS::collect);
+		LevelRenderEvents.AFTER_TRANSLUCENT_TERRAIN.register(WAYPOINTS::collectLate);
+		dev.tim1337.lumio.api.experimental.util.WorldLabels.add(WAYPOINTS::drawLabels);
+		ClientPlayerBlockBreakEvents.AFTER.register((level, player, pos, state) -> WAYPOINTS.blockBroken(pos));
+		HudElementRegistry.attachElementAfter(VanillaHudElements.MISC_OVERLAYS, id("waypoint_recording"), WAYPOINTS::renderRecording);
+		HudElementRegistry.attachElementAfter(VanillaHudElements.MISC_OVERLAYS, id("waypoint_map"), WAYPOINT_MAP::render);
+		HudElementRegistry.attachElementAfter(VanillaHudElements.MISC_OVERLAYS, id("waypoint_big_map"), WAYPOINTS::renderBigMap);
+		ClientTickEvents.END_CLIENT_TICK.register(client -> WAYPOINT_MAP.tick());
+		ClientTickEvents.END_CLIENT_TICK.register(WAYPOINTS::tick);
 		ClientTickEvents.END_CLIENT_TICK.register(CHAT::tick);
 		// The music players' controls take clicks on screens while the mouse is free, where the screen has nothing of its own
 		ScreenEvents.AFTER_INIT.register((client, screen, width, height) -> {
@@ -152,8 +170,9 @@ public class Lumio implements ClientModInitializer {
 		ClientTickEvents.END_CLIENT_TICK.register(ARROW_TRAILS::tick);
 		LevelRenderEvents.COLLECT_SUBMITS.register(ARROW_TRAILS::collect);
 		ClientTickEvents.END_CLIENT_TICK.register(client -> FeatureManager.flushIfDue());
-		// JFR profiling while the debug setting for it is enabled
-		ClientTickEvents.END_CLIENT_TICK.register(client -> Profiler.tick(DEBUG != null && DEBUG.recordsProfile()));
+		// the Debug log switch: its file listens to the probes while it is on (a no-op while nothing changes)
+		DebugLogFile.install();
+		ClientTickEvents.END_CLIENT_TICK.register(client -> DebugHooks.wantLogFile(DebugLogFile.SWITCH, DEBUG != null && DEBUG.isEnabled()));
 		// Flush pending setting changes when the game closes
 		Runtime.getRuntime().addShutdownHook(new Thread(FeatureManager::saveNow, "Lumio settings"));
 		ClientTickEvents.END_CLIENT_TICK.register(client -> MUSIC.warmUp());
@@ -170,6 +189,8 @@ public class Lumio implements ClientModInitializer {
 		HudElementRegistry.attachElementAfter(VanillaHudElements.MISC_OVERLAYS, id("info_bar"), INFO_BAR::render);
 		HudElementRegistry.attachElementAfter(VanillaHudElements.MISC_OVERLAYS, id("music_window"), MUSIC::renderWindow);
 		LevelRenderEvents.COLLECT_SUBMITS.register(MUSIC::collectWorld);
+		// the glows of the world lyrics, after the see-through blocks behind them
+		LevelRenderEvents.AFTER_TRANSLUCENT_TERRAIN.register(dev.tim1337.lumio.render.LateSubmits::submit);
 		HudElementRegistry.attachElementAfter(VanillaHudElements.MISC_OVERLAYS, id("armor_hud"), ARMOR::render);
 		HudElementRegistry.attachElementAfter(VanillaHudElements.MISC_OVERLAYS, id("inventory_hud"), INVENTORY::render);
 		// Replace the vanilla hotbar and armor bar while the corresponding features are enabled

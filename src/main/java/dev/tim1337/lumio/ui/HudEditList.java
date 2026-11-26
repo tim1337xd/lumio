@@ -80,7 +80,7 @@ final class HudEditList {
 		}
 		for (String group : groups()) {
 			for (EditableHud element : screen.elements) {
-				if (groupOf(element).equals(group)) {
+				if (groupOf(element).equals(group) && element.hudListed()) {
 					rows.add(element);
 					rowGroups.add(group);
 					lowerNames.add(element.hudName().toLowerCase(Locale.ROOT));
@@ -190,7 +190,7 @@ final class HudEditList {
 		int shownCount = 0;
 		int hiddenCount = 0;
 		for (EditableHud element : rows) {
-			shownCount += element.hudShown() ? 1 : 0;
+			shownCount += element.hudShown() || element.hudShownIn() != null ? 1 : 0;
 			hiddenCount += element.hudEnabled() ? 0 : 1;
 		}
 		int notActive = rows.size() - shownCount - hiddenCount;
@@ -240,7 +240,12 @@ final class HudEditList {
 		Palette palette = ui.palette;
 		boolean visible = element.hudShown();
 		boolean switchedOn = element.hudEnabled();
-		boolean notActive = switchedOn && !visible;
+		EditableHud shownIn = visible ? null : element.hudShownIn();
+		// one shown as another element (the arrows as their bar) is as bright as that element
+		visible |= shownIn != null && shownIn.hudShown();
+		String note = shownIn != null ? element.hudShownInNote() : NOT_ACTIVE;
+		// "not active here", or where it is shown instead
+		boolean notActive = switchedOn && (!visible || shownIn != null);
 		boolean inView = mouseY >= viewTop && mouseY < viewBottom;
 		boolean over = inView && mouseX >= left - 4 && mouseX < right + 4 && mouseY >= rowY && mouseY < rowY + ROW;
 		rowHover[i] = ui.approach(rowHover[i], over ? 1f : 0f, Ui.HOVER_RATE);
@@ -253,10 +258,10 @@ final class HudEditList {
 		ui.circle(left + 3, rowY + ROW / 2, 3, Ui.withOpacity(0xFF000000 | element.hudIconRgb(), dim));
 		boolean simulated = HudSimulation.active() && HudSimulation.simulates(element.hudFeature());
 		int nameRight = right - 18 - (simulated ? 10 : 0);
-		int noteWidth = notActive ? Math.round(ui.widthScaled(NOT_ACTIVE, TextScale.SMALL)) + 6 : 0;
+		int noteWidth = notActive ? Math.round(ui.widthScaled(note, TextScale.SMALL)) + 6 : 0;
 		ui.textMiddle(ui.fit(element.hudName(), nameRight - left - 12 - noteWidth), left + 12, rowY + ROW / 2, Ui.withOpacity(palette.text(), dim));
 		if (notActive) {
-			ui.textAtScaled(NOT_ACTIVE, nameRight - noteWidth + 6, rowY + ROW / 2f - 3.5f, TextScale.SMALL, Ui.withOpacity(palette.textSecondary(), NOT_ACTIVE_OPACITY));
+			ui.textAtScaled(note, nameRight - noteWidth + 6, rowY + ROW / 2f - 3.5f, TextScale.SMALL, Ui.withOpacity(palette.textSecondary(), NOT_ACTIVE_OPACITY));
 		}
 		if (simulated) {
 			// marks the elements of the simulated activity
@@ -302,6 +307,16 @@ final class HudEditList {
 					screen.toggleInGroup(element);
 				} else {
 					screen.pick(element);
+				}
+				UiSounds.click();
+			} else if (element.hudShownIn() != null) {
+				// it shows as or inside another element (the song in the info bar, the arrows as a status bar): that one is selected, or its
+				// sample asked for while it is not active here
+				EditableHud other = element.hudShownIn();
+				if (other.hudShown()) {
+					screen.pick(other);
+				} else {
+					screen.askFor(other);
 				}
 				UiSounds.click();
 			} else if (element.hudEnabled()) {

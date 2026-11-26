@@ -22,8 +22,12 @@ public class NavListSetting extends Setting<Void> {
 	 * @param value what is set, read now and then while shown
 	 * @param dot   the color of a status dot before the value, read with it; negative for none, null for a row without one
 	 * @param open  opens the row's sub-page
+	 * @param shown whether the row shows now: not while nothing on its sub-page applies
 	 */
-	public record Item(String icon, int rgb, String title, Supplier<String> value, IntSupplier dot, Runnable open) {
+	public record Item(String icon, int rgb, String title, Supplier<String> value, IntSupplier dot, Runnable open, java.util.function.BooleanSupplier shown) {
+		public Item(String icon, int rgb, String title, Supplier<String> value, IntSupplier dot, Runnable open) {
+			this(icon, rgb, title, value, dot, open, () -> true);
+		}
 	}
 
 	private final List<Item> items;
@@ -37,7 +41,7 @@ public class NavListSetting extends Setting<Void> {
 	}
 
 	public List<Item> items() {
-		return items;
+		return items.stream().filter(item -> item.shown().getAsBoolean()).toList();
 	}
 
 	public String note() {

@@ -1,5 +1,6 @@
 package dev.tim1337.lumio.features.music;
 
+import dev.tim1337.lumio.api.experimental.draw.Radius;
 import dev.tim1337.lumio.ModFeatures;
 import dev.tim1337.lumio.api.experimental.motion.AnimClock;
 import dev.tim1337.lumio.api.experimental.motion.Spring;
@@ -243,7 +244,7 @@ final class PlayerControls {
 		int width = ui.width(tip) + 2 * TIP_PAD;
 		int left = Math.round(tipX - width / 2f);
 		int top = Math.round(tipY + TIP_BELOW - TIP_HEIGHT / 2f);
-		ui.rounded(left, top, width, TIP_HEIGHT, TIP_HEIGHT / 2f, Ui.withOpacity(TIP_COLOR, alpha * reveal));
+		ui.rounded(left, top, width, TIP_HEIGHT, Radius.box(TIP_HEIGHT), Ui.withOpacity(TIP_COLOR, alpha * reveal));
 		ui.textCentered(tip, Math.round(tipX), top + TIP_HEIGHT / 2, Ui.withOpacity(0xFFFFFFFF, alpha * reveal));
 	}
 

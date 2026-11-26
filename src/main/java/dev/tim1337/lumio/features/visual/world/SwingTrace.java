@@ -1,16 +1,17 @@
 package dev.tim1337.lumio.features.visual.world;
 
 import dev.tim1337.lumio.ModFeatures;
-import dev.tim1337.lumio.api.experimental.util.Logs;
+import dev.tim1337.lumio.api.experimental.debug.DebugCategory;
+import dev.tim1337.lumio.api.experimental.debug.DebugHooks;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.player.LocalPlayer;
 
 /**
  * The swing of the first person hand, frame by frame, for finding out why it looks wrong: the game's values, the hand's own counter, the item's
- * drop when changed, the frame's time, and which of Lumio's hand paths ran. Shown at the top left and written to the log while attack is held or a
- * swing runs, only while "Show the swing values" is on under the Debug log; otherwise each hook costs one check.
+ * drop when changed, the frame's time, and which of Lumio's hand paths ran. A probe: the lines are made only while a debug tool asks for them
+ * ({@link DebugHooks#wants} with {@link DebugCategory#SWING}), which shows them and logs them while a swing runs; otherwise each hook costs one
+ * check.
  */
 public final class SwingTrace {
 	/** The hand's swing was drawn from Lumio's counter in this frame. */
@@ -34,12 +35,6 @@ public final class SwingTrace {
 	private static final String[] PATH_NAMES = {"drawn", "fancy", "shorter", "dip", "keptSwap", "sameItem", "clickStarted", "clickDuring", "chained"};
 	/** The paths that belong to a frame; the others last for the tick they happened in. */
 	private static final int FRAME_PATHS = DRAWN | FANCY | SHORTER;
-	private static final int TOP = 4;
-	private static final int LEFT = 4;
-	private static final int LINE_HEIGHT = 10;
-	private static final int TEXT_COLOR = 0xFFFFFFFF;
-	private static final int BACKDROP_COLOR = 0x90000000;
-	private static final int BACKDROP_WIDTH = 230;
 
 	private static int framePaths;
 	private static int tickPaths;
@@ -52,9 +47,9 @@ public final class SwingTrace {
 	private SwingTrace() {
 	}
 
-	/** @return whether the values are shown and written */
+	/** @return whether a debug tool asks for the values */
 	public static boolean on() {
-		return ModFeatures.DEBUG.tracesSwing();
+		return DebugHooks.wants(DebugCategory.SWING);
 	}
 
 	/** One of Lumio's hand paths ran. */
@@ -103,21 +98,9 @@ public final class SwingTrace {
 		lines[1] = "hand: drawn " + round(drawnSwing) + " running " + ModFeatures.HELD_ITEM_TRANSFORM.swingRunning() + " length " + round(swingTicks) + " ticks, equip " + round(equip);
 		lines[2] = "frame: " + round((float) frameMillis) + " ms, " + client.getFps() + " fps, attack held " + client.options.keyAttack.isDown();
 		lines[3] = "paths: " + pathNames(shownPaths);
-		if (client.options.keyAttack.isDown() || player.swinging || ModFeatures.HELD_ITEM_TRANSFORM.swingRunning()) {
-			Logs.info("Swing frame {}: {} | {} | {} | {}", frames, lines[0], lines[1], lines[2], lines[3]);
-		}
-	}
-
-	/** Draws the values of the last frame at the top left. */
-	public static void draw(GuiGraphicsExtractor graphics) {
-		if (!on() || lines[0] == null) {
-			return;
-		}
-		Minecraft client = Minecraft.getInstance();
-		graphics.fill(LEFT - 2, TOP - 2, LEFT + BACKDROP_WIDTH, TOP + lines.length * LINE_HEIGHT, BACKDROP_COLOR);
-		for (int i = 0; i < lines.length; i++) {
-			graphics.text(client.font, lines[i], LEFT, TOP + i * LINE_HEIGHT, TEXT_COLOR, false);
-		}
+		// "swing" while attack is held or a swing runs (the frames worth logging), else "idle"; the lines one under the other
+		boolean swinging = client.options.keyAttack.isDown() || player.swinging || ModFeatures.HELD_ITEM_TRANSFORM.swingRunning();
+		DebugHooks.event(DebugCategory.SWING, swinging ? "swing" : "idle", "frame " + frames + "\n" + String.join("\n", lines));
 	}
 
 	private static String pathNames(int paths) {

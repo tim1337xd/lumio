@@ -1,5 +1,7 @@
 package dev.tim1337.lumio.mixin.render;
 
+import dev.tim1337.lumio.api.experimental.debug.DebugHooks;
+import dev.tim1337.lumio.api.experimental.debug.DebugPass;
 import dev.tim1337.lumio.render.WorldBackdrop;
 
 import net.minecraft.client.gui.render.GuiRenderer;
@@ -15,5 +17,12 @@ public abstract class GuiRendererMixin {
 	@Inject(method = "render", at = @At("HEAD"))
 	private void lumio$worldForPreviews(CallbackInfo ci) {
 		WorldBackdrop.capture();
+		DebugHooks.passBegin(DebugPass.GUI);
+	}
+
+	/** The GUI's GPU time, for the Debug overlay; returns at once while it is off. */
+	@Inject(method = "render", at = @At("RETURN"))
+	private void lumio$guiTimed(CallbackInfo ci) {
+		DebugHooks.passEnd(DebugPass.GUI);
 	}
 }

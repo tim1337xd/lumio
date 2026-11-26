@@ -9,10 +9,13 @@
 | [Kalam](https://fonts.google.com/specimen/Kalam) | A handwritten font for lyrics in the world, bundled | OFL 1.1 |
 | [Poppins](https://fonts.google.com/specimen/Poppins) | A font for lyrics in the world, bundled | OFL 1.1 |
 | [GNU Unifont](https://unifoundry.com/unifont/) | The shapes of some of the server's symbols (such as the gemstone and star), redrawn larger in the mod's symbol pictures from the Unifont that comes with the game | OFL 1.1 or GPL-2.0-or-later with the font exception |
+| [Skyblocker](https://github.com/SkyblockerMod/Skyblocker) | The formats of its waypoint lists, and of Skytils' and ColeWeight's, as its source reads and writes them, so the Waypoints page can import and export them. No code was copied | LGPL-3.0 |
+| [SkyHanni](https://github.com/SkyHanniStudios/SkyHanni) | The waypoint lists it reads and writes (ColeWeight lists numbered in order), as its source has them, for the Waypoints page's import and export. No code was copied | LGPL-2.1 |
 | [LRCLIB](https://lrclib.net) | Synced lyrics (see below) | Service |
 | [Spotify Web API](https://developer.spotify.com) | What plays on Spotify (see below) | Service |
 | [Cider](https://cider.sh) | What plays on Apple Music, and its lyrics (see below) | Local player |
 | [iTunes Search API](https://performance-partners.apple.com/search-api) | Song covers (see below) | Service |
+| [GitHub](https://github.com) | The update check and the downloads you start (see below) | Service |
 
 The jar bundles only the Lumio API, which is part of this project (GPL-3.0-only), and the three fonts above, with their licenses:
 [Inter](src/main/resources/font/OFL-Inter.txt), [Kalam](src/main/resources/font/OFL-Kalam.txt) and [Poppins](src/main/resources/font/OFL-Poppins.txt). Java libraries such as Gson and JNA come with Minecraft and are not bundled.
@@ -30,6 +33,7 @@ are never read or sent. Every request uses HTTPS.
 | LRCLIB | Synced lyrics | Music, Live lyrics | The song's title, artist, album and length | For each new song, while Music and Live lyrics are on and no other source had lyrics | Turn off Live lyrics or Music | [Site](https://lrclib.net) |
 | iTunes Search API | A cover when the player reports none | Music, Online covers | The song's title and artist | Once for each new song without a cover, while Music and Online covers are on | Turn off Online covers or Music | [Service](https://performance-partners.apple.com/search-api), [privacy](https://www.apple.com/legal/privacy/) |
 | Cover addresses | The cover image | Music | Nothing beyond the request for the image | When a player reports a cover address or the iTunes Search API finds one, HTTPS only | Turn off Music | Depends on the player, such as Spotify or Apple |
+| GitHub (`api.github.com`, `github.com`) | Whether a newer Lumio or add-on release exists; the release jar when you press Update | Updates | Nothing personal: one request for the releases of each mod | Once per game start (a fresh request at most every 6 hours) and on "Check now"; a download only after you press Update | Nothing is downloaded or installed without Update | [Privacy](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement) |
 | Spotify (accounts and Web API) | Signing in, what plays, and play, pause, skip and seek | Music, with Spotify as the source | Your Client ID and sign-in tokens, and the commands you give | Only with Spotify as the source and after you signed in | Pick another source, or disconnect the account on the Music page | [Terms](https://developer.spotify.com/terms), [privacy](https://www.spotify.com/legal/privacy-policy/) |
 
 ### Local connections

@@ -21,7 +21,7 @@ import java.util.Map;
  * its row expands it and shows those settings below its name. Repeatable parts (a spacer) are added from pills above the list and have a bin
  * instead of a switch.
  */
-public class OrderedListControl extends Control {
+public final class OrderedListControl extends Control {
 	private static final int ROW = 28;
 	private static final int GAP = 4;
 	private static final int CHIP_H = 22;
@@ -156,8 +156,8 @@ public class OrderedListControl extends Control {
 			int cy = y + chip[1];
 			boolean over = mouseX >= cx && mouseX < cx + chip[2] && mouseY >= cy && mouseY < cy + CHIP_H;
 			float h = hover(ui, 1 + i, over);
-			ui.rounded(cx, cy, chip[2], CHIP_H, CHIP_H / 2f, Ui.mix(ui.palette.control(), ui.accent, 0.12f + 0.2f * h));
-			ui.ring(cx, cy, chip[2], CHIP_H, CHIP_H / 2f, 1, Ui.withOpacity(ui.accent, 0.35f + 0.4f * h));
+			ui.rounded(cx, cy, chip[2], CHIP_H, Radius.box(CHIP_H), Ui.mix(ui.palette.control(), ui.accent, 0.12f + 0.2f * h));
+			ui.ring(cx, cy, chip[2], CHIP_H, Radius.box(CHIP_H), 1, Ui.withOpacity(ui.accent, 0.35f + 0.4f * h));
 			int ix = cx + 8;
 			ui.icon("plus", ix, cy + (CHIP_H - 10) / 2, 10, ui.accent);
 			ix += 14;
@@ -228,7 +228,7 @@ public class OrderedListControl extends Control {
 			ui.icon(option.icon(), iconX, rowY + (ROW - 12) / 2, 12, iconColor);
 			iconX += 18;
 		}
-		int textColor = space ? ui.palette.textSecondary() : Ui.withOpacity(ui.palette.text(), 0.4f + 0.6f * shownAmount);
+		int textColor = space ? ui.palette.textSecondary() : Ui.mix(ui.palette.textSecondary(), ui.palette.text(), shownAmount);
 		ui.textMiddle(option.title(), iconX, rowY + ROW / 2, textColor);
 		if (space) {
 			// bin that removes the spacer, red when hovered

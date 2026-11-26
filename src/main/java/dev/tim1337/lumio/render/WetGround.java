@@ -2,6 +2,8 @@ package dev.tim1337.lumio.render;
 
 import dev.tim1337.lumio.Lumio;
 import dev.tim1337.lumio.ModFeatures;
+import dev.tim1337.lumio.api.experimental.debug.DebugHooks;
+import dev.tim1337.lumio.api.experimental.debug.DebugPass;
 import dev.tim1337.lumio.features.visual.world.AmbienceFeature;
 import dev.tim1337.lumio.features.visual.world.AmbienceLook;
 
@@ -77,6 +79,15 @@ public final class WetGround {
 
 	/** Lays the reflections over the finished world; nothing while the ground is dry. */
 	public static void draw(RenderTarget main) {
+		DebugHooks.passBegin(DebugPass.WET_GROUND);
+		try {
+			drawPass(main);
+		} finally {
+			DebugHooks.passEnd(DebugPass.WET_GROUND);
+		}
+	}
+
+	private static void drawPass(RenderTarget main) {
 		AmbienceFeature ambience = ModFeatures.AMBIENCE;
 		float wet = ambience.field().wet();
 		Minecraft client = Minecraft.getInstance();

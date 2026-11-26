@@ -149,6 +149,37 @@ class AdlibTest {
 		assertApart(left, top, right, bottom, bottom - top, widths, heights, count, spots);
 	}
 
+	@Test
+	void aLongAdlibStaysBelowTheLineWhereShortOnesGoBeside() {
+		// the room below holds one adlib; the second is long, the third short
+		float[] widths = {40f, 90f, 20f};
+		float[] heights = {10f, 20f, 10f};
+		boolean[] longOnes = {false, true, false};
+		float[] spots = new float[6];
+		float bottom = 12f;
+		float lowest = bottom + 2.5f + 10f;
+		AdlibLayout.place(-50f, 0f, 50f, bottom, 12f, AdlibLayout.WORLD_GAP_SHARE, widths, heights, longOnes, 3, lowest, spots);
+		assertTrue(spots[3] > bottom, "the long adlib stands below the line");
+		assertTrue(spots[4] >= 50f, "the short one goes beside");
+		assertApart(-50f, 0f, 50f, bottom, 12f * AdlibLayout.WORLD_GAP_SHARE / AdlibLayout.GAP_SHARE, widths, heights, 3, spots);
+	}
+
+	@Test
+	void anAdlibStaysInsideTheBlockOfItsLine() {
+		// right-aligned to a line's end it would reach past the block: it moves in as far as needed
+		assertEquals(5f, AdlibLayout.inside(20f, 75f, 80f));
+		assertEquals(10f, AdlibLayout.inside(10f, 20f, 80f));
+		assertEquals(-60f, AdlibLayout.inside(-70f, 20f, 80f));
+		// one wider than the block is centered in it
+		assertEquals(0f, AdlibLayout.inside(30f, 90f, 80f));
+	}
+
+	@Test
+	void aLongAdlibHasMoreThanFourWords() {
+		assertTrue(CutoutAdlibs.words("(How I see the same ones?)") > CutoutAdlibs.MOST_WORDS_BESIDE);
+		assertFalse(CutoutAdlibs.words("(oh yeah)") > CutoutAdlibs.MOST_WORDS_BESIDE);
+	}
+
 	/** Checks that every adlib keeps the gap (from one row's height) from the line's bounds and that no two adlibs overlap. */
 	private static void assertApart(float left, float top, float right, float bottom, float rowHeight, float[] widths, float[] heights, int count,
 									float[] spots) {

@@ -6,7 +6,7 @@ import dev.tim1337.lumio.ui.Ui;
 import dev.tim1337.lumio.ui.UiSounds;
 
 /** A row of two quiet links across the page, without a card: one with an icon on the left, a smaller one on the right. */
-public class LinksRowControl extends Control {
+public final class LinksRowControl extends Control {
 	private static final int HEIGHT = 14;
 	private static final int INSET = 4;
 	private static final int ICON = 10;
@@ -26,6 +26,17 @@ public class LinksRowControl extends Control {
 	public LinksRowControl confirmRight(boolean confirm) {
 		confirmRight = confirm;
 		return this;
+	}
+
+	private java.util.function.BooleanSupplier leftShown = () -> true;
+
+	public LinksRowControl leftShownWhen(java.util.function.BooleanSupplier condition) {
+		leftShown = condition;
+		return this;
+	}
+
+	private boolean showsLeft() {
+		return !left.isEmpty() && leftShown.getAsBoolean();
 	}
 
 	private boolean armed() {
@@ -71,7 +82,7 @@ public class LinksRowControl extends Control {
 	}
 
 	private boolean overLeft(double mouseX, double mouseY) {
-		return mouseY >= y && mouseY < y + height && mouseX >= x + INSET && mouseX < x + INSET + leftWidth;
+		return showsLeft() && mouseY >= y && mouseY < y + height && mouseX >= x + INSET && mouseX < x + INSET + leftWidth;
 	}
 
 	private boolean overRight(double mouseX, double mouseY) {
@@ -82,10 +93,10 @@ public class LinksRowControl extends Control {
 	public void render(Ui ui, int mouseX, int mouseY) {
 		int middle = y + HEIGHT / 2;
 		int leftColor = Ui.mix(ui.palette.textSecondary(), ui.palette.text(), 0.6f + 0.4f * hover(ui, 0, overLeft(mouseX, mouseY)));
-		if (!left.isEmpty()) {
+		if (showsLeft()) {
 			ui.icon(icon, x + INSET, middle - ICON / 2, ICON, leftColor);
+			ui.textMiddle(left, x + INSET + ICON + ICON_GAP, middle, leftColor);
 		}
-		ui.textMiddle(left, x + INSET + ICON + ICON_GAP, middle, leftColor);
 		int rightColor = Ui.mix(ui.palette.textSecondary(), ui.palette.text(), hover(ui, 1, overRight(mouseX, mouseY)));
 		ui.textAtScaled(rightText(), x + width - INSET - rightWidth, middle - TextScale.SMALL * 4f, TextScale.SMALL, rightColor);
 	}

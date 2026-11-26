@@ -46,6 +46,11 @@ public final class ParameterTexture {
 		}
 	}
 
+	/** @return a value from 0 to 1 (clamped to it) as a channel's byte from 0 to 255 */
+	static int unit(float value) {
+		return Math.round(Math.clamp(value, 0f, 1f) * 255f);
+	}
+
 	/** Stores a value from 0 to 1 in the red and green channels with 16-bit precision. */
 	public void setPacked16(int texel, float value, int blue, int alpha) {
 		int packed = Math.round(Math.clamp(value, 0f, 1f) * 65535f);

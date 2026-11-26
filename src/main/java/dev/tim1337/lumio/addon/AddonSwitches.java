@@ -2,6 +2,7 @@ package dev.tim1337.lumio.addon;
 
 import dev.tim1337.lumio.api.experimental.util.Logs;
 import dev.tim1337.lumio.api.experimental.util.ModFiles;
+import dev.tim1337.lumio.api.experimental.util.Threads;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -15,7 +16,6 @@ import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 /**
  * Which add-ons are switched off, from the Add-ons page: saved in config/lumio/addons/state.json and read once at the start, since an
@@ -29,11 +29,7 @@ public final class AddonSwitches {
 	private static final int LONGEST_ID = 64;
 
 	/** Writes the file off the game's thread, one write at a time. */
-	private static final ExecutorService WRITER = Executors.newSingleThreadExecutor(runnable -> {
-		Thread thread = new Thread(runnable, "Lumio add-on switches");
-		thread.setDaemon(true);
-		return thread;
-	});
+	private static final ExecutorService WRITER = Threads.daemonExecutor("Lumio add-on switches");
 
 	private static Set<String> saved;
 

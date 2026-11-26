@@ -27,6 +27,20 @@ public class MultiSelectSetting extends Setting<Void> implements MultiToggle {
 		this.options = options;
 	}
 
+	/** The chips' own colors (0xRRGGBB, in the options' order), or null for the accent. */
+	private int[] colors;
+
+	/** Gives the chips colors of their own, such as the types of points in theirs. */
+	public MultiSelectSetting colors(int[] rgb) {
+		colors = rgb == null ? null : rgb.clone();
+		return this;
+	}
+
+	/** @return the color of an option's chip (0xFFRRGGBB), or 0 for the accent */
+	public int colorOf(int index) {
+		return colors == null || index >= colors.length ? 0 : 0xFF000000 | colors[index];
+	}
+
 	/** Shows the choices as pills that switch on and off, for a few short choices all worth seeing at once. */
 	public MultiSelectSetting asChips() {
 		chips = true;

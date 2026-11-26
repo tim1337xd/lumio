@@ -8,6 +8,11 @@ public interface ColorChoice extends AddonSetting<Integer> {
 	/** Offers to use the menu's accent color instead. @return this */
 	ColorChoice followsMenu();
 
+	/** Takes away the choice of the menu's accent color, which every color offers: for one that carries a meaning (a rarity, good or bad). @return this */
+	default ColorChoice ownColorOnly() {
+		return this;
+	}
+
 	/** Shows it as a small swatch in a row with other colors of the same row label. @return this */
 	ColorChoice inRow(String label);
 

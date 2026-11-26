@@ -14,7 +14,7 @@ import java.util.List;
  * A multi-select dropdown: a button summarizing the selection in one line, and a list with a checkbox per entry; clicking an entry toggles it
  * without closing the list.
  */
-public class MultiDropdownControl extends Control {
+public final class MultiDropdownControl extends Control {
 	private static final int ITEM = 24;
 
 	private final MultiSelectSetting setting;
@@ -44,9 +44,21 @@ public class MultiDropdownControl extends Control {
 		return text.isEmpty() ? "None" : text.toString();
 	}
 
+	/** @return how many are ticked: "All 19", "12 of 19" or "None" */
+	private String countSummary() {
+		List<BooleanSetting> options = options();
+		long on = options.stream().filter(BooleanSetting::get).count();
+		return on == 0 ? "None" : on == options.size() ? "All " + on : on + " of " + options.size();
+	}
+
 	@Override
 	protected int measure(Ui ui, int width) {
 		return 22;
+	}
+
+	@Override
+	public int standardNeed(Ui ui) {
+		return inlineWidth(ui, Integer.MAX_VALUE);
 	}
 
 	@Override
@@ -77,7 +89,9 @@ public class MultiDropdownControl extends Control {
 			ui.rounded(x, y, width, height, Radius.SM, Ui.withOpacity(ui.palette.hover(), h));
 			ui.ring(x, y, width, height, Radius.SM, 1, Ui.withOpacity(ui.accent, 0.6f * h));
 		}
-		ui.textMiddle(ui.fit(summary(), width - 32), x + 9, y + height / 2, ui.palette.text());
+		// the names of what is ticked, or where they do not fit how many: never a list cut off in the middle
+		String names = summary();
+		ui.textMiddle(ui.width(names) <= width - 32 ? names : ui.fit(countSummary(), width - 32), x + 9, y + height / 2, ui.palette.text());
 		ui.icon("chevron", x + width - 18, y + height / 2 - 6, 12, ui.palette.textSecondary());
 	}
 

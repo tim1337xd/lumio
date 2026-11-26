@@ -328,10 +328,6 @@ final class SetupChoices {
 	 */
 	static void turnEverythingOff() {
 		ModFeatures.MENUS.setMenus(MenusFeature.MainMenu.CLASSIC, false, false);
-		for (Feature feature : FeatureManager.features()) {
-			if (feature.isSwitchable() && !feature.isChild() && feature.isAnyOn()) {
-				feature.setEnabled(false);
-			}
-		}
+		FeatureManager.switchAllOff();
 	}
 }

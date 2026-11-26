@@ -52,8 +52,7 @@ public class SettingsPagesTest {
 
 	public static void buildsWithRows(Feature page) {
 		List<Setting<?>> rows = assertDoesNotThrow(() -> rows(page), page.id());
-		// a feature whose rows all live on the Developer page has none of its own
-		assertFalse(rows.isEmpty() && (page.outline() == null || page.outline().developer().isEmpty()), page.id() + " has no rows");
+		assertFalse(rows.isEmpty() && page.outline() == null, page.id() + " has no rows");
 		for (Setting<?> setting : rows) {
 			assertDoesNotThrow(() -> setting.createControl(() -> {
 			}), page.id() + " / " + setting.key());

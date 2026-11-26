@@ -5,6 +5,7 @@ import dev.tim1337.lumio.ModFeatures;
 import dev.tim1337.lumio.addon.Addons;
 import dev.tim1337.lumio.api.TooltipLine;
 import dev.tim1337.lumio.api.experimental.util.HudCover;
+import dev.tim1337.lumio.api.experimental.util.TooltipRoom;
 import dev.tim1337.lumio.api.TooltipLineProvider;
 import dev.tim1337.lumio.api.experimental.draw.Radius;
 import dev.tim1337.lumio.api.experimental.draw.TextScale;
@@ -42,6 +43,8 @@ public final class TooltipPainter {
 	private static final int FIRST_LINE_GAP = 2;
 	/** A tooltip stays this far from the edges of the screen. */
 	private static final int MARGIN = 6;
+	/** How far its frame stays from what it keeps clear of. */
+	private static final int BOX_GAP = 3;
 	private static final int FRAME_PAD_X = 6;
 	private static final int FRAME_PAD_Y = 5;
 	private static final int FADE = 18;
@@ -103,7 +106,7 @@ public final class TooltipPainter {
 
 	/** @return whether the wheel moved a long tooltip that is shown now; the screen behind it does not scroll then */
 	public static boolean wheel(double notches) {
-		if (System.currentTimeMillis() - drawnAt > WHEEL_MILLIS || !SCROLL.canScroll() || !ModFeatures.ITEM_TOOLTIPS.scrolls()) {
+		if (System.currentTimeMillis() - drawnAt > WHEEL_MILLIS || !SCROLL.canScroll()) {
 			return false;
 		}
 		SCROLL.wheel(notches, Minecraft.getInstance().hasShiftDown());
@@ -121,7 +124,26 @@ public final class TooltipPainter {
 		return extra == 0 || extra == 1 ? stack : null;
 	}
 
-	/** @return whether it drew the tooltip; if not, the game draws it itself */
+	/** An item's tooltip of this frame, kept until everything else of the frame is drawn. */
+	private record Pending(GuiGraphicsExtractor graphics, Font font, List<ClientTooltipComponent> game, int mouseX, int mouseY, ClientTooltipPositioner positioner,
+						   Identifier style, ItemStack stack) {
+	}
+
+	private static Pending pending;
+	private static final int[] PLACE = new int[2];
+
+	/** A new frame: what was kept for the last is gone. */
+	public static void newFrame() {
+		pending = null;
+		TooltipRoom.clear();
+	}
+
+	/**
+	 * Takes an item's tooltip. It is drawn at the very end of the frame's screen ({@link #drawPending}), since the panels of the mod and its add-ons are
+	 * drawn after the game's tooltip had its turn and would lie over it. The last one of a frame counts: that of a panel over the slot under it.
+	 *
+	 * @return whether it is the painter's; if not, the game draws it itself
+	 */
 	public static boolean draw(GuiGraphicsExtractor graphics, Font font, List<ClientTooltipComponent> game, int mouseX, int mouseY, ClientTooltipPositioner positioner, Identifier style) {
 		ItemTooltipsFeature feature = ModFeatures.ITEM_TOOLTIPS;
 		if (feature == null || !feature.isEnabled() || game.isEmpty()) {
@@ -131,6 +153,23 @@ public final class TooltipPainter {
 		if (stack == null) {
 			return false;
 		}
+		pending = new Pending(graphics, font, List.copyOf(game), mouseX, mouseY, positioner, style, stack);
+		return true;
+	}
+
+	/** Everything of the frame's screen is drawn: the item's tooltip goes over all of it. */
+	public static void drawPending() {
+		Pending tooltip = pending;
+		pending = null;
+		if (tooltip != null) {
+			tooltip.graphics().nextStratum();
+			paint(tooltip.graphics(), tooltip.font(), tooltip.game(), tooltip.mouseX(), tooltip.mouseY(), tooltip.positioner(), tooltip.style(), tooltip.stack());
+		}
+	}
+
+	private static void paint(GuiGraphicsExtractor graphics, Font font, List<ClientTooltipComponent> game, int mouseX, int mouseY, ClientTooltipPositioner positioner,
+							  Identifier style, ItemStack stack) {
+		ItemTooltipsFeature feature = ModFeatures.ITEM_TOOLTIPS;
 		List<TooltipLine> added = addedLines(feature, stack);
 		var menu = ModFeatures.MENU;
 		long now = System.nanoTime();
@@ -150,24 +189,39 @@ public final class TooltipPainter {
 			gameHeight += component.getHeight(font) + (i == 0 ? FIRST_LINE_GAP : 0);
 		}
 
-		AddedBlock.Measure measure = (text, small) -> small ? Math.round(ui.widthScaled(text, TextScale.SMALL)) : ui.width(text);
+		// in the game's own frame, the lines Lumio adds are in the game's own font, one size, so they read as part of its tooltip
+		boolean vanilla = feature.frame() == ItemTooltipsFeature.Frame.VANILLA;
+		AddedBlock.Measure measure = vanilla ? (text, small) -> font.width(text)
+			: (text, small) -> small ? Math.round(ui.widthScaled(text, TextScale.SMALL)) : ui.width(text);
 		int blockHeight = added.isEmpty() ? 0 : AddedBlock.height(added);
 		int width = added.isEmpty() ? gameWidth : Math.max(gameWidth, AddedBlock.width(added, measure));
 		int contentHeight = gameHeight + blockHeight;
 
-		boolean scrolls = feature.scrolls();
 		int room = screenHeight - 2 * MARGIN - 2 * FRAME_PAD_Y;
-		int visible = scrolls ? Math.min(contentHeight, Math.max(room, 1)) : contentHeight;
+		int visible = Math.min(contentHeight, Math.max(room, 1));
+		Vector2ic place = positioner.positionTooltip(screenWidth, screenHeight, Math.round(mouseX / size), Math.round(mouseY / size), width, visible);
+		int x = Mth.clamp(place.x(), MARGIN + FRAME_PAD_X, Math.max(MARGIN + FRAME_PAD_X, screenWidth - width - MARGIN - FRAME_PAD_X));
+		int y = Mth.clamp(place.y(), MARGIN + FRAME_PAD_Y, Math.max(MARGIN + FRAME_PAD_Y, screenHeight - visible - MARGIN - FRAME_PAD_Y));
+		// off what must stay usable, such as the item search's bar: up, and shorter where the room above is not enough
+		int boxes = TooltipRoom.count();
+		if (boxes > 0) {
+			int[] kept = new int[boxes * 4];
+			for (int i = 0; i < boxes; i++) {
+				kept[i * 4] = (int) Math.floor(TooltipRoom.value(i, 0) / size) - FRAME_PAD_X - BOX_GAP;
+				kept[i * 4 + 1] = (int) Math.floor(TooltipRoom.value(i, 1) / size) - FRAME_PAD_Y - BOX_GAP;
+				kept[i * 4 + 2] = (int) Math.ceil((TooltipRoom.value(i, 0) + TooltipRoom.value(i, 2)) / size) + FRAME_PAD_X + BOX_GAP;
+				kept[i * 4 + 3] = (int) Math.ceil((TooltipRoom.value(i, 1) + TooltipRoom.value(i, 3)) / size) + FRAME_PAD_Y + BOX_GAP;
+			}
+			TooltipPlace.fit(x, y, width, visible, MARGIN + FRAME_PAD_Y, kept, boxes, PLACE);
+			y = PLACE[0];
+			visible = PLACE[1];
+		}
 		// the game makes a new stack now and then for the same item: only another item starts at the top
 		if (!sameItem(stack)) {
 			SCROLL.clear();
 			scrollItem = stack;
 		}
 		SCROLL.show(scrollItem, contentHeight, visible);
-
-		Vector2ic place = positioner.positionTooltip(screenWidth, screenHeight, Math.round(mouseX / size), Math.round(mouseY / size), width, visible);
-		int x = Mth.clamp(place.x(), MARGIN + FRAME_PAD_X, Math.max(MARGIN + FRAME_PAD_X, screenWidth - width - MARGIN - FRAME_PAD_X));
-		int y = Mth.clamp(place.y(), MARGIN + FRAME_PAD_Y, Math.max(MARGIN + FRAME_PAD_Y, screenHeight - visible - MARGIN - FRAME_PAD_Y));
 
 		var pose = graphics.pose();
 		pose.pushMatrix();
@@ -180,13 +234,13 @@ public final class TooltipPainter {
 		int top = y - SCROLL.offset();
 		boolean first = feature.place() == ItemTooltipsFeature.Place.TOP;
 		if (!added.isEmpty() && first) {
-			drawBlock(ui, added, x, top, width, measure, true);
+			drawBlock(ui, graphics, font, vanilla, added, x, top, width, measure, true);
 			top += blockHeight;
 		}
 		drawGame(graphics, font, game, x, top, width, gameHeight);
 		top += gameHeight;
 		if (!added.isEmpty() && !first) {
-			drawBlock(ui, added, x, top, width, measure, false);
+			drawBlock(ui, graphics, font, vanilla, added, x, top, width, measure, false);
 		}
 		if (clipped) {
 			graphics.disableScissor();
@@ -194,7 +248,6 @@ public final class TooltipPainter {
 		}
 		pose.popMatrix();
 		drawnAt = System.currentTimeMillis();
-		return true;
 	}
 
 	private static boolean sameItem(ItemStack stack) {
@@ -272,12 +325,21 @@ public final class TooltipPainter {
 	}
 
 	/** The block: a thin line on the side of the game's lines, and the lines. */
-	private static void drawBlock(Ui ui, List<TooltipLine> added, int x, int y, int width, AddedBlock.Measure measure, boolean above) {
+	private static void drawBlock(Ui ui, GuiGraphicsExtractor graphics, Font font, boolean vanilla, List<TooltipLine> added, int x, int y, int width,
+		AddedBlock.Measure measure, boolean above) {
 		int at = y;
 		if (!above) {
 			at += AddedBlock.LINE_GAP;
-			ui.fill(x, at, width, 1, LINE);
+			ui.fill(x, at, width, 1, vanilla ? VANILLA_RULE : LINE);
 			at += 1 + AddedBlock.LINE_GAP;
+		}
+		if (vanilla) {
+			at = drawVanilla(graphics, font, added, x, at, width, measure);
+			if (above) {
+				at += AddedBlock.LINE_GAP;
+				ui.fill(x, at, width, 1, VANILLA_RULE);
+			}
+			return;
 		}
 
 		int[] columns = AddedBlock.columns(added, measure);
@@ -307,6 +369,45 @@ public final class TooltipPainter {
 			at += AddedBlock.LINE_GAP;
 			ui.fill(x, at, width, 1, LINE);
 		}
+	}
+
+	/** Vanilla's tooltip colors: grey labels and headings (§7), gold values (§6), dark grey notes (§8), and the game's own rule. */
+	private static final int VANILLA_LABEL = 0xFFAAAAAA;
+	private static final int VANILLA_VALUE = 0xFFFFAA00;
+	private static final int VANILLA_NOTE = 0xFF555555;
+	private static final int VANILLA_RULE = 0x40AAAAAA;
+
+	/** The added lines in the game's own font and colors, as the game writes its lore; @return where the next line would start */
+	private static int drawVanilla(GuiGraphicsExtractor graphics, Font font, List<TooltipLine> added, int x, int y, int width, AddedBlock.Measure measure) {
+		int at = y;
+		int[] columns = AddedBlock.columns(added, measure);
+		int valueRight = x + columns[0] + AddedBlock.NAME_GAP + columns[1];
+		int textOffset = (AddedBlock.ROW_HEIGHT - font.lineHeight) / 2 + 1;
+		for (TooltipLine line : added) {
+			switch (line.kind()) {
+				case HEADING -> {
+					graphics.text(font, line.text(), x, at + AddedBlock.HEADING_TOP, VANILLA_LABEL, true);
+					if (!line.value().isEmpty()) {
+						graphics.text(font, line.value(), x + width - font.width(line.value()), at + AddedBlock.HEADING_TOP, vanillaValue(line), true);
+					}
+				}
+				case ROW -> {
+					graphics.text(font, line.text(), x, at + textOffset, VANILLA_LABEL, true);
+					graphics.text(font, line.value(), valueRight - font.width(line.value()), at + textOffset, vanillaValue(line), true);
+					if (!line.note().isEmpty()) {
+						graphics.text(font, line.note(), valueRight + AddedBlock.NOTE_GAP, at + textOffset, VANILLA_NOTE, true);
+					}
+				}
+				case FOOTNOTE -> graphics.text(font, line.text(), x, at + 1, VANILLA_NOTE, true);
+			}
+			at += AddedBlock.lineHeight(line);
+		}
+		return at;
+	}
+
+	/** @return a value's color in the game's frame: gold, or the line's own color where it has one (a rising or falling trend) */
+	private static int vanillaValue(TooltipLine line) {
+		return line.valueRgb() == TooltipLine.PLAIN ? VANILLA_VALUE : 0xFF000000 | line.valueRgb();
 	}
 
 	private static int colorOf(TooltipLine line) {

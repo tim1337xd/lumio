@@ -1,0 +1,209 @@
+{
+  "action_bar_hud" : {
+    "enabled" : true,
+    "glow" : false,
+    "glow_soft" : false,
+    "look_mode" : "CUSTOM",
+    "panel_theme" : "GLASS"
+  },
+  "ambience" : {
+    "enabled" : true,
+    "fireflies_anywhere" : true,
+    "firefly_amount" : 6,
+    "firefly_blink" : 0.31,
+    "firefly_color" : {
+      "color" : "#C8FF5A",
+      "menu" : true
+    },
+    "intensity" : 1.0033,
+    "particle_size" : 1.1,
+    "wet_ground" : "EVERYWHERE"
+  },
+  "armor_hud" : {
+    "enabled" : true,
+    "glow_soft" : false,
+    "look_mode" : "CUSTOM",
+    "wear" : false
+  },
+  "arrow_trails" : {
+    "color" : {
+      "color" : "#45D4FF",
+      "menu" : false,
+      "opacity" : 1
+    },
+    "max_arrows" : 64,
+    "pearl_colors" : "ACCENT",
+    "range" : 128
+  },
+  "block_overlay" : {
+    "break_pulse" : false,
+    "color" : {
+      "color" : "#420AFF",
+      "menu" : false
+    },
+    "fill_opacity" : 0.28,
+    "line_width" : 1,
+    "mode" : "SHADER"
+  },
+  "boss_bars" : {
+    "enabled" : true,
+    "glow" : false,
+    "glow_soft" : false,
+    "look_mode" : "CUSTOM"
+  },
+  "chat" : {
+    "enabled" : true,
+    "heads" : false,
+    "height_lines" : 14,
+    "highlight" : false,
+    "history" : 200,
+    "width_mode" : "FIXED"
+  },
+  "cinematic_camera" : {
+    "enabled" : true,
+    "letterbox" : "OFF",
+    "song_info" : "ALWAYS"
+  },
+  "held_item_outline" : {
+    "echo_length" : 0,
+    "glow_strength" : 0.8,
+    "mode" : "ECHO",
+    "width" : 0.89
+  },
+  "hotbar" : {
+    "durability" : false,
+    "enabled" : true,
+    "glow_soft" : false,
+    "look_mode" : "CUSTOM"
+  },
+  "info_bar" : {
+    "glow_soft" : false,
+    "look_mode" : "CUSTOM"
+  },
+  "inventory_hud" : {
+    "glow" : false
+  },
+  "item_tooltips" : {
+    "frame" : "VANILLA"
+  },
+  "menu" : {
+    "accent" : "PURPLE",
+    "colored_background" : false,
+    "colored_colors" : [
+      "#3100FF",
+      "#000000",
+      "#5B00FF"
+    ],
+    "colored_edges" : 0.25,
+    "colored_field_size" : 0.35,
+    "colored_intensity" : 0.42,
+    "colored_speed" : 0.2,
+    "glass_blur" : 0.2956,
+    "glass_dispersion" : 0.3953,
+    "glass_effect" : 0.1025,
+    "glass_refraction" : 0.3993,
+    "glass_saturation" : 0.3981,
+    "glass_tint" : {
+      "color" : "#0B0E1A",
+      "menu" : false,
+      "opacity" : 0
+    },
+    "glow_blend" : 0.4991,
+    "glow_color_3" : {
+      "color" : "#000000",
+      "menu" : false
+    },
+    "glow_mode" : "FLOW",
+    "glow_size" : 24,
+    "glow_speed" : 1.5,
+    "glow_strength" : 1,
+    "hud_glow" : false,
+    "hud_glow_soft" : false,
+    "hud_size" : 0.997,
+    "theme" : "COLORED",
+    "ui_sound_volume" : 0.5012
+  },
+  "menus" : {
+    "enabled" : true
+  },
+  "music" : {
+    "accent" : {
+      "color" : "#FA586A",
+      "menu" : true
+    },
+    "enabled" : true,
+    "safe_lyrics" : true,
+    "world_glow_color" : "CUSTOM",
+    "world_glow_custom" : {
+      "color" : "#4600FF",
+      "menu" : true
+    },
+    "world_lyrics" : true
+  },
+  "notifications" : {
+    "glow" : true
+  },
+  "scoreboard_hud" : {
+    "enabled" : true,
+    "glow_soft" : false,
+    "look_mode" : "CUSTOM",
+    "max_width" : 150,
+    "style" : "VANILLA",
+    "width" : 135,
+    "width_mode" : "CUSTOM"
+  },
+  "sky" : {
+    "aurora_color_1" : {
+      "color" : "#3D41FF",
+      "menu" : false
+    },
+    "aurora_colors" : "ACCENT",
+    "aurora_speed" : 3,
+    "cloud_color" : {
+      "color" : "#160736",
+      "menu" : false
+    },
+    "cloud_colors" : "CUSTOM",
+    "cloud_cover" : 0.7005,
+    "cloud_light" : false,
+    "enabled" : true,
+    "gaps" : "NONE",
+    "lightning_often" : "OFTEN",
+    "lightning_when" : "ALWAYS",
+    "show_moon" : false,
+    "show_stars" : false,
+    "show_sun" : false,
+    "star_colors" : "ACCENT",
+    "star_density" : 1,
+    "star_speed" : 0.6,
+    "star_trail" : 1,
+    "style" : "MOLTEN",
+    "weather_follows" : false,
+    "when" : "ALWAYS"
+  },
+  "status_bars" : {
+    "arrows_color" : {
+      "color" : "#717171",
+      "opacity" : 1
+    },
+    "enabled" : true,
+    "extra_mode" : "ADD",
+    "fuel_percent" : true,
+    "low_health_edge" : false,
+    "separators" : false,
+    "show_defense" : false,
+    "show_speed" : true,
+    "speed_color" : {
+      "color" : "#FFFFFF",
+      "opacity" : 1
+    }
+  },
+  "tab_list_hud" : {
+    "enabled" : true,
+    "glow" : false,
+    "glow_soft" : false,
+    "look_mode" : "CUSTOM",
+    "panel_theme" : "GLASS",
+    "show_ping" : false
+  }
+}

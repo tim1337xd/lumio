@@ -1,4 +1,5 @@
 # Builds the mod and runs the unit tests for each Minecraft version, on every push and release tag. Game tests are local only.
+# Only in the public repository: the private one is built and tested on the developer's computer.
 name: build
 on:
   push:
@@ -11,6 +12,7 @@ permissions:
 
 jobs:
   build:
+    if: github.repository == 'tim1337xd/Lumio'
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -42,3 +44,4 @@ jobs:
         with:
           name: lumio-mc${{ matrix.minecraft }}
           path: ${{ matrix.jars }}
+          retention-days: 1

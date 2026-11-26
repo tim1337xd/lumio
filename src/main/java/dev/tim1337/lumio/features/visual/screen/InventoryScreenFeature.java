@@ -31,13 +31,13 @@ public class InventoryScreenFeature extends Feature {
 	private final BooleanSetting hideOffHand = add(new BooleanSetting("hide_off_hand", Component.literal("Hide offhand slot"), true), "General");
 	private final BooleanSetting hideRecipeBook = add(new BooleanSetting("hide_recipe_book", Component.literal("Hide recipe book"), true), "General");
 
-	private final BooleanSetting effects = add(new BooleanSetting("effects", Component.literal("Effects beside the inventory"), true), "General");
+	private final BooleanSetting effects = add(new BooleanSetting("effects", Component.literal("Effect list"), true), "General");
 	private final BooleanSetting chests = add(new BooleanSetting("chests", Component.literal("Apply to chests"), true), "General");
 	/** The menu glow around the inventory and chests, which can be disabled here separately. */
 	private final BooleanSetting glow = add(new BooleanSetting("glow", Component.literal("Glow"), false), "General");
 
 	public InventoryScreenFeature() {
-		super("inventory_screen", "Inventory screen", "The inventory in the style of the mod, with the off hand slot and the recipe book left out if you like.", true);
+		super("inventory_screen", "Inventory screen", "The inventory in Lumio's style.", true);
 		iconRgb(SystemColors.ORANGE_RGB);
 		iconName("backpack");
 		summary("The inventory screen in the style of the mod");

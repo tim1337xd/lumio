@@ -62,6 +62,8 @@ public final class Ui implements Canvas {
 	private static final Map<String, Identifier> ICONS = new HashMap<>();
 	private static final Map<Long, Identifier> CORNERS = capped(160);
 
+	/** The middle of the game font's capitals and digits, in font pixels from the top of a line (they are 7 pixels tall). */
+	private static final float GAME_FONT_MIDDLE = 3.5f;
 	/** Whether the mod's text uses the game font instead of the mod font; set in the menu settings. */
 	private static boolean gameFont;
 
@@ -96,7 +98,39 @@ public final class Ui implements Canvas {
 	/** @return the game font's scale nearest to a size: it is a bitmap, and only a whole number of screen pixels per font pixel is sharp */
 	public static float gameFontUnit(float scale) {
 		float pixels = effectiveScale();
-		return Math.max(1, Math.round(scale * pixels)) / pixels;
+		if (scale >= SMALLER_BELOW) {
+			return Math.max(1, Math.round(scale * pixels)) / pixels;
+		}
+		// Smaller, secondary text (units, sub-lines, badges): the bitmap cannot be shrunk a little. It takes the next smaller whole size where
+		// that is not much smaller (2 beside 3, 3 beside 4), and otherwise the full size; what draws it makes it dimmer instead.
+		int full = Math.max(1, Math.round(pixels));
+		int smaller = full - 1;
+		return (smaller >= 1 && smaller >= full * LEAST_SMALLER ? smaller : full) / pixels;
+	}
+
+	/** Text asked below this size is secondary text; in the game's font it is never drawn below this share of the full size. */
+	private static final float SMALLER_BELOW = 0.95f;
+	private static final float LEAST_SMALLER = 0.66f;
+
+	/** @return whether text is drawn in the game's own font now: a bitmap, whose changes are shown at once and never rolled or shrunk */
+	public static boolean pixelFont() {
+		return gameFont;
+	}
+
+	/**
+	 * Moves the pose to where a text starts. In the mod's fonts the place is snapped within the panel, which moves smoothly as a whole; in the
+	 * game's font it is snapped to whole screen pixels after everything that moves or sizes the panel, or its pixels smear.
+	 */
+	private void placeText(org.joml.Matrix3x2fStack pose, float x, float y) {
+		float pixels = effectiveScale();
+		if (gameFont && pose.m10() == 0f && pose.m01() == 0f && pose.m00() > 0f && pose.m11() > 0f) {
+			float gui = (float) Minecraft.getInstance().getWindow().getGuiScale();
+			float screenX = (pose.m00() * x + pose.m20()) * gui;
+			float screenY = (pose.m11() * y + pose.m21()) * gui;
+			pose.translate(x + (Math.round(screenX) - screenX) / (gui * pose.m00()), y + (Math.round(screenY) - screenY) / (gui * pose.m11()));
+			return;
+		}
+		pose.translate(Math.round(x * pixels) / pixels, Math.round(y * pixels) / pixels);
 	}
 
 	/**
@@ -183,6 +217,11 @@ public final class Ui implements Canvas {
 	/** @return the result of alpha-compositing {@code top} over {@code under} */
 	public static int over(int top, int under) {
 		return Draw.over(top, under);
+	}
+
+	/** @return whether the pointer is over a box; its right and bottom edges are outside */
+	public static boolean over(double mouseX, double mouseY, int x, int y, int width, int height) {
+		return mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height;
 	}
 
 	/**
@@ -278,7 +317,9 @@ public final class Ui implements Canvas {
 		int left = a(leftColor);
 		int right = a(rightColor);
 		if (RoundedShapes.available()) {
-			inScreenPixels(() -> RoundedShapes.addGradient(graphics, px, py, w, h, r, 0, left, right, RoundedShapes.SQUARE_BOTTOM));
+			boolean scaled = enterScreenPixels();
+			RoundedShapes.addGradient(graphics, px, py, w, h, r, 0, left, right, RoundedShapes.SQUARE_BOTTOM);
+			leaveScreenPixels(scaled);
 			return;
 		}
 		// without the shape shader: square corners under the border, the gradient across
@@ -306,7 +347,9 @@ public final class Ui implements Canvas {
 		int t = Math.max(1, Math.round(scale * 0.75f));
 		int px = x * scale;
 		int py = y * scale;
-		inScreenPixels(() -> RoundedShapes.add(graphics, px, py, w, h, r, t, color, RoundedShapes.DASHED));
+		boolean scaled = enterScreenPixels();
+		RoundedShapes.add(graphics, px, py, w, h, r, t, color, RoundedShapes.DASHED);
+		leaveScreenPixels(scaled);
 	}
 
 	/** Corners of a picture on screen, reused for every crisp picture, so drawing one allocates nothing. */
@@ -448,7 +491,10 @@ public final class Ui implements Canvas {
 		}
 	}
 
-	/** Switches the pose to screen pixels, like {@link #inScreenPixels}, without a lambda. @return whether it was switched, for {@link #leaveScreenPixels} */
+	/**
+	 * Switches the pose to screen pixels for drawing there, ended by {@link #leaveScreenPixels}; a pair of calls and not a lambda, which would be
+	 * made for every shape every frame. @return whether it was switched
+	 */
 	private boolean enterScreenPixels() {
 		int scale = scale();
 		if (scale == 1) {
@@ -464,19 +510,6 @@ public final class Ui implements Canvas {
 		if (scaled) {
 			graphics.pose().popMatrix();
 		}
-	}
-
-	private void inScreenPixels(Runnable draw) {
-		int scale = scale();
-		if (scale == 1) {
-			draw.run();
-			return;
-		}
-		var pose = graphics.pose();
-		pose.pushMatrix();
-		pose.scale(1f / scale, 1f / scale);
-		draw.run();
-		pose.popMatrix();
 	}
 
 	public void rounded(int x, int y, int width, int height, float radius, int color) {
@@ -864,23 +897,23 @@ public final class Ui implements Canvas {
 		int py = y * scale;
 		int tint = Math.round(Mth.clamp(opacity * 1.5f * Draw.alpha(), 0f, 1f) * 255f) << 24;
 		int size = corner * 2;
-		inScreenPixels(() -> {
-			var g = graphics;
-			g.blit(RenderPipelines.GUI_TEXTURED, id, px - sp, py - sp, 0f, 0f, corner, corner, corner, corner, size, size, tint);
-			g.blit(RenderPipelines.GUI_TEXTURED, id, px + w - r, py - sp, corner, 0f, corner, corner, corner, corner, size, size, tint);
-			g.blit(RenderPipelines.GUI_TEXTURED, id, px - sp, py + h - r, 0f, corner, corner, corner, corner, corner, size, size, tint);
-			g.blit(RenderPipelines.GUI_TEXTURED, id, px + w - r, py + h - r, corner, corner, corner, corner, corner, corner, size, size, tint);
-			int across = w - 2 * r;
-			int down = h - 2 * r;
-			if (across > 0) {
-				g.blit(RenderPipelines.GUI_TEXTURED, id, px + r, py - sp, corner - 1, 0f, across, corner, 1, corner, size, size, tint);
-				g.blit(RenderPipelines.GUI_TEXTURED, id, px + r, py + h - r, corner - 1, corner, across, corner, 1, corner, size, size, tint);
-			}
-			if (down > 0) {
-				g.blit(RenderPipelines.GUI_TEXTURED, id, px - sp, py + r, 0f, corner - 1, corner, down, corner, 1, size, size, tint);
-				g.blit(RenderPipelines.GUI_TEXTURED, id, px + w - r, py + r, corner, corner - 1, corner, down, corner, 1, size, size, tint);
-			}
-		});
+		boolean scaled = enterScreenPixels();
+		var g = graphics;
+		g.blit(RenderPipelines.GUI_TEXTURED, id, px - sp, py - sp, 0f, 0f, corner, corner, corner, corner, size, size, tint);
+		g.blit(RenderPipelines.GUI_TEXTURED, id, px + w - r, py - sp, corner, 0f, corner, corner, corner, corner, size, size, tint);
+		g.blit(RenderPipelines.GUI_TEXTURED, id, px - sp, py + h - r, 0f, corner, corner, corner, corner, corner, size, size, tint);
+		g.blit(RenderPipelines.GUI_TEXTURED, id, px + w - r, py + h - r, corner, corner, corner, corner, corner, corner, size, size, tint);
+		int across = w - 2 * r;
+		int down = h - 2 * r;
+		if (across > 0) {
+			g.blit(RenderPipelines.GUI_TEXTURED, id, px + r, py - sp, corner - 1, 0f, across, corner, 1, corner, size, size, tint);
+			g.blit(RenderPipelines.GUI_TEXTURED, id, px + r, py + h - r, corner - 1, corner, across, corner, 1, corner, size, size, tint);
+		}
+		if (down > 0) {
+			g.blit(RenderPipelines.GUI_TEXTURED, id, px - sp, py + r, 0f, corner - 1, corner, down, corner, 1, size, size, tint);
+			g.blit(RenderPipelines.GUI_TEXTURED, id, px + w - r, py + r, corner, corner - 1, corner, down, corner, 1, size, size, tint);
+		}
+		leaveScreenPixels(scaled);
 	}
 	// ------------------------------------------------------------------------------------------------------ icons
 
@@ -922,6 +955,92 @@ public final class Ui implements Canvas {
 	/** Draws one of the mod's icons (white shapes, tinted with the color) at the given size in menu pixels. */
 	public void icon(String name, int x, int y, int size, int color) {
 		graphics.blit(RenderPipelines.GUI_TEXTURED, ICONS.computeIfAbsent(name, Ui::iconTexture), x, y, 0f, 0f, size, size, 128, 128, 128, 128, a(color));
+	}
+
+	/** The side of an icon's picture, in its pixels. */
+	private static final int ICON_PIXELS = 128;
+	/** A pixel of an icon's picture counts as drawn on from this alpha. */
+	private static final int ICON_DRAWN_ALPHA = 24;
+	/** The part of each icon's picture that is drawn on: left, top, width and height in its pixels. Found once per icon. */
+	private static final Map<String, int[]> ICON_SHAPES = new HashMap<>();
+
+	/** The height of an icon that stands in a line of text, as a share of the text's height. */
+	public static final float INLINE_ICON = 0.9f;
+	/** The height of text at scale 1, in menu pixels (as {@link #textMiddle} centers it). */
+	public static final float TEXT_HEIGHT = 8f;
+
+	/** @return how tall an icon in a line of text is: {@link #INLINE_ICON} of the text's height, in the units the text is drawn in */
+	public static float inlineIconHeight(float textHeight) {
+		return INLINE_ICON * textHeight;
+	}
+
+	/**
+	 * Draws an icon that stands in a line of text: its drawing alone, {@link #INLINE_ICON} of the text's height, centered on the text's middle, so
+	 * it grows and shrinks with the text (its size, the font, the GUI scale).
+	 *
+	 * @return its width
+	 */
+	public float inlineIcon(String name, float x, float middleY, float textHeight, int color) {
+		float height = inlineIconHeight(textHeight);
+		return iconShape(name, x, middleY - height / 2f, height, color);
+	}
+
+	/** @return how wide an icon's drawing alone is at a height, without drawing it */
+	public float iconShapeWidth(String name, float height) {
+		Identifier texture = ICONS.computeIfAbsent(name, Ui::iconTexture);
+		int[] shape = ICON_SHAPES.computeIfAbsent(name, key -> iconShapeOf(texture));
+		return shape[2] * (height / shape[3]);
+	}
+
+	/**
+	 * Draws an icon's drawing alone, without the empty room around it in its picture, at a height (in the units of the place it is drawn in, so
+	 * it grows with a panel's size): for an icon that stands in a line of text like a letter, such as the pin before a place's name.
+	 *
+	 * @return its width at that height
+	 */
+	public float iconShape(String name, float x, float y, float height, int color) {
+		Identifier texture = ICONS.computeIfAbsent(name, Ui::iconTexture);
+		int[] shape = ICON_SHAPES.computeIfAbsent(name, key -> iconShapeOf(texture));
+		float scale = height / shape[3];
+		var pose = graphics.pose();
+		pose.pushMatrix();
+		pose.translate(x, y);
+		pose.scale(scale, scale);
+		graphics.blit(RenderPipelines.GUI_TEXTURED, texture, 0, 0, (float) shape[0], (float) shape[1], shape[2], shape[3], shape[2], shape[3], ICON_PIXELS, ICON_PIXELS,
+			a(color));
+		pose.popMatrix();
+		return shape[2] * scale;
+	}
+
+	/** @return the bounds of what is drawn in an icon's picture; the whole picture when it cannot be read or is empty */
+	private static int[] iconShapeOf(Identifier texture) {
+		int[] whole = {0, 0, ICON_PIXELS, ICON_PIXELS};
+		var resource = Minecraft.getInstance().getResourceManager().getResource(texture);
+		if (resource.isEmpty()) {
+			return whole;
+		}
+		try (var in = resource.get().open(); NativeImage image = NativeImage.read(in)) {
+			if (image.getWidth() != ICON_PIXELS || image.getHeight() != ICON_PIXELS) {
+				return whole;
+			}
+			int left = ICON_PIXELS;
+			int top = ICON_PIXELS;
+			int right = -1;
+			int bottom = -1;
+			for (int py = 0; py < ICON_PIXELS; py++) {
+				for (int px = 0; px < ICON_PIXELS; px++) {
+					if ((image.getPixel(px, py) >>> 24) >= ICON_DRAWN_ALPHA) {
+						left = Math.min(left, px);
+						top = Math.min(top, py);
+						right = Math.max(right, px);
+						bottom = Math.max(bottom, py);
+					}
+				}
+			}
+			return right < left ? whole : new int[] {left, top, right - left + 1, bottom - top + 1};
+		} catch (java.io.IOException | RuntimeException e) {
+			return whole;
+		}
 	}
 
 	/**
@@ -1163,36 +1282,36 @@ public final class Ui implements Canvas {
 		int cells = Mth.clamp(corner / 16, 2, 4);
 		float mid = (corner - 0.5f) / size;
 		float midHigh = (corner + 0.5f) / size;
-		inScreenPixels(() -> {
-			haloCorner(id, px - sp, py - sp, 0f, 0f, corner, size, cells, px, py, w, h, r, color);
-			haloCorner(id, px + w - r, py - sp, 0.5f, 0f, corner, size, cells, px, py, w, h, r, color);
-			haloCorner(id, px - sp, py + h - r, 0f, 0.5f, corner, size, cells, px, py, w, h, r, color);
-			haloCorner(id, px + w - r, py + h - r, 0.5f, 0.5f, corner, size, cells, px, py, w, h, r, color);
-			int across = w - 2 * r;
-			int down = h - 2 * r;
-			int acrossPieces = Mth.clamp(across / 40, 1, 16);
-			for (int i = 0; i < acrossPieces && across > 0; i++) {
-				int from = px + r + across * i / acrossPieces;
-				int to = px + r + across * (i + 1) / acrossPieces;
-				int topFrom = a(color.at(edgePlace(from, py, px, py, w, h, r)));
-				int topTo = a(color.at(edgePlace(to, py, px, py, w, h, r)));
-				int bottomFrom = a(color.at(edgePlace(from, py + h, px, py, w, h, r)));
-				int bottomTo = a(color.at(edgePlace(to, py + h, px, py, w, h, r)));
-				GradientBlit.add(graphics, id, from, py - sp, to, py - sp + corner, mid, 0f, mid, 0.5f, topFrom, topTo, topTo, topFrom);
-				GradientBlit.add(graphics, id, from, py + h - r, to, py + h - r + corner, mid, 0.5f, mid, 1f, bottomFrom, bottomTo, bottomTo, bottomFrom);
-			}
-			int downPieces = Mth.clamp(down / 40, 1, 8);
-			for (int i = 0; i < downPieces && down > 0; i++) {
-				int from = py + r + down * i / downPieces;
-				int to = py + r + down * (i + 1) / downPieces;
-				int leftFrom = a(color.at(edgePlace(px, from, px, py, w, h, r)));
-				int leftTo = a(color.at(edgePlace(px, to, px, py, w, h, r)));
-				int rightFrom = a(color.at(edgePlace(px + w, from, px, py, w, h, r)));
-				int rightTo = a(color.at(edgePlace(px + w, to, px, py, w, h, r)));
-				GradientBlit.add(graphics, id, px - sp, from, px - sp + corner, to, 0f, mid, 0.5f, midHigh, leftFrom, leftFrom, leftTo, leftTo);
-				GradientBlit.add(graphics, id, px + w - r, from, px + w - r + corner, to, 0.5f, mid, 1f, midHigh, rightFrom, rightFrom, rightTo, rightTo);
-			}
-		});
+		boolean scaled = enterScreenPixels();
+		haloCorner(id, px - sp, py - sp, 0f, 0f, corner, size, cells, px, py, w, h, r, color);
+		haloCorner(id, px + w - r, py - sp, 0.5f, 0f, corner, size, cells, px, py, w, h, r, color);
+		haloCorner(id, px - sp, py + h - r, 0f, 0.5f, corner, size, cells, px, py, w, h, r, color);
+		haloCorner(id, px + w - r, py + h - r, 0.5f, 0.5f, corner, size, cells, px, py, w, h, r, color);
+		int across = w - 2 * r;
+		int down = h - 2 * r;
+		int acrossPieces = Mth.clamp(across / 40, 1, 16);
+		for (int i = 0; i < acrossPieces && across > 0; i++) {
+			int from = px + r + across * i / acrossPieces;
+			int to = px + r + across * (i + 1) / acrossPieces;
+			int topFrom = a(color.at(edgePlace(from, py, px, py, w, h, r)));
+			int topTo = a(color.at(edgePlace(to, py, px, py, w, h, r)));
+			int bottomFrom = a(color.at(edgePlace(from, py + h, px, py, w, h, r)));
+			int bottomTo = a(color.at(edgePlace(to, py + h, px, py, w, h, r)));
+			GradientBlit.add(graphics, id, from, py - sp, to, py - sp + corner, mid, 0f, mid, 0.5f, topFrom, topTo, topTo, topFrom);
+			GradientBlit.add(graphics, id, from, py + h - r, to, py + h - r + corner, mid, 0.5f, mid, 1f, bottomFrom, bottomTo, bottomTo, bottomFrom);
+		}
+		int downPieces = Mth.clamp(down / 40, 1, 8);
+		for (int i = 0; i < downPieces && down > 0; i++) {
+			int from = py + r + down * i / downPieces;
+			int to = py + r + down * (i + 1) / downPieces;
+			int leftFrom = a(color.at(edgePlace(px, from, px, py, w, h, r)));
+			int leftTo = a(color.at(edgePlace(px, to, px, py, w, h, r)));
+			int rightFrom = a(color.at(edgePlace(px + w, from, px, py, w, h, r)));
+			int rightTo = a(color.at(edgePlace(px + w, to, px, py, w, h, r)));
+			GradientBlit.add(graphics, id, px - sp, from, px - sp + corner, to, 0f, mid, 0.5f, midHigh, leftFrom, leftFrom, leftTo, leftTo);
+			GradientBlit.add(graphics, id, px + w - r, from, px + w - r + corner, to, 0.5f, mid, 1f, midHigh, rightFrom, rightFrom, rightTo, rightTo);
+		}
+		leaveScreenPixels(scaled);
 	}
 
 	/** How far out a continuous corner reaches on its diagonal, at most, as a share of its extent (the superellipse of exponent 4 does: 2 to the 1/4). */
@@ -1248,36 +1367,36 @@ public final class Ui implements Canvas {
 		float mid = (r - 0.5f) / size;
 		float midHigh = (r + 0.5f) / size;
 		// like the halo: every piece gets the edge colors at its corners blended across it, so there are no color steps
-		inScreenPixels(() -> {
-			haloCorner(id, px, py, 0f, 0f, r, size, cells, px, py, w, h, r, color);
-			haloCorner(id, px + w - r, py, 0.5f, 0f, r, size, cells, px, py, w, h, r, color);
-			haloCorner(id, px, py + h - r, 0f, 0.5f, r, size, cells, px, py, w, h, r, color);
-			haloCorner(id, px + w - r, py + h - r, 0.5f, 0.5f, r, size, cells, px, py, w, h, r, color);
-			int across = w - 2 * r;
-			int down = h - 2 * r;
-			int acrossPieces = Mth.clamp(across / 40, 1, 16);
-			for (int i = 0; i < acrossPieces && across > 0; i++) {
-				int from = px + r + across * i / acrossPieces;
-				int to = px + r + across * (i + 1) / acrossPieces;
-				int topFrom = a(color.at(edgePlace(from, py, px, py, w, h, r)));
-				int topTo = a(color.at(edgePlace(to, py, px, py, w, h, r)));
-				int bottomFrom = a(color.at(edgePlace(from, py + h, px, py, w, h, r)));
-				int bottomTo = a(color.at(edgePlace(to, py + h, px, py, w, h, r)));
-				GradientBlit.add(graphics, id, from, py, to, py + r, mid, 0f, mid, 0.5f, topFrom, topTo, topTo, topFrom);
-				GradientBlit.add(graphics, id, from, py + h - r, to, py + h, mid, 0.5f, mid, 1f, bottomFrom, bottomTo, bottomTo, bottomFrom);
-			}
-			int downPieces = Mth.clamp(down / 40, 1, 8);
-			for (int i = 0; i < downPieces && down > 0; i++) {
-				int from = py + r + down * i / downPieces;
-				int to = py + r + down * (i + 1) / downPieces;
-				int leftFrom = a(color.at(edgePlace(px, from, px, py, w, h, r)));
-				int leftTo = a(color.at(edgePlace(px, to, px, py, w, h, r)));
-				int rightFrom = a(color.at(edgePlace(px + w, from, px, py, w, h, r)));
-				int rightTo = a(color.at(edgePlace(px + w, to, px, py, w, h, r)));
-				GradientBlit.add(graphics, id, px, from, px + r, to, 0f, mid, 0.5f, midHigh, leftFrom, leftFrom, leftTo, leftTo);
-				GradientBlit.add(graphics, id, px + w - r, from, px + w, to, 0.5f, mid, 1f, midHigh, rightFrom, rightFrom, rightTo, rightTo);
-			}
-		});
+		boolean scaled = enterScreenPixels();
+		haloCorner(id, px, py, 0f, 0f, r, size, cells, px, py, w, h, r, color);
+		haloCorner(id, px + w - r, py, 0.5f, 0f, r, size, cells, px, py, w, h, r, color);
+		haloCorner(id, px, py + h - r, 0f, 0.5f, r, size, cells, px, py, w, h, r, color);
+		haloCorner(id, px + w - r, py + h - r, 0.5f, 0.5f, r, size, cells, px, py, w, h, r, color);
+		int across = w - 2 * r;
+		int down = h - 2 * r;
+		int acrossPieces = Mth.clamp(across / 40, 1, 16);
+		for (int i = 0; i < acrossPieces && across > 0; i++) {
+			int from = px + r + across * i / acrossPieces;
+			int to = px + r + across * (i + 1) / acrossPieces;
+			int topFrom = a(color.at(edgePlace(from, py, px, py, w, h, r)));
+			int topTo = a(color.at(edgePlace(to, py, px, py, w, h, r)));
+			int bottomFrom = a(color.at(edgePlace(from, py + h, px, py, w, h, r)));
+			int bottomTo = a(color.at(edgePlace(to, py + h, px, py, w, h, r)));
+			GradientBlit.add(graphics, id, from, py, to, py + r, mid, 0f, mid, 0.5f, topFrom, topTo, topTo, topFrom);
+			GradientBlit.add(graphics, id, from, py + h - r, to, py + h, mid, 0.5f, mid, 1f, bottomFrom, bottomTo, bottomTo, bottomFrom);
+		}
+		int downPieces = Mth.clamp(down / 40, 1, 8);
+		for (int i = 0; i < downPieces && down > 0; i++) {
+			int from = py + r + down * i / downPieces;
+			int to = py + r + down * (i + 1) / downPieces;
+			int leftFrom = a(color.at(edgePlace(px, from, px, py, w, h, r)));
+			int leftTo = a(color.at(edgePlace(px, to, px, py, w, h, r)));
+			int rightFrom = a(color.at(edgePlace(px + w, from, px, py, w, h, r)));
+			int rightTo = a(color.at(edgePlace(px + w, to, px, py, w, h, r)));
+			GradientBlit.add(graphics, id, px, from, px + r, to, 0f, mid, 0.5f, midHigh, leftFrom, leftFrom, leftTo, leftTo);
+			GradientBlit.add(graphics, id, px + w - r, from, px + w, to, 0.5f, mid, 1f, midHigh, rightFrom, rightFrom, rightTo, rightTo);
+		}
+		leaveScreenPixels(scaled);
 	}
 
 	/** A thin line along the edge of a rounded shape, like {@link #ring}, with a color that varies along it. */
@@ -1293,35 +1412,33 @@ public final class Ui implements Canvas {
 		int t = Math.max(1, Math.round(thickness * scale * 0.75f));
 		int px = x * scale;
 		int py = y * scale;
-		inScreenPixels(() -> {
-			int across = w - 2 * r;
-			int down = h - 2 * r;
-			// straight parts blend between colors along their length, so long edges have no steps
-			int acrossPieces = Mth.clamp(across / 40, 1, 16);
-			for (int i = 0; i < acrossPieces && across > 0; i++) {
-				int from = px + r + across * i / acrossPieces;
-				int to = px + r + across * (i + 1) / acrossPieces;
-				int topFrom = a(color.at(edgePlace(from, py, px, py, w, h, r)));
-				int topTo = a(color.at(edgePlace(to, py, px, py, w, h, r)));
-				int bottomFrom = a(color.at(edgePlace(from, py + h, px, py, w, h, r)));
-				int bottomTo = a(color.at(edgePlace(to, py + h, px, py, w, h, r)));
-				GradientBlit.fill(graphics, from, py, to, py + t, topFrom, topTo, topTo, topFrom);
-				GradientBlit.fill(graphics, from, py + h - t, to, py + h, bottomFrom, bottomTo, bottomTo, bottomFrom);
-			}
-			int downPieces = Mth.clamp(down / 40, 1, 8);
-			for (int i = 0; i < downPieces && down > 0; i++) {
-				int from = py + r + down * i / downPieces;
-				int to = py + r + down * (i + 1) / downPieces;
-				int leftFrom = a(color.at(edgePlace(px, from, px, py, w, h, r)));
-				int leftTo = a(color.at(edgePlace(px, to, px, py, w, h, r)));
-				int rightFrom = a(color.at(edgePlace(px + w, from, px, py, w, h, r)));
-				int rightTo = a(color.at(edgePlace(px + w, to, px, py, w, h, r)));
-				GradientBlit.fill(graphics, px, from, px + t, to, leftFrom, leftFrom, leftTo, leftTo);
-				GradientBlit.fill(graphics, px + w - t, from, px + w, to, rightFrom, rightFrom, rightTo, rightTo);
-			}
-			if (r <= 0) {
-				return;
-			}
+		boolean scaled = enterScreenPixels();
+		int across = w - 2 * r;
+		int down = h - 2 * r;
+		// straight parts blend between colors along their length, so long edges have no steps
+		int acrossPieces = Mth.clamp(across / 40, 1, 16);
+		for (int i = 0; i < acrossPieces && across > 0; i++) {
+			int from = px + r + across * i / acrossPieces;
+			int to = px + r + across * (i + 1) / acrossPieces;
+			int topFrom = a(color.at(edgePlace(from, py, px, py, w, h, r)));
+			int topTo = a(color.at(edgePlace(to, py, px, py, w, h, r)));
+			int bottomFrom = a(color.at(edgePlace(from, py + h, px, py, w, h, r)));
+			int bottomTo = a(color.at(edgePlace(to, py + h, px, py, w, h, r)));
+			GradientBlit.fill(graphics, from, py, to, py + t, topFrom, topTo, topTo, topFrom);
+			GradientBlit.fill(graphics, from, py + h - t, to, py + h, bottomFrom, bottomTo, bottomTo, bottomFrom);
+		}
+		int downPieces = Mth.clamp(down / 40, 1, 8);
+		for (int i = 0; i < downPieces && down > 0; i++) {
+			int from = py + r + down * i / downPieces;
+			int to = py + r + down * (i + 1) / downPieces;
+			int leftFrom = a(color.at(edgePlace(px, from, px, py, w, h, r)));
+			int leftTo = a(color.at(edgePlace(px, to, px, py, w, h, r)));
+			int rightFrom = a(color.at(edgePlace(px + w, from, px, py, w, h, r)));
+			int rightTo = a(color.at(edgePlace(px + w, to, px, py, w, h, r)));
+			GradientBlit.fill(graphics, px, from, px + t, to, leftFrom, leftFrom, leftTo, leftTo);
+			GradientBlit.fill(graphics, px + w - t, from, px + w, to, rightFrom, rightFrom, rightTo, rightTo);
+		}
+		if (r > 0) {
 			Identifier id = corner(r, shape & 0xFF, Math.min(t, r));
 			int size = r * 2;
 			int cells = Mth.clamp(r / 12, 1, 3);
@@ -1329,7 +1446,8 @@ public final class Ui implements Canvas {
 			ringCorner(id, px + w - r, py, r, 0, r, r, size, cells, px, py, w, h, r, color, Math.min(t, r));
 			ringCorner(id, px, py + h - r, 0, r, r, r, size, cells, px, py, w, h, r, color, Math.min(t, r));
 			ringCorner(id, px + w - r, py + h - r, r, r, r, r, size, cells, px, py, w, h, r, color, Math.min(t, r));
-		});
+		}
+		leaveScreenPixels(scaled);
 	}
 	// ------------------------------------------------------------------------------------------------------ text
 
@@ -1681,8 +1799,7 @@ public final class Ui implements Canvas {
 		var pose = graphics.pose();
 		pose.pushMatrix();
 		// snap glyphs to screen pixels; between two pixels they would be blurred
-		float pixels = effectiveScale();
-		pose.translate(Math.round(x * pixels) / pixels, Math.round(y * pixels) / pixels);
+		placeText(pose, x, y);
 		pose.scale(factor, factor);
 		if (hasMissing(text)) {
 			drawRuns(null, text, size, menuScale / factor, color);
@@ -1800,11 +1917,14 @@ public final class Ui implements Canvas {
 		var pose = graphics.pose();
 		pose.pushMatrix();
 		// snap to screen pixels like other text; between two pixels the glyphs blur
-		float pixels = effectiveScale();
-		pose.translate(Math.round(x * pixels) / pixels, Math.round(y * pixels) / pixels);
+		placeText(pose, x, y);
 		pose.scale(factor, factor);
 		if (hasMissing(text)) {
 			drawRuns(face, text, quarters, scale / factor, color);
+		} else if (!TextCenter.drawnBold(gameFont, a(color) >>> 24, false)) {
+			// the game's font has no bold of its own: its bold is the glyph drawn twice side by side, and where the two lie over each other
+			// see-through text is brighter, which reads as a smear. Dim text is drawn once.
+			graphics.text(font, styled(text, quarters), 0, 0, a(color), false);
 		} else {
 			graphics.text(font, styledIn(face, text, quarters), 0, 0, a(color), false);
 		}
@@ -1819,9 +1939,42 @@ public final class Ui implements Canvas {
 		return Draw.besideTop(largeTop, largeScale, smallScale);
 	}
 
+	/**
+	 * @return the top of a small unit beside a larger number ("FPS" after "118"): on the number's baseline in the mod's font; in the game's font,
+	 *         whose text is drawn at whole-pixel sizes (not the asked ones), with the unit's middle on the number's middle, from the sizes really
+	 *         drawn, so it never hangs low
+	 */
+	/**
+	 * @return the size text asked at a scale is really drawn at: the same in the mod's font; in the game's font, the whole-pixel size it is snapped
+	 *         to (at GUI scale 2 the small size 0.85 is drawn at full size), so text measured for wrapping fits what is drawn
+	 */
+	public static float drawnScale(float scale) {
+		return gameFont ? gameFontUnit(scale) : scale;
+	}
+
+	public static float unitTop(float largeTop, float largeScale, float smallScale) {
+		if (!gameFont) {
+			return besideTop(largeTop, largeScale, smallScale);
+		}
+		return largeTop + GAME_FONT_MIDDLE * (gameFontUnit(largeScale) - gameFontUnit(smallScale));
+	}
+
 	/** @return the width of text drawn by {@link #textAtScaledBold}, in menu pixels; remembered, so it can be asked every frame */
 	public float boldWidthScaled(String text, float scale) {
 		return widthScaledIn(SEMIBOLD, text, scale);
+	}
+
+	/**
+	 * @return the width of text as {@link #textAtScaledBold} draws it in this color: the semibold face's, or the regular one's where see-through
+	 *         text in the game's font is drawn once. Text is centered and right-aligned by this width, never by another face's.
+	 */
+	public float boldDrawnWidthScaled(String text, float scale, int color) {
+		return TextCenter.drawnBold(gameFont, a(color) >>> 24, hasMissing(text)) ? boldWidthScaled(text, scale) : widthScaled(text, scale);
+	}
+
+	/** Draws scaled text in the semibold face with its middle on the given x, measured in the face it is drawn in. */
+	public void textCenteredAtScaledBold(String text, float centerX, float y, float scale, int color) {
+		textAtScaledBold(text, TextCenter.left(centerX, boldDrawnWidthScaled(text, scale, color)), y, scale, color);
 	}
 
 	/** @return the width of text drawn by {@link #textAtScaledTitle}, in menu pixels */
@@ -1899,6 +2052,16 @@ public final class Ui implements Canvas {
 		}
 	}
 
+	/** @return the width of a section label as {@link #sectionLabel} draws it; 0 before it was first drawn */
+	public float sectionLabelWidth(String text) {
+		Letters letters = LETTERS.get(text);
+		if (letters == null || letters.letters.length == 0) {
+			return 0f;
+		}
+		int last = letters.letters.length - 1;
+		return letters.offsets[last] + boldWidthScaled(letters.letters[last], TextScale.SMALL);
+	}
+
 	/** Draws text vertically centered on the given y. */
 	public void textMiddle(String text, int x, int middleY, int color) {
 		text(text, x, middleY - font.lineHeight / 2, color);
@@ -1915,6 +2078,44 @@ public final class Ui implements Canvas {
 
 	public void textRight(String text, int rightX, int middleY, int color) {
 		textMiddle(text, rightX - width(text), middleY, color);
+	}
+
+	/** The characters of plain text, one text each, so a value drawn digit by digit makes none anew. */
+	private static final String[] SINGLE = new String[128];
+
+	static {
+		for (char c = 0; c < SINGLE.length; c++) {
+			SINGLE[c] = String.valueOf(c);
+		}
+	}
+
+	private static String single(char c) {
+		return c < SINGLE.length ? SINGLE[c] : String.valueOf(c);
+	}
+
+	/** @return the width of a value drawn by {@link #textRightTabular}: every digit as wide as a 0 */
+	public int tabularWidth(String text) {
+		int digit = width(SINGLE['0']);
+		int total = 0;
+		for (int i = 0; i < text.length(); i++) {
+			char c = text.charAt(i);
+			total += c >= '0' && c <= '9' ? digit : width(single(c));
+		}
+		return total;
+	}
+
+	/** Draws a value ending at a right edge with its digits in equal cells, each in the middle of its cell, so a number does not shift as it changes. */
+	public void textRightTabular(String text, int rightX, int middleY, int color) {
+		int digit = width(SINGLE['0']);
+		int x = rightX;
+		for (int i = text.length() - 1; i >= 0; i--) {
+			char c = text.charAt(i);
+			String one = single(c);
+			int own = width(one);
+			int cell = c >= '0' && c <= '9' ? digit : own;
+			x -= cell;
+			textMiddle(one, x + (cell - own) / 2, middleY, color);
+		}
 	}
 
 	// ---------------------------------------------------------------------------------------------- lyrics in the menu and the HUD
